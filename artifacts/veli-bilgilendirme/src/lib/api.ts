@@ -1,4 +1,6 @@
-const BASE = "https://workspaceapi-server-production-c211.up.railway.app/api";
+const BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://workspaceapi-server-production-c211.up.railway.app/api";
 
 async function istek<T>(
   method: string,
@@ -9,18 +11,21 @@ async function istek<T>(
     method,
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text || "Geçersiz sunucu cevabı." };
+  }
 
   if (!res.ok) {
-    throw new Error(
-      (data as { error?: string; message?: string }).error ||
-        (data as { error?: string; message?: string }).message ||
-        "Bir hata oluştu.",
-    );
+    const err = data as { error?: string; message?: string };
+    throw new Error(err.error || err.message || "Bir hata oluştu.");
   }
 
   return data as T;
