@@ -1,0 +1,134 @@
+Mevcut uygulamayı bozma. Var olan sistemi koru ve aşağıdaki geliştirmeleri yap.
+
+--------------------------------------------------
+1) KATILIM DURUMUNU KALDIR
+--------------------------------------------------
+
+- “Katılım durumu” alanını tamamen kaldır
+- Formda görünmesin
+- Afişte yer almasın
+- Metin içinde de kullanılmasın
+
+--------------------------------------------------
+2) METİN UZUNLUĞU SEÇENEĞİ EKLE
+--------------------------------------------------
+
+Kullanıcıya 2 seçenek sun:
+
+1. Detaylı
+2. Kısa
+
+--------------------------------------------------
+
+DETAYLI METİN:
+- Daha uzun ve açıklayıcı olsun
+- Öğrenci gelişimi vurgulansın
+- Davranış ve kazanım yer alsın
+
+Örnek:
+“Öğrencilerimiz etkinlik sürecinde hem el becerilerini geliştirmiş hem de sosyal etkileşimlerini güçlendirmiştir. Yapılan çalışmalar dikkat ve odaklanma becerilerine katkı sağlamıştır.”
+
+--------------------------------------------------
+
+KISA METİN:
+- Daha kısa ve net
+- 2–3 cümleyi geçmesin
+
+Örnek:
+“Bugün matematik dersinde konu tekrarı yapılmıştır. Öğrencilerimiz derse aktif şekilde katılmıştır.”
+
+--------------------------------------------------
+
+GENEL METİN KURALLARI:
+- Hatasız Türkçe olacak
+- Kelimeler birleşmeyecek
+- Doğal ve profesyonel olacak
+- Robotik olmayacak
+
+--------------------------------------------------
+3) ŞABLONLARI GELİŞTİR
+--------------------------------------------------
+
+Mevcut şablonları bozma, üzerine ekle.
+
+EN AZ 5 YENİ ŞABLON EKLE:
+
+1. Premium Minimal
+- Tek büyük görsel
+- Az metin
+- Beyaz ve modern görünüm
+
+2. Kartlı Bilgi Şablonu
+- Bilgiler kutular içinde
+- Düzenli blok yapısı
+
+3. Kurumsal Resmi
+- Daha ciddi ve sade
+- Daha çok metin
+- Resmi görünüm
+
+4. Hikaye / Günlük Stil
+- Akış şeklinde anlatım
+- Samimi ton
+
+5. Fotoğraf Odaklı
+- Görseller ön planda
+- Metin daha kısa
+
+ÖNEMLİ:
+- Şablonlar sadece renk farkı olmasın
+- Yerleşim (layout) değişsin
+- Gerçek eğitim afişi gibi dursun
+
+--------------------------------------------------
+4) BAŞLIK SİSTEMİ EKLE
+--------------------------------------------------
+
+Tek başlık yerine 3 alternatif üret:
+
+Örnek:
+- “Bahar Temalı Etkinliğimiz”
+- “Boyama Etkinliği ile Öğrenme”
+- “Sınıf Etkinliğimizden Kareler”
+
+Kullanıcı seçebilsin.
+
+--------------------------------------------------
+5) GÖRSEL GELİŞTİRME
+--------------------------------------------------
+
+- “Kapak görsel seç” özelliği ekle
+- Görsel sırası değiştirilebilsin
+- En iyi görsel otomatik seçilebilsin
+
+--------------------------------------------------
+6) PAYLAŞIM EKLE
+--------------------------------------------------
+
+- PNG indir
+- PDF indir
+- WhatsApp paylaş
+
+--------------------------------------------------
+7) KAYIT SİSTEMİ
+--------------------------------------------------
+
+- Oluşturulan afişler kaydedilsin
+- Tekrar açılıp düzenlenebilsin
+
+--------------------------------------------------
+8) GENEL KURALLAR
+--------------------------------------------------
+
+- Kurum adı HER AFİŞTE OLSUN
+- Tarih OLSUN
+- SAAT OLMASIN
+- Türkçe hatasız olsun
+- Görseller mutlaka kullanılsın
+- Boş görsel kutusu olmasın
+
+--------------------------------------------------
+
+ÇIKTI:
+Mevcut uygulamayı bu geliştirmelerle güncelle.
+Yeni eklemeler mevcut sistemi bozmasın.

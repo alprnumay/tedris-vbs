@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Veli Bilgilendirme Afişi"
+version = "1.0.0"
+id = "artifacts/veli-bilgilendirme"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23371
+
+[services.development]
+run = "pnpm --filter @workspace/veli-bilgilendirme run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/veli-bilgilendirme", "run", "build" ]
+publicDir = "artifacts/veli-bilgilendirme/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23371"
+BASE_PATH = "/"
