@@ -1,4 +1,4 @@
-const BASE = "http://localhost:3001/api";
+const BASE = "https://workspaceapi-server-production-c211.up.railway.app/api";
 
 async function istek<T>(
   method: string,
