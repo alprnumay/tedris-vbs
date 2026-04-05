@@ -43,8 +43,26 @@ function setOidcCookie(res: Response, name: string, value: string) {
   });
 }
 
+function clearOidcCookies(res: Response) {
+  const options = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    path: "/",
+  };
+
+  res.clearCookie("code_verifier", options);
+  res.clearCookie("nonce", options);
+  res.clearCookie("state", options);
+  res.clearCookie("return_to", options);
+}
+
 function getSafeReturnTo(value: unknown): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//")
+  ) {
     return "/";
   }
   return value;
@@ -72,23 +90,37 @@ async function upsertUser(claims: Record<string, unknown>) {
       },
     })
     .returning();
+
   return user;
 }
 
 router.get("/auth/user", (req: Request, res: Response) => {
   let apiUser = null;
+
   if (req.isAuthenticated() && req.user) {
-    const u = req.user as { id: string; firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null };
-    const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
-    apiUser = { id: u.id, name, profileImage: u.profileImageUrl ?? null };
+    const u = req.user as {
+      id: string;
+      firstName?: string | null;
+      lastName?: string | null;
+      profileImageUrl?: string | null;
+    };
+
+    const name =
+      [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
+
+    apiUser = {
+      id: u.id,
+      name,
+      profileImage: u.profileImageUrl ?? null,
+    };
   }
+
   res.json(GetCurrentAuthUserResponse.parse({ user: apiUser }));
 });
 
 router.get("/login", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
   const callbackUrl = `${getOrigin(req)}/api/callback`;
-
   const returnTo = getSafeReturnTo(req.query.returnTo);
 
   const state = oidc.randomState();
@@ -114,8 +146,6 @@ router.get("/login", async (req: Request, res: Response) => {
   res.redirect(redirectTo.href);
 });
 
-// Query params are not validated because the OIDC provider may include
-// parameters not expressed in the schema.
 router.get("/callback", async (req: Request, res: Response) => {
   const config = await getOidcConfig();
   const callbackUrl = `${getOrigin(req)}/api/callback`;
@@ -134,6 +164,7 @@ router.get("/callback", async (req: Request, res: Response) => {
   );
 
   let tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers;
+
   try {
     tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
       pkceCodeVerifier: codeVerifier,
@@ -147,11 +178,7 @@ router.get("/callback", async (req: Request, res: Response) => {
   }
 
   const returnTo = getSafeReturnTo(req.cookies?.return_to);
-
-  res.clearCookie("code_verifier", { path: "/" });
-  res.clearCookie("nonce", { path: "/" });
-  res.clearCookie("state", { path: "/" });
-  res.clearCookie("return_to", { path: "/" });
+  clearOidcCookies(res);
 
   const claims = tokens.claims();
   if (!claims) {
@@ -164,6 +191,7 @@ router.get("/callback", async (req: Request, res: Response) => {
   );
 
   const now = Math.floor(Date.now() / 1000);
+
   const sessionData: SessionData = {
     user: {
       id: dbUser.id,
@@ -179,6 +207,7 @@ router.get("/callback", async (req: Request, res: Response) => {
 
   const sid = await createSession(sessionData);
   setSessionCookie(res, sid);
+
   res.redirect(returnTo);
 });
 
