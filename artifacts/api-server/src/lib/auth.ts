@@ -1,200 +1,108 @@
-import * as oidc from "openid-client";
-import { Router, type IRouter, type Request, type Response } from "express";
-import { GetCurrentAuthUserResponse } from "@workspace/api-zod";
-import { db, usersTable } from "@workspace/db";
-import {
-  clearSession,
-  getOidcConfig,
-  getSessionId,
-  createSession,
-  SESSION_COOKIE,
-  SESSION_TTL,
-  type SessionData,
-} from "../lib/auth";
+import * as client from "openid-client";
+import crypto from "crypto";
+import { type Request, type Response } from "express";
+import { db, sessionsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import type { AuthUser } from "@workspace/api-zod";
 
-const OIDC_COOKIE_TTL = 10 * 60 * 1000;
+export const ISSUER_URL = process.env.ISSUER_URL ?? "https://replit.com/oidc";
+export const SESSION_COOKIE = "sid";
+export const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 
-const router: IRouter = Router();
-
-function getOrigin(req: Request): string {
-  const proto = req.headers["x-forwarded-proto"] || "https";
-  const host =
-    req.headers["x-forwarded-host"] || req.headers["host"] || "localhost";
-  return `${proto}://${host}`;
+export interface LocalUserSession {
+  id: string;
+  email: string;
+  name: string;
+  isAdmin?: boolean;
 }
 
-function setSessionCookie(res: Response, sid: string) {
-  res.cookie(SESSION_COOKIE, sid, {
+export interface SessionData {
+  user?: AuthUser;
+  localUser?: LocalUserSession;
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+}
+
+let oidcConfig: client.Configuration | null = null;
+
+export async function getOidcConfig(): Promise<client.Configuration> {
+  if (!oidcConfig) {
+    oidcConfig = await client.discovery(
+      new URL(ISSUER_URL),
+      process.env.REPL_ID!,
+    );
+  }
+  return oidcConfig;
+}
+
+export async function createSession(data: SessionData): Promise<string> {
+  const sid = crypto.randomBytes(32).toString("hex");
+
+  await db.insert(sessionsTable).values({
+    sid,
+    sess: data as unknown as Record<string, unknown>,
+    expire: new Date(Date.now() + SESSION_TTL),
+  });
+
+  return sid;
+}
+
+export async function getSession(sid: string): Promise<SessionData | null> {
+  const [row] = await db
+    .select()
+    .from(sessionsTable)
+    .where(eq(sessionsTable.sid, sid));
+
+  if (!row || row.expire < new Date()) {
+    if (row) {
+      await deleteSession(sid);
+    }
+    return null;
+  }
+
+  return row.sess as unknown as SessionData;
+}
+
+export async function updateSession(
+  sid: string,
+  data: SessionData,
+): Promise<void> {
+  await db
+    .update(sessionsTable)
+    .set({
+      sess: data as unknown as Record<string, unknown>,
+      expire: new Date(Date.now() + SESSION_TTL),
+    })
+    .where(eq(sessionsTable.sid, sid));
+}
+
+export async function deleteSession(sid: string): Promise<void> {
+  await db.delete(sessionsTable).where(eq(sessionsTable.sid, sid));
+}
+
+export async function clearSession(
+  res: Response,
+  sid?: string,
+): Promise<void> {
+  if (sid) {
+    await deleteSession(sid);
+  }
+
+  res.clearCookie(SESSION_COOKIE, {
     httpOnly: true,
     secure: true,
     sameSite: "none",
     path: "/",
-    maxAge: SESSION_TTL,
   });
 }
 
-function setOidcCookie(res: Response, name: string, value: string) {
-  res.cookie(name, value, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: OIDC_COOKIE_TTL,
-  });
+export function getSessionId(req: Request): string | undefined {
+  const authHeader = req.headers["authorization"];
+
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7);
+  }
+
+  return req.cookies?.[SESSION_COOKIE];
 }
-
-function getSafeReturnTo(value: unknown): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-  return value;
-}
-
-async function upsertUser(claims: Record<string, unknown>) {
-  const userData = {
-    id: claims.sub as string,
-    email: (claims.email as string) || null,
-    firstName: (claims.first_name as string) || null,
-    lastName: (claims.last_name as string) || null,
-    profileImageUrl: (claims.profile_image_url || claims.picture) as
-      | string
-      | null,
-  };
-
-  const [user] = await db
-    .insert(usersTable)
-    .values(userData)
-    .onConflictDoUpdate({
-      target: usersTable.id,
-      set: {
-        ...userData,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
-  return user;
-}
-
-router.get("/auth/user", (req: Request, res: Response) => {
-  let apiUser = null;
-  if (req.isAuthenticated() && req.user) {
-    const u = req.user as { id: string; firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null };
-    const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
-    apiUser = { id: u.id, name, profileImage: u.profileImageUrl ?? null };
-  }
-  res.json(GetCurrentAuthUserResponse.parse({ user: apiUser }));
-});
-
-router.get("/login", async (req: Request, res: Response) => {
-  const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
-
-  const returnTo = getSafeReturnTo(req.query.returnTo);
-
-  const state = oidc.randomState();
-  const nonce = oidc.randomNonce();
-  const codeVerifier = oidc.randomPKCECodeVerifier();
-  const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
-
-  const redirectTo = oidc.buildAuthorizationUrl(config, {
-    redirect_uri: callbackUrl,
-    scope: "openid email profile offline_access",
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
-    prompt: "login consent",
-    state,
-    nonce,
-  });
-
-  setOidcCookie(res, "code_verifier", codeVerifier);
-  setOidcCookie(res, "nonce", nonce);
-  setOidcCookie(res, "state", state);
-  setOidcCookie(res, "return_to", returnTo);
-
-  res.redirect(redirectTo.href);
-});
-
-// Query params are not validated because the OIDC provider may include
-// parameters not expressed in the schema.
-router.get("/callback", async (req: Request, res: Response) => {
-  const config = await getOidcConfig();
-  const callbackUrl = `${getOrigin(req)}/api/callback`;
-
-  const codeVerifier = req.cookies?.code_verifier;
-  const nonce = req.cookies?.nonce;
-  const expectedState = req.cookies?.state;
-
-  if (!codeVerifier || !expectedState) {
-    res.redirect("/api/login");
-    return;
-  }
-
-  const currentUrl = new URL(
-    `${callbackUrl}?${new URL(req.url, `http://${req.headers.host}`).searchParams}`,
-  );
-
-  let tokens: oidc.TokenEndpointResponse & oidc.TokenEndpointResponseHelpers;
-  try {
-    tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
-      pkceCodeVerifier: codeVerifier,
-      expectedNonce: nonce,
-      expectedState,
-      idTokenExpected: true,
-    });
-  } catch {
-    res.redirect("/api/login");
-    return;
-  }
-
-  const returnTo = getSafeReturnTo(req.cookies?.return_to);
-
-  res.clearCookie("code_verifier", { path: "/" });
-  res.clearCookie("nonce", { path: "/" });
-  res.clearCookie("state", { path: "/" });
-  res.clearCookie("return_to", { path: "/" });
-
-  const claims = tokens.claims();
-  if (!claims) {
-    res.redirect("/api/login");
-    return;
-  }
-
-  const dbUser = await upsertUser(
-    claims as unknown as Record<string, unknown>,
-  );
-
-  const now = Math.floor(Date.now() / 1000);
-  const sessionData: SessionData = {
-    user: {
-      id: dbUser.id,
-      email: dbUser.email,
-      firstName: dbUser.firstName,
-      lastName: dbUser.lastName,
-      profileImageUrl: dbUser.profileImageUrl,
-    },
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,
-  };
-
-  const sid = await createSession(sessionData);
-  setSessionCookie(res, sid);
-  res.redirect(returnTo);
-});
-
-router.get("/logout", async (req: Request, res: Response) => {
-  const config = await getOidcConfig();
-  const origin = getOrigin(req);
-
-  const sid = getSessionId(req);
-  await clearSession(res, sid);
-
-  const endSessionUrl = oidc.buildEndSessionUrl(config, {
-    client_id: process.env.REPL_ID!,
-    post_logout_redirect_uri: origin,
-  });
-
-  res.redirect(endSessionUrl.href);
-});
-
-export default router;

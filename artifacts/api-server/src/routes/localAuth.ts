@@ -2,7 +2,13 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { createSession, clearSession, getSessionId, SESSION_COOKIE, SESSION_TTL } from "../lib/auth";
+import {
+  createSession,
+  clearSession,
+  getSessionId,
+  SESSION_COOKIE,
+  SESSION_TTL,
+} from "../lib/auth";
 
 const router: IRouter = Router();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
@@ -11,7 +17,7 @@ function setSessionCookie(res: Response, sid: string) {
   res.cookie(SESSION_COOKIE, sid, {
     httpOnly: true,
     secure: true,
-    sameSite: "none", // 🔥 BURASI KRİTİK
+    sameSite: "none",
     path: "/",
     maxAge: SESSION_TTL,
   });
@@ -53,7 +59,8 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     })
     .returning();
 
-  const isAdmin = normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
+  const isAdmin =
+    normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
 
   const sessionUser = {
     id: user.id,
@@ -94,7 +101,8 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     return;
   }
 
-  const isAdmin = normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
+  const isAdmin =
+    normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
 
   const sessionUser = {
     id: user.id,
@@ -129,7 +137,9 @@ router.get("/auth/me", (req: Request, res: Response) => {
         id: localUser.id,
         email: localUser.email,
         name: localUser.name,
-        isAdmin: Boolean(localUser.isAdmin) || localUser.email?.toLowerCase() === ADMIN_EMAIL,
+        isAdmin:
+          Boolean(localUser.isAdmin) ||
+          localUser.email?.toLowerCase() === ADMIN_EMAIL,
       },
     });
     return;
@@ -144,7 +154,8 @@ router.get("/auth/me", (req: Request, res: Response) => {
     };
 
     const email = (u.email ?? "").toLowerCase();
-    const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
+    const name =
+      [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
 
     res.json({
       user: {
@@ -216,7 +227,12 @@ router.delete("/profiles/:id", async (req: Request, res: Response) => {
 
   await db
     .delete(savedProfilesTable)
-    .where(and(eq(savedProfilesTable.id, req.params.id), eq(savedProfilesTable.userId, userId)));
+    .where(
+      and(
+        eq(savedProfilesTable.id, req.params.id),
+        eq(savedProfilesTable.userId, userId),
+      ),
+    );
 
   res.json({ ok: true });
 });
