@@ -5,6 +5,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
+import { db } from "@workspace/db";
 
 const app: Express = express();
 
@@ -27,7 +28,27 @@ app.use(
     },
   }),
 );
+app.get("/api/db-check", async (_req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'local_users'
+      ORDER BY ordinal_position
+    `);
 
+    res.json({
+      ok: true,
+      columns: result,
+      databaseUrlPrefix: process.env.DATABASE_URL?.slice(0, 80),
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: String(err),
+    });
+  }
+});
 app.use(cors({
   origin: true,
   credentials: true
