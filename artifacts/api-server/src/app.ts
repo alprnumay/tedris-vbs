@@ -28,7 +28,26 @@ app.use(
     },
   }),
 );
-app.get("/api/db-check", async (_req, res) => {
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
+
+app.use(cookieParser());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    ok: true,
+    message: "API çalışıyor",
+  });
+});
+
+app.get("/api/db-check", async (_req: Request, res: Response) => {
   try {
     const result = await db.execute(`
       SELECT column_name
@@ -48,21 +67,6 @@ app.get("/api/db-check", async (_req, res) => {
       error: String(err),
     });
   }
-});
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
-
-app.use(cookieParser());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.status(200).json({
-    ok: true,
-    message: "API çalışıyor",
-  });
 });
 
 app.use(authMiddleware);
