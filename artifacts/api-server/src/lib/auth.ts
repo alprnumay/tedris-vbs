@@ -90,9 +90,16 @@ export async function clearSession(
 }
 
 export function getSessionId(req: Request): string | undefined {
-  const authHeader = req.headers["authorization"];
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
+  const fromCookie = req.cookies?.[SESSION_COOKIE];
+  if (typeof fromCookie === "string" && fromCookie.trim()) {
+    return fromCookie.trim();
   }
-  return req.cookies?.[SESSION_COOKIE];
+
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (token) return token;
+  }
+
+  return undefined;
 }

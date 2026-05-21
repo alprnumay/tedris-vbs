@@ -37,5 +37,7 @@ export function corsMiddleware() {
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   });
 }

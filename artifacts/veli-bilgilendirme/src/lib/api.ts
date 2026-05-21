@@ -4,23 +4,33 @@ const BASE =
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 
+/** localStorage engellense bile oturum için bellek yedegi */
+let memorySessionToken: string | null = null;
+
 function getStoredSessionToken(): string | null {
+  if (memorySessionToken) return memorySessionToken;
   try {
-    return localStorage.getItem(SESSION_TOKEN_KEY);
+    const fromStorage = localStorage.getItem(SESSION_TOKEN_KEY);
+    if (fromStorage) memorySessionToken = fromStorage;
+    return fromStorage;
   } catch {
-    return null;
+    return memorySessionToken;
   }
 }
 
 function setStoredSessionToken(token: string) {
+  const trimmed = token.trim();
+  if (!trimmed) return;
+  memorySessionToken = trimmed;
   try {
-    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    localStorage.setItem(SESSION_TOKEN_KEY, trimmed);
   } catch {
-    /* private mode / storage disabled */
+    /* private mode / storage disabled — memory fallback yeterli */
   }
 }
 
 function clearStoredSessionToken() {
+  memorySessionToken = null;
   try {
     localStorage.removeItem(SESSION_TOKEN_KEY);
   } catch {
@@ -28,10 +38,19 @@ function clearStoredSessionToken() {
   }
 }
 
-function requestHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+function extractSessionToken(data: {
+  sessionToken?: string;
+  session_token?: string;
+}): string | undefined {
+  const raw = data.sessionToken ?? data.session_token;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
+}
+
+function requestHeaders(): Headers {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
   const token = getStoredSessionToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   return headers;
 }
 
@@ -57,6 +76,9 @@ async function istek<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/register")) {
+      clearStoredSessionToken();
+    }
     const err = data as { error?: string; message?: string };
     throw new Error(err.error || err.message || "Bir hata oluştu.");
   }
@@ -109,22 +131,26 @@ export const api = {
   me: () => istek<{ user: KullaniciBilgisi | null }>("GET", "/auth/me"),
 
   girisYap: async (email: string, password: string) => {
-    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string }>(
+    clearStoredSessionToken();
+    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string; session_token?: string }>(
       "POST",
       "/auth/login",
       { email, password },
     );
-    if (r.sessionToken) setStoredSessionToken(r.sessionToken);
+    const token = extractSessionToken(r);
+    if (token) setStoredSessionToken(token);
     return { user: r.user };
   },
 
   kayitOl: async (email: string, password: string, name: string) => {
-    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string }>(
+    clearStoredSessionToken();
+    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string; session_token?: string }>(
       "POST",
       "/auth/register",
       { email, password, name },
     );
-    if (r.sessionToken) setStoredSessionToken(r.sessionToken);
+    const token = extractSessionToken(r);
+    if (token) setStoredSessionToken(token);
     return { user: r.user };
   },
 
