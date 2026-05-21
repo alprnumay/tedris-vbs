@@ -1,6 +1,7 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { corsMiddleware } from "./lib/corsOrigins";
+import { useCrossSiteSessionCookie } from "./lib/sessionCookie";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -9,7 +10,7 @@ import { db } from "@workspace/db";
 
 const app: Express = express();
 
-if (process.env.NODE_ENV === "production") {
+if (useCrossSiteSessionCookie()) {
   app.set("trust proxy", 1);
 }
 

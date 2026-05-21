@@ -1,4 +1,5 @@
 import cors from "cors";
+import { isDevelopmentEnv } from "./sessionCookie";
 
 const LOCAL_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
 
@@ -18,7 +19,6 @@ function collectAllowedOrigins(): Set<string> {
 
 export function corsMiddleware() {
   const allowed = collectAllowedOrigins();
-  const isProd = process.env.NODE_ENV === "production";
 
   return cors({
     origin(origin, callback) {
@@ -30,7 +30,7 @@ export function corsMiddleware() {
         callback(null, true);
         return;
       }
-      if (!isProd && LOCALHOST_ORIGIN_RE.test(origin)) {
+      if (isDevelopmentEnv() && LOCALHOST_ORIGIN_RE.test(origin)) {
         callback(null, true);
         return;
       }
