@@ -2,6 +2,39 @@ const BASE =
   import.meta.env.VITE_API_BASE_URL ||
   "https://workspaceapi-server-production-c211.up.railway.app/api";
 
+const SESSION_TOKEN_KEY = "tedris_session_token";
+
+function getStoredSessionToken(): string | null {
+  try {
+    return localStorage.getItem(SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredSessionToken(token: string) {
+  try {
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+  } catch {
+    /* private mode / storage disabled */
+  }
+}
+
+function clearStoredSessionToken() {
+  try {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function requestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = getStoredSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 async function istek<T>(
   method: string,
   path: string,
@@ -9,7 +42,7 @@ async function istek<T>(
 ): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     credentials: "include",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -75,13 +108,33 @@ export interface AdminStats {
 export const api = {
   me: () => istek<{ user: KullaniciBilgisi | null }>("GET", "/auth/me"),
 
-  girisYap: (email: string, password: string) =>
-    istek<{ user: KullaniciBilgisi }>("POST", "/auth/login", { email, password }),
+  girisYap: async (email: string, password: string) => {
+    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string }>(
+      "POST",
+      "/auth/login",
+      { email, password },
+    );
+    if (r.sessionToken) setStoredSessionToken(r.sessionToken);
+    return { user: r.user };
+  },
 
-  kayitOl: (email: string, password: string, name: string) =>
-    istek<{ user: KullaniciBilgisi }>("POST", "/auth/register", { email, password, name }),
+  kayitOl: async (email: string, password: string, name: string) => {
+    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string }>(
+      "POST",
+      "/auth/register",
+      { email, password, name },
+    );
+    if (r.sessionToken) setStoredSessionToken(r.sessionToken);
+    return { user: r.user };
+  },
 
-  cikisYap: () => istek<{ ok: boolean }>("POST", "/auth/logout"),
+  cikisYap: async () => {
+    try {
+      return await istek<{ ok: boolean }>("POST", "/auth/logout");
+    } finally {
+      clearStoredSessionToken();
+    }
+  },
 
   profilleriGetir: () => istek<{ profiles: KayitliProfil[] }>("GET", "/profiles"),
 
