@@ -4,6 +4,7 @@ import { type Request, type Response } from "express";
 import { db, sessionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { AuthUser } from "@workspace/api-zod";
+import { sessionCookieOptions } from "./sessionCookie";
 
 export const ISSUER_URL = process.env.ISSUER_URL ?? "https://replit.com/oidc";
 export const SESSION_COOKIE = "sid";
@@ -85,12 +86,7 @@ export async function clearSession(
 ): Promise<void> {
   if (sid) await deleteSession(sid);
 
-  res.clearCookie(SESSION_COOKIE, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    path: "/",
-  });
+  res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
 }
 
 export function getSessionId(req: Request): string | undefined {

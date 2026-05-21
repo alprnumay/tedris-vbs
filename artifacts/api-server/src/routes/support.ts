@@ -57,12 +57,29 @@ function getUserId(req: Request): string | null {
   return null;
 }
 
+const MAX_DESTEK_GORSEL_BASE64 = 500 * 1024;
+
+function destekGorselBase64(body: Record<string, unknown>): string | undefined {
+  const raw = body.imageBase64 ?? body.image_base64;
+  if (raw == null || raw === "") return undefined;
+  return typeof raw === "string" ? raw : undefined;
+}
+
 router.post("/support", async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const { message, imageBase64 } = req.body;
+  const { message } = req.body;
+  const imageBase64 = destekGorselBase64(req.body);
 
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "Mesaj boş olamaz" });
+    return;
+  }
+
+  if (imageBase64 && Buffer.byteLength(imageBase64, "utf8") > MAX_DESTEK_GORSEL_BASE64) {
+    res.status(413).json({
+      error: "image_too_large",
+      message: "Ekteki görsel çok büyük. En fazla 500 KB yükleyebilirsiniz.",
+    });
     return;
   }
 
@@ -104,22 +121,13 @@ router.get("/support/admin", async (req: Request, res: Response) => {
 
 router.get("/support/stats", async (_req: Request, res: Response) => {
   try {
-    const [userCount, posterCount, supportCount, dailyUsers, dailyPosters, recentUsers] = await Promise.all([
+    const [userCount, supportCount, dailyUsers, recentUsers] = await Promise.all([
       db.execute(sql`SELECT COUNT(*)::int AS count FROM local_users`),
-      db.execute(sql`SELECT COUNT(*)::int AS count FROM posters`),
       db.execute(sql`SELECT COUNT(*)::int AS count FROM support_requests`),
       db.execute(sql`
         SELECT TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS count
         FROM local_users
-        WHERE created_at >= NOW() - INTERVAL '7 days'
-        GROUP BY DATE(created_at AT TIME ZONE 'UTC')
-        ORDER BY day
-      `),
-      db.execute(sql`
-        SELECT TO_CHAR(DATE(created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
-               COUNT(*)::int AS count
-        FROM posters
         WHERE created_at >= NOW() - INTERVAL '7 days'
         GROUP BY DATE(created_at AT TIME ZONE 'UTC')
         ORDER BY day
@@ -134,10 +142,10 @@ router.get("/support/stats", async (_req: Request, res: Response) => {
     ]);
     res.json({
       totalUsers: (userCount.rows[0] as { count: number }).count,
-      totalPosters: (posterCount.rows[0] as { count: number }).count,
+      totalPosters: 0,
       totalSupport: (supportCount.rows[0] as { count: number }).count,
       dailyUsers: dailyUsers.rows as { day: string; count: number }[],
-      dailyPosters: dailyPosters.rows as { day: string; count: number }[],
+      dailyPosters: [] as { day: string; count: number }[],
       recentUsers: recentUsers.rows as { id: string; name: string; email: string; created_at: string }[],
     });
   } catch (err) {

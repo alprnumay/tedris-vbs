@@ -11,6 +11,9 @@ out-tsc
 # dependencies
 node_modules
 
+# Vite dependency cache (veli-bilgilendirme vite.config cacheDir)
+**/.vite-cache
+
 # IDEs and editors
 /.idea
 .project

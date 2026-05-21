@@ -90,8 +90,10 @@ export const api = {
 
   profilSil: (id: string) => istek<{ ok: boolean }>("DELETE", `/profiles/${id}`),
 
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
   afisleriGetir: () => istek<{ posters: KayitliAfis[] }>("GET", "/posters"),
 
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
   afisKaydet: (title: string, sablon: string, formData: unknown) =>
     istek<{ poster: KayitliAfis }>("POST", "/posters", {
       title,
@@ -99,6 +101,7 @@ export const api = {
       formData: JSON.stringify(formData),
     }),
 
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
   afisGuncelle: (id: number, title: string, sablon: string, formData: unknown) =>
     istek<{ poster: KayitliAfis }>("PUT", `/posters/${id}`, {
       title,
@@ -106,6 +109,7 @@ export const api = {
       formData: JSON.stringify(formData),
     }),
 
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
   afisSil: (id: number) => istek<{ ok: boolean }>("DELETE", `/posters/${id}`),
 
   destekGonder: (mesaj: string, imageBase64?: string) =>

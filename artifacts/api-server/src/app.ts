@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
-import cors from "cors";
 import cookieParser from "cookie-parser";
+import { corsMiddleware } from "./lib/corsOrigins";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -8,6 +8,10 @@ import { authMiddleware } from "./middlewares/authMiddleware";
 import { db } from "@workspace/db";
 
 const app: Express = express();
+
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
 app.use(
   pinoHttp({
@@ -29,12 +33,7 @@ app.use(
   }),
 );
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  }),
-);
+app.use(corsMiddleware());
 
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));

@@ -1,6 +1,9 @@
 import * as oidc from "openid-client";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { GetCurrentAuthUserResponse } from "@workspace/api-zod";
+import {
+  GetCurrentAuthUserResponse,
+  type AuthUser,
+} from "@workspace/api-zod";
 import { db, usersTable } from "@workspace/db";
 import {
   clearSession,
@@ -11,6 +14,7 @@ import {
   SESSION_TTL,
   type SessionData,
 } from "../lib/auth";
+import { oauthFlowCookieOptions, sessionCookieOptions } from "../lib/sessionCookie";
 
 const OIDC_COOKIE_TTL = 10 * 60 * 1000;
 
@@ -24,32 +28,15 @@ function getOrigin(req: Request): string {
 }
 
 function setSessionCookie(res: Response, sid: string) {
-  res.cookie(SESSION_COOKIE, sid, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    path: "/",
-    maxAge: SESSION_TTL,
-  });
+  res.cookie(SESSION_COOKIE, sid, sessionCookieOptions(SESSION_TTL));
 }
 
 function setOidcCookie(res: Response, name: string, value: string) {
-  res.cookie(name, value, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: OIDC_COOKIE_TTL,
-  });
+  res.cookie(name, value, oauthFlowCookieOptions(OIDC_COOKIE_TTL));
 }
 
 function clearOidcCookies(res: Response) {
-  const options = {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax" as const,
-    path: "/",
-  };
+  const { maxAge: _maxAge, ...options } = oauthFlowCookieOptions(OIDC_COOKIE_TTL);
 
   res.clearCookie("code_verifier", options);
   res.clearCookie("nonce", options);
@@ -199,7 +186,7 @@ router.get("/callback", async (req: Request, res: Response) => {
       firstName: dbUser.firstName,
       lastName: dbUser.lastName,
       profileImageUrl: dbUser.profileImageUrl,
-    },
+    } as unknown as AuthUser,
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,
     expires_at: tokens.expiresIn() ? now + tokens.expiresIn()! : claims.exp,

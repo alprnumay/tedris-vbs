@@ -1,0 +1,24 @@
+# Render Blueprint — monorepo kökünden api-server
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: tedris-vbs-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: pnpm install && pnpm --filter @workspace/api-server run build
+    startCommand: node artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false

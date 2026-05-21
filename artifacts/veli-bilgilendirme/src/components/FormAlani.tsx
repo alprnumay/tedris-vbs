@@ -12,7 +12,6 @@ interface Props {
   onMetinYenile: () => void;
   setMetinDuzenlendi: (v: boolean) => void;
   kullaniciId?: string;
-  onAfisKaydet?: () => void;
   adim2Ref?: React.MutableRefObject<(() => void) | undefined>;
 }
 
@@ -291,14 +290,12 @@ function AdimGostergesi({ adim, setAdim }: { adim: 1 | 2; setAdim: (a: 1 | 2) =>
 
 export default function FormAlani({
   form, setForm, seciliSablon, setSeciliSablon,
-  onMetinYenile, setMetinDuzenlendi, kullaniciId, onAfisKaydet, adim2Ref,
+  onMetinYenile, setMetinDuzenlendi, kullaniciId, adim2Ref,
 }: Props) {
   const [adim, setAdim] = useState<1 | 2>(1);
   const [profiller, setProfiller] = useState<KayitliProfil[]>([]);
   const [profilYukleniyor, setProfilYukleniyor] = useState(false);
   const [profillerAcik, setProfillerAcik] = useState(false);
-  const [afisSaydediliyor, setAfisSaydediliyor] = useState(false);
-  const [mesaj, setMesaj] = useState<{ tip: "ok" | "hata"; metin: string } | null>(null);
   const [baslikAcik, setBaslikAcik] = useState(false);
 
   useEffect(() => {
@@ -378,23 +375,6 @@ export default function FormAlani({
     const yeni = [...form.gorseller];
     [yeni[idx], yeni[idx + 1]] = [yeni[idx + 1], yeni[idx]];
     setForm({ ...form, gorseller: yeni });
-  };
-
-  const afisKaydet = async () => {
-    const baslik = form.kurumAdi || form.isim
-      ? `${[form.isim, form.kurumAdi].filter(Boolean).join(" - ")}`
-      : "Afiş";
-    setAfisSaydediliyor(true);
-    try {
-      await api.afisKaydet(baslik, seciliSablon, form);
-      setMesaj({ tip: "ok", metin: "✓ Afiş kaydedildi!" });
-      onAfisKaydet?.();
-    } catch {
-      setMesaj({ tip: "hata", metin: "Kayıt başarısız. Tekrar deneyin." });
-    } finally {
-      setAfisSaydediliyor(false);
-      setTimeout(() => setMesaj(null), 3000);
-    }
   };
 
   const basliklar = baslikAlternatifleri(form);
@@ -768,43 +748,11 @@ export default function FormAlani({
           rows={5} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.7, fontFamily: "inherit" }} />
       </div>
 
-      {/* Alt Butonlar */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => setAdim(1)}
-          style={{ padding: "12px 16px", borderRadius: 12, fontSize: 13, fontWeight: 700, border: "1.5px solid #cbd5e1", background: "#fff", color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-          <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
-          Geri
-        </button>
-
-        {kullaniciId && (
-          <div style={{ flex: 1 }}>
-            {mesaj && (
-              <div style={{ padding: "8px 12px", borderRadius: 10, marginBottom: 8, background: mesaj.tip === "ok" ? "#dcfce7" : "#fee2e2", color: mesaj.tip === "ok" ? "#166534" : "#991b1b", fontSize: 13, fontWeight: 600 }}>
-                {mesaj.metin}
-              </div>
-            )}
-            <button onClick={afisKaydet} disabled={afisSaydediliyor}
-              style={{
-                width: "100%", padding: "13px", borderRadius: 12, fontSize: 14, fontWeight: 700, border: "none",
-                background: afisSaydediliyor ? "#94a3b8" : "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)",
-                color: "#fff", cursor: afisSaydediliyor ? "default" : "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-              }}>
-              {afisSaydediliyor ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.8s linear infinite", display: "inline-block" }} />
-                  Kaydediliyor...
-                </span>
-              ) : (
-                <>
-                  <svg width={15} height={15} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                  Bu Afişi Kaydet
-                </>
-              )}
-            </button>
-          </div>
-        )}
-      </div>
+      <button onClick={() => setAdim(1)}
+        style={{ width: "100%", padding: "12px 16px", borderRadius: 12, fontSize: 13, fontWeight: 700, border: "1.5px solid #cbd5e1", background: "#fff", color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+        Geri
+      </button>
     </div>
   );
 

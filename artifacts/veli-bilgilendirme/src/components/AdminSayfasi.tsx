@@ -3,12 +3,27 @@ import { api, type DestekMesaji, type AdminStats } from "../lib/api";
 
 type Sekme = "genel" | "mesajlar" | "kullanicilar";
 
-function StatKart({ baslik, deger, renk, simge }: { baslik: string; deger: number; renk: string; simge: string }) {
+function StatKart({
+  baslik,
+  deger,
+  renk,
+  simge,
+  altMetin,
+}: {
+  baslik: string;
+  deger: number | string;
+  renk: string;
+  simge: string;
+  altMetin?: string;
+}) {
   return (
     <div style={{ background: "#fff", borderRadius: 14, padding: "16px 18px", border: "1.5px solid #e2e8f0", flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 22, marginBottom: 4 }}>{simge}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: renk, lineHeight: 1 }}>{deger}</div>
       <div style={{ fontSize: 12, color: "#64748b", marginTop: 4, fontWeight: 600 }}>{baslik}</div>
+      {altMetin && (
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4, fontWeight: 600, lineHeight: 1.3 }}>{altMetin}</div>
+      )}
     </div>
   );
 }
@@ -172,7 +187,7 @@ export default function AdminSayfasi() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", gap: 10 }}>
               <StatKart baslik="Toplam Kullanıcı" deger={stats.totalUsers} renk="#2563eb" simge="👤" />
-              <StatKart baslik="Toplam Afiş" deger={stats.totalPosters} renk="#16a34a" simge="📋" />
+              <StatKart baslik="Toplam Afiş" deger={0} altMetin="Afiş kaydı devre dışı" renk="#16a34a" simge="📋" />
               <StatKart baslik="Destek Talebi" deger={stats.totalSupport} renk="#f59e0b" simge="💬" />
             </div>
 

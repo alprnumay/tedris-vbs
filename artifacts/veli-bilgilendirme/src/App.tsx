@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Toaster, toast } from "sonner";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
-import { api, type KullaniciBilgisi, type KayitliAfis } from "./lib/api";
-import { SABLON_GORSEL_LIMITLERI, SABLON_LISTESI } from "./lib/sablonlar";
+import { api, type KullaniciBilgisi } from "./lib/api";
+import { SABLON_GORSEL_LIMITLERI } from "./lib/sablonlar";
 import FormAlani from "./components/FormAlani";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
@@ -18,6 +19,8 @@ import SablonKartliBilgi from "./components/sablonlar/SablonKartliBilgi";
 import SablonKurumsalResmi from "./components/sablonlar/SablonKurumsalResmi";
 import SablonHikaye from "./components/sablonlar/SablonHikaye";
 import SablonFotografOdakli from "./components/sablonlar/SablonFotografOdakli";
+import { CategoryHome } from "./components/ana-giris/CategoryHome";
+import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
 
 const POSTER_W = 520;
 const TEMALI_SABLONLAR: SablonTuru[] = ["lacivert", "mor", "kirmizi", "turuncu", "pembe", "teal", "altin"];
@@ -70,270 +73,16 @@ function OnizlemeIcerik({ form, sablon }: { form: FormData; sablon: SablonTuru }
   return <SablonAkademik form={f} tarih={tarih} />;
 }
 
-function AfislerPaneli({
-  afisler,
-  yukleniyor,
-  onKapat,
-  onYukle,
-  onSil,
-}: {
-  afisler: KayitliAfis[];
-  yukleniyor: boolean;
-  onKapat: () => void;
-  onYukle: (a: KayitliAfis) => void;
-  onSil: (id: number) => void;
-}) {
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 999, display: "flex" }}>
-      <div onClick={onKapat} style={{ flex: 1, background: "rgba(0,0,0,0.45)" }} />
-      <div
-        style={{
-          width: 360,
-          background: "#fff",
-          height: "100%",
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          boxShadow: "-8px 0 40px rgba(0,0,0,0.18)",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 20px 14px",
-            borderBottom: "1px solid #e2e8f0",
-            background: "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <h2 style={{ fontSize: 15, fontWeight: 800, color: "#fff", margin: 0 }}>Kayıtlı Afişlerim</h2>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", margin: "3px 0 0" }}>
-              {afisler.length > 0 ? `${afisler.length} afiş kayıtlı` : "Afiş yükleme alanı"}
-            </p>
-          </div>
-          <button
-            onClick={onKapat}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              cursor: "pointer",
-              fontSize: 20,
-              color: "#fff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
-          {yukleniyor && (
-            <div style={{ textAlign: "center", padding: "48px 0" }}>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  border: "3px solid #e2e8f0",
-                  borderTopColor: "#1e3a5f",
-                  borderRadius: "50%",
-                  animation: "spin 0.8s linear infinite",
-                  margin: "0 auto 12px",
-                }}
-              />
-              <p style={{ color: "#94a3b8", fontSize: 13 }}>Yükleniyor...</p>
-            </div>
-          )}
-
-          {!yukleniyor && afisler.length === 0 && (
-            <div style={{ textAlign: "center", padding: "48px 16px" }}>
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 16,
-                  background: "#f1f5f9",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  margin: "0 auto 14px",
-                }}
-              >
-                <svg width={28} height={28} fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
-                  />
-                </svg>
-              </div>
-              <p style={{ fontSize: 14, color: "#334155", fontWeight: 700 }}>Henüz kayıtlı afiş yok</p>
-              <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 6, lineHeight: 1.5 }}>
-                Formu doldurup "Bu Afişi Kaydet" butonunu kullanın
-              </p>
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {afisler.map((a) => {
-              const tarihStr = new Date(a.createdAt).toLocaleDateString("tr-TR", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              });
-              const sablonMeta = SABLON_LISTESI.find((s) => s.id === a.sablon);
-
-              let kurumAdi = "";
-              try {
-                const fd = JSON.parse(a.formData);
-                kurumAdi = fd.kurumAdi || "";
-              } catch {}
-
-              return (
-                <div
-                  key={a.id}
-                  style={{
-                    borderRadius: 14,
-                    border: "1.5px solid #e2e8f0",
-                    overflow: "hidden",
-                    background: "#fff",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-                  }}
-                >
-                  <div style={{ height: 5, background: sablonMeta?.chipRenk || "#1e3a5f" }} />
-                  <div style={{ padding: "12px 14px" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: 8,
-                        marginBottom: 6,
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <p
-                          style={{
-                            fontWeight: 800,
-                            fontSize: 13,
-                            color: "#0f172a",
-                            margin: 0,
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          {a.title}
-                        </p>
-                        {kurumAdi && kurumAdi !== a.title && (
-                          <p style={{ fontSize: 11, color: "#64748b", margin: "2px 0 0" }}>{kurumAdi}</p>
-                        )}
-                      </div>
-                      <span style={{ fontSize: 10, color: "#94a3b8", flexShrink: 0, marginTop: 2 }}>
-                        {tarihStr}
-                      </span>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 5, marginBottom: 10 }}>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "2px 7px",
-                          borderRadius: 6,
-                          background: `${sablonMeta?.chipRenk || "#1e3a5f"}15`,
-                          color: sablonMeta?.chipRenk || "#1e3a5f",
-                        }}
-                      >
-                        {sablonMeta?.ad || a.sablon}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          padding: "2px 7px",
-                          borderRadius: 6,
-                          background: "#f1f5f9",
-                          color: "#64748b",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {sablonMeta?.etiket || "Şablon"}
-                      </span>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        onClick={() => onYukle(a)}
-                        style={{
-                          flex: 1,
-                          padding: "8px",
-                          borderRadius: 10,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          border: "none",
-                          background: "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)",
-                          color: "#fff",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 5,
-                        }}
-                      >
-                        <svg width={12} height={12} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2.5}
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                          />
-                        </svg>
-                        Yükle
-                      </button>
-
-                      <button
-                        onClick={() => onSil(a.id)}
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: 10,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          border: "1.5px solid #fee2e2",
-                          background: "#fff",
-                          color: "#dc2626",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Sil
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
+  /** Giriş sonrası: kategori seçimi, Veli Bilgilendirme üretimi veya Deneme sınavı modülü. */
+  const [homeModu, setHomeModu] = useState<"kategoriler" | "veli" | "deneme">("kategoriler");
   const [form, setForm] = useState<FormData>(baslangicForm);
   const [seciliSablon, setSeciliSablon] = useState<SablonTuru>("akademik");
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
   const [indiriliyor, setIndiriliyor] = useState(false);
   const [pdfYukleniyor, setPdfYukleniyor] = useState(false);
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
-  const [afislerAcik, setAfislerAcik] = useState(false);
-  const [afisler, setAfisler] = useState<KayitliAfis[]>([]);
-  const [afislerYukleniyor, setAfislerYukleniyor] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
 
   const downloadRef = useRef<HTMLDivElement>(null);
@@ -376,39 +125,6 @@ function MainApp() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.faaliyetSayisi, form.ekNot, form.metinUzunlugu, metinDuzenlendi, JSON.stringify(form.faaliyetler)]);
-
-  const afisleriYukle = useCallback(async () => {
-    setAfislerYukleniyor(true);
-    try {
-      const r = await api.afisleriGetir();
-      setAfisler(r.posters);
-    } catch {
-    } finally {
-      setAfislerYukleniyor(false);
-    }
-  }, []);
-
-  const afislerAc = useCallback(async () => {
-    setAfislerAcik(true);
-    afisleriYukle();
-  }, [afisleriYukle]);
-
-  const afisYukle = useCallback((a: KayitliAfis) => {
-    try {
-      const fd = JSON.parse(a.formData) as FormData;
-      setForm(fd);
-      setSeciliSablon(a.sablon as SablonTuru);
-      setMetinDuzenlendi(true);
-      setAfislerAcik(false);
-    } catch {}
-  }, []);
-
-  const afisSil = useCallback(async (id: number) => {
-    try {
-      await api.afisSil(id);
-      setAfisler((p) => p.filter((a) => a.id !== id));
-    } catch {}
-  }, []);
 
   const posterPngYakala = async (): Promise<string | null> => {
     await new Promise<void>((resolve) => {
@@ -516,6 +232,7 @@ function MainApp() {
     setForm(baslangicForm);
     setMetinDuzenlendi(false);
     setAktifSekme("form");
+    setHomeModu("kategoriler");
   }, []);
 
   if (kullanici === undefined) {
@@ -548,7 +265,59 @@ function MainApp() {
     );
   }
 
-  if (kullanici === null) return <GirisEkrani onGiris={(k) => setKullanici(k)} />;
+  if (kullanici === null) {
+    return (
+      <GirisEkrani
+        onGiris={(k) => {
+          setKullanici(k);
+          setHomeModu("kategoriler");
+        }}
+      />
+    );
+  }
+
+  if (homeModu === "kategoriler") {
+    return (
+      <>
+        <Toaster position="top-center" richColors />
+        <CategoryHome
+          kullaniciAdi={kullanici.name}
+          isAdmin={Boolean(kullanici.isAdmin)}
+          onVeliBilgilendirme={() => setHomeModu("veli")}
+          onDenemeSinavi={() => setHomeModu("deneme")}
+          onYakinda={(modulAdi) => {
+            toast.info(`${modulAdi} modülü hazırlanıyor.`);
+          }}
+          onDestek={() => setDestekAcik(true)}
+          onYonetim={() => {
+            setHomeModu("veli");
+            setAktifSekme("yonetim");
+          }}
+          onCikis={cikisYap}
+        />
+        {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
+      </>
+    );
+  }
+
+  if (homeModu === "deneme" && kullanici) {
+    return (
+      <>
+        <Toaster position="top-center" richColors />
+        <DenemeSinaviModulu
+          kullanici={kullanici}
+          onAnaSayfa={() => setHomeModu("kategoriler")}
+          onDestek={() => setDestekAcik(true)}
+          onYonetim={() => {
+            setHomeModu("veli");
+            setAktifSekme("yonetim");
+          }}
+          onCikis={cikisYap}
+        />
+        {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
+      </>
+    );
+  }
 
   const PaylasBtnlari = () => (
     <div style={{ display: "flex", gap: 8 }}>
@@ -670,6 +439,7 @@ function MainApp() {
   return (
     <div className="flex flex-col" style={{ height: "100dvh", background: "#f1f5f9" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <Toaster position="top-center" richColors />
 
       <header
         className="flex-shrink-0 flex items-center justify-between px-4"
@@ -681,6 +451,21 @@ function MainApp() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => {
+              setHomeModu("kategoriler");
+              setAktifSekme("form");
+            }}
+            className="flex shrink-0 items-center gap-1 rounded-xl border border-white/25 bg-white/10 px-2.5 py-2 text-[11px] font-bold text-white/95 transition hover:bg-white/20 sm:gap-1.5 sm:px-3 sm:text-xs"
+            title="Kategori seçim ekranına dön"
+          >
+            <svg className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <span className="hidden min-[380px]:inline">Ana sayfaya dön</span>
+            <span className="min-[380px]:hidden">Ana</span>
+          </button>
           <div
             style={{
               width: 38,
@@ -751,27 +536,6 @@ function MainApp() {
             </svg>
           </button>
 
-          <button
-            onClick={afislerAc}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.2)",
-              cursor: "pointer",
-            }}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
-              />
-            </svg>
-            Afişlerim
-          </button>
-
           {kullanici?.isAdmin && (
             <button
               onClick={() => setAktifSekme("yonetim")}
@@ -830,7 +594,6 @@ function MainApp() {
               onMetinYenile={yeniMetinUret}
               setMetinDuzenlendi={setMetinDuzenlendi}
               kullaniciId={kullanici.id}
-              onAfisKaydet={afisleriYukle}
               adim2Ref={adim2Ref}
             />
           </div>
@@ -873,7 +636,6 @@ function MainApp() {
                 onMetinYenile={yeniMetinUret}
                 setMetinDuzenlendi={setMetinDuzenlendi}
                 kullaniciId={kullanici.id}
-                onAfisKaydet={afisleriYukle}
                 adim2Ref={adim2Ref}
               />
             </div>
@@ -955,22 +717,6 @@ function MainApp() {
           </button>
         ))}
 
-        <button
-          onClick={afislerAc}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
-          style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
-            />
-          </svg>
-          <span className="text-xs font-semibold">Afişlerim</span>
-        </button>
-
         {kullanici?.isAdmin && (
           <button
             onClick={() => setAktifSekme("yonetim")}
@@ -1010,16 +756,6 @@ function MainApp() {
           <span className="text-xs font-semibold">Destek</span>
         </button>
       </nav>
-
-      {afislerAcik && (
-        <AfislerPaneli
-          afisler={afisler}
-          yukleniyor={afislerYukleniyor}
-          onKapat={() => setAfislerAcik(false)}
-          onYukle={afisYukle}
-          onSil={afisSil}
-        />
-      )}
 
       {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
     </div>

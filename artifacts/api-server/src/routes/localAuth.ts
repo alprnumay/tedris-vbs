@@ -9,18 +9,13 @@ import {
   SESSION_COOKIE,
   SESSION_TTL,
 } from "../lib/auth";
+import { sessionCookieOptions } from "../lib/sessionCookie";
 
 const router: IRouter = Router();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
 function setSessionCookie(res: Response, sid: string) {
-  res.cookie(SESSION_COOKIE, sid, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    path: "/",
-    maxAge: SESSION_TTL,
-  });
+  res.cookie(SESSION_COOKIE, sid, sessionCookieOptions(SESSION_TTL));
 }
 
 router.post("/auth/register", async (req: Request, res: Response) => {
@@ -225,11 +220,15 @@ router.delete("/profiles/:id", async (req: Request, res: Response) => {
     return;
   }
 
+  const profileId = (
+    Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  ) as string;
+
   await db
     .delete(savedProfilesTable)
     .where(
       and(
-        eq(savedProfilesTable.id, req.params.id),
+        eq(savedProfilesTable.id, profileId),
         eq(savedProfilesTable.userId, userId),
       ),
     );

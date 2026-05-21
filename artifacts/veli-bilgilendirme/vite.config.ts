@@ -10,6 +10,8 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  /** Windows’ta `node_modules/.vite` silinirken EPERM (kilit) hatalarını azaltmak için önbellek proje içi ayrı dizinde. */
+  cacheDir: path.resolve(import.meta.dirname, ".vite-cache"),
   plugins: [
     react(),
     tailwindcss(),
