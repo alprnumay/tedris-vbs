@@ -4,6 +4,7 @@ import {
   Briefcase,
   CalendarDays,
   GraduationCap,
+  Palette,
   Megaphone,
   Menu,
   Share2,
@@ -20,6 +21,7 @@ export interface CategoryHomeProps {
   isAdmin: boolean;
   onVeliBilgilendirme: () => void;
   onDenemeSinavi: () => void;
+  onKurumsalKimlik: () => void;
   onYakinda: (modulAdi: string) => void;
   onDestek: () => void;
   onYonetim: () => void;
@@ -38,6 +40,7 @@ export function CategoryHome({
   isAdmin,
   onVeliBilgilendirme,
   onDenemeSinavi,
+  onKurumsalKimlik,
   onYakinda,
   onDestek,
   onYonetim,
@@ -258,6 +261,13 @@ export function CategoryHome({
             durum="yeni"
             ikon={GraduationCap}
             onEylem={onDenemeSinavi}
+          />
+          <CategoryCard
+            baslik="Logo / Kurumsal Kimlik"
+            aciklama="Yurt, program ve etkinlikler için özgün logo aileleri oluşturun."
+            durum="yeni"
+            ikon={Palette}
+            onEylem={onKurumsalKimlik}
           />
           <CategoryCard
             baslik="Duyuru"

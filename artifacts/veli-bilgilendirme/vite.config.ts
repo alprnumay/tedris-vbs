@@ -36,6 +36,16 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    /** Yerel frontend → Railway API: tarayıcıda CORS yok, istek aynı origin `/api`. */
+    proxy: {
+      "/api": {
+        target:
+          process.env.VITE_API_PROXY_TARGET ||
+          "https://workspaceapi-server-production-c211.up.railway.app",
+        changeOrigin: true,
+        secure: true,
+      },
+    },
   },
   preview: {
     port,

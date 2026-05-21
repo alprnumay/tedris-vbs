@@ -1,6 +1,9 @@
+const PROD_API_BASE = "https://workspaceapi-server-production-c211.up.railway.app/api";
+
+/** Geliştirmede Vite proxy (`/api` → Railway); canlıda tam URL. */
 const BASE =
   import.meta.env.VITE_API_BASE_URL ||
-  "https://workspaceapi-server-production-c211.up.railway.app/api";
+  (import.meta.env.DEV ? "/api" : PROD_API_BASE);
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 

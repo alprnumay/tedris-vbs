@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Toaster, toast } from "sonner";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -21,6 +21,12 @@ import SablonHikaye from "./components/sablonlar/SablonHikaye";
 import SablonFotografOdakli from "./components/sablonlar/SablonFotografOdakli";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
+
+const KurumsalKimlikModulu = lazy(() =>
+  import("./components/kurumsal-kimlik/KurumsalKimlikModulu").then((m) => ({
+    default: m.KurumsalKimlikModulu,
+  })),
+);
 
 const POSTER_W = 520;
 const TEMALI_SABLONLAR: SablonTuru[] = ["lacivert", "mor", "kirmizi", "turuncu", "pembe", "teal", "altin"];
@@ -76,7 +82,7 @@ function OnizlemeIcerik({ form, sablon }: { form: FormData; sablon: SablonTuru }
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
   /** Giriş sonrası: kategori seçimi, Veli Bilgilendirme üretimi veya Deneme sınavı modülü. */
-  const [homeModu, setHomeModu] = useState<"kategoriler" | "veli" | "deneme">("kategoriler");
+  const [homeModu, setHomeModu] = useState<"kategoriler" | "veli" | "deneme" | "logo">("kategoriler");
   const [form, setForm] = useState<FormData>(baslangicForm);
   const [seciliSablon, setSeciliSablon] = useState<SablonTuru>("akademik");
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
@@ -285,6 +291,7 @@ function MainApp() {
           isAdmin={Boolean(kullanici.isAdmin)}
           onVeliBilgilendirme={() => setHomeModu("veli")}
           onDenemeSinavi={() => setHomeModu("deneme")}
+          onKurumsalKimlik={() => setHomeModu("logo")}
           onYakinda={(modulAdi) => {
             toast.info(`${modulAdi} modülü hazırlanıyor.`);
           }}
@@ -295,6 +302,29 @@ function MainApp() {
           }}
           onCikis={cikisYap}
         />
+        {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
+      </>
+    );
+  }
+
+  if (homeModu === "logo" && kullanici) {
+    return (
+      <>
+        <Toaster position="top-center" richColors />
+        <Suspense
+          fallback={
+            <div className="flex min-h-dvh items-center justify-center bg-slate-100 text-sm font-semibold text-slate-600">
+              Logo modülü yükleniyor…
+            </div>
+          }
+        >
+          <KurumsalKimlikModulu
+            kullanici={kullanici}
+            onAnaSayfa={() => setHomeModu("kategoriler")}
+            onDestek={() => setDestekAcik(true)}
+            onCikis={cikisYap}
+          />
+        </Suspense>
         {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
       </>
     );

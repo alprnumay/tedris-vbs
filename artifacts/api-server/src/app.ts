@@ -80,6 +80,16 @@ app.use((_req: Request, res: Response) => {
 });
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const e = err as { status?: number; statusCode?: number; message?: string };
+  const status = e?.status ?? e?.statusCode;
+
+  if (status && status >= 400 && status < 500) {
+    res.status(status).json({
+      error: e?.message || "İstek hatası",
+    });
+    return;
+  }
+
   logger.error({ err }, "Beklenmeyen sunucu hatası");
 
   res.status(500).json({

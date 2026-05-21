@@ -32,6 +32,7 @@ export default function GirisEkrani({ onGiris }: Props) {
       } else {
         if (!adSoyad.trim()) {
           setHata("Ad soyad boş olamaz.");
+          setYukleniyor(false);
           return;
         }
         const r = await api.kayitOl(email, sifre, adSoyad.trim());

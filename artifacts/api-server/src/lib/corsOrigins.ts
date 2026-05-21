@@ -1,7 +1,11 @@
 import cors from "cors";
-import { isDevelopmentEnv } from "./sessionCookie";
 
-const LOCAL_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
+const LOCAL_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+];
 
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
@@ -30,7 +34,8 @@ export function corsMiddleware() {
         callback(null, true);
         return;
       }
-      if (isDevelopmentEnv() && LOCALHOST_ORIGIN_RE.test(origin)) {
+      /** Yerel Vite (3000, 3001, 5173 …) — canlı API’ye karşı `pnpm dev` için. */
+      if (LOCALHOST_ORIGIN_RE.test(origin)) {
         callback(null, true);
         return;
       }
