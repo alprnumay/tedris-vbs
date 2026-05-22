@@ -7,6 +7,7 @@ import { aciklamaolustur } from "./lib/dil";
 import { api, type KullaniciBilgisi } from "./lib/api";
 import { SABLON_GORSEL_LIMITLERI } from "./lib/sablonlar";
 import FormAlani from "./components/FormAlani";
+import { VeliYanPanel } from "./components/veli/VeliYanPanel";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
@@ -21,6 +22,7 @@ import SablonHikaye from "./components/sablonlar/SablonHikaye";
 import SablonFotografOdakli from "./components/sablonlar/SablonFotografOdakli";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
+import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
 
 const KurumsalKimlikModulu = lazy(() =>
   import("./components/kurumsal-kimlik/KurumsalKimlikModulu").then((m) => ({
@@ -82,7 +84,7 @@ function OnizlemeIcerik({ form, sablon }: { form: FormData; sablon: SablonTuru }
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
   /** Giriş sonrası: kategori seçimi, Veli Bilgilendirme üretimi veya Deneme sınavı modülü. */
-  const [homeModu, setHomeModu] = useState<"kategoriler" | "veli" | "deneme" | "logo">("kategoriler");
+  const [homeModu, setHomeModu] = useState<"kategoriler" | "veli" | "deneme" | "logo" | "yatili">("kategoriler");
   const [form, setForm] = useState<FormData>(baslangicForm);
   const [seciliSablon, setSeciliSablon] = useState<SablonTuru>("akademik");
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
@@ -98,9 +100,19 @@ function MainApp() {
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
 
+  const logoGelistirmeAcik =
+    import.meta.env.DEV ||
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("modul") === "logo");
+
   useEffect(() => {
     api.me().then((r) => setKullanici(r.user)).catch(() => setKullanici(null));
   }, []);
+
+  useEffect(() => {
+    if (logoGelistirmeAcik && kullanici && new URLSearchParams(window.location.search).get("modul") === "logo") {
+      setHomeModu("logo");
+    }
+  }, [kullanici, logoGelistirmeAcik]);
 
   useEffect(() => {
     function hesapla() {
@@ -290,8 +302,6 @@ function MainApp() {
           kullaniciAdi={kullanici.name}
           isAdmin={Boolean(kullanici.isAdmin)}
           onVeliBilgilendirme={() => setHomeModu("veli")}
-          onDenemeSinavi={() => setHomeModu("deneme")}
-          onKurumsalKimlik={() => setHomeModu("logo")}
           onYakinda={(modulAdi) => {
             toast.info(`${modulAdi} modülü hazırlanıyor.`);
           }}
@@ -300,6 +310,21 @@ function MainApp() {
             setHomeModu("veli");
             setAktifSekme("yonetim");
           }}
+          onCikis={cikisYap}
+        />
+        {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
+      </>
+    );
+  }
+
+  if (homeModu === "yatili" && kullanici) {
+    return (
+      <>
+        <Toaster position="top-center" richColors />
+        <KolayAfisModulu
+          kullanici={kullanici}
+          onAnaSayfa={() => setHomeModu("kategoriler")}
+          onDestek={() => setDestekAcik(true)}
           onCikis={cikisYap}
         />
         {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
@@ -636,15 +661,19 @@ function MainApp() {
             </div>
           ) : (
             <div className="w-full max-w-lg">
-              <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: "#64748b" }}>
-                Canlı Önizleme
+              <h2 className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "#64748b" }}>
+                5. Önizleme ve İndirme
               </h2>
+              <p className="text-[11px] mb-4" style={{ color: "#94a3b8" }}>
+                Afişi kontrol edin; PNG / PDF indirin veya WhatsApp ile paylaşın.
+              </p>
               <div
                 className="rounded-2xl overflow-hidden mb-4"
                 style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
               >
                 <OnizlemeIcerik form={form} sablon={seciliSablon} />
               </div>
+              <VeliYanPanel form={form} seciliSablon={seciliSablon} onSablonOner={setSeciliSablon} />
               <PaylasBtnlari />
               <p className="text-center text-xs mt-3" style={{ color: "#94a3b8" }}>
                 Formu doldurun — afiş otomatik güncellenir
@@ -682,6 +711,7 @@ function MainApp() {
                   </div>
                 </div>
               </div>
+              <VeliYanPanel form={form} seciliSablon={seciliSablon} onSablonOner={setSeciliSablon} />
               <PaylasBtnlari />
               <p className="text-center text-xs" style={{ color: "#94a3b8" }}>
                 iPhone: görsel yeni sekmede açılır → basılı tutarak "Görseli Kaydet"

@@ -6,6 +6,12 @@ const turMap: Record<string, string> = {
   Gezi: "gezi etkinliği",
   Etkinlik: "sınıf etkinliği",
   Rehberlik: "rehberlik görüşmesi",
+  "Kur'an-ı Kerim": "Kur'an-ı Kerim çalışması",
+  "Kitap Okuma": "kitap okuma çalışması",
+  "Sosyal Etkinlik": "sosyal etkinlik",
+  "Değerler Eğitimi": "değerler eğitimi",
+  "Deneme Sınavı": "deneme sınavı",
+  "Genel Bilgilendirme": "bilgilendirme çalışması",
 };
 
 const turBaslikMap: Record<string, string> = {
@@ -14,6 +20,12 @@ const turBaslikMap: Record<string, string> = {
   Gezi: "Gezi Etkinliği",
   Etkinlik: "Sınıf Etkinliği",
   Rehberlik: "Rehberlik Görüşmesi",
+  "Kur'an-ı Kerim": "Kur'an-ı Kerim",
+  "Kitap Okuma": "Kitap Okuma",
+  "Sosyal Etkinlik": "Sosyal Etkinlik",
+  "Değerler Eğitimi": "Değerler Eğitimi",
+  "Deneme Sınavı": "Deneme Sınavı",
+  "Genel Bilgilendirme": "Genel Bilgilendirme",
 };
 
 export const KAPANIS_CUMLELERI = [

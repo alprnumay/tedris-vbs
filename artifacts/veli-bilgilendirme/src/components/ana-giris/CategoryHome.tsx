@@ -1,14 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Bell,
-  Briefcase,
-  CalendarDays,
-  GraduationCap,
-  Palette,
-  Megaphone,
+  Moon,
   Menu,
   Share2,
-  Sparkles,
   Users,
   MessageCircle,
   LayoutTemplate,
@@ -20,8 +14,6 @@ export interface CategoryHomeProps {
   kullaniciAdi: string;
   isAdmin: boolean;
   onVeliBilgilendirme: () => void;
-  onDenemeSinavi: () => void;
-  onKurumsalKimlik: () => void;
   onYakinda: (modulAdi: string) => void;
   onDestek: () => void;
   onYonetim: () => void;
@@ -39,8 +31,6 @@ export function CategoryHome({
   kullaniciAdi,
   isAdmin,
   onVeliBilgilendirme,
-  onDenemeSinavi,
-  onKurumsalKimlik,
   onYakinda,
   onDestek,
   onYonetim,
@@ -210,8 +200,7 @@ export function CategoryHome({
                 Veli bilgilendirmesi ve kurumsal afişlerini birkaç adımda profesyonelleştir.
               </p>
               <p className="mx-auto mt-6 hidden max-w-3xl text-pretty text-lg font-medium leading-relaxed text-slate-600 md:block md:text-xl">
-                Veli bilgilendirme, deneme duyurusu, etkinlik afişi ve kurumsal paylaşımlarını birkaç adımda profesyonel
-                görünüme kavuştur.
+                Veli bilgilendirme afişlerinizi hemen hazırlayın. Yatılı alıştırma modülü yakında açılacak.
               </p>
               <p className="mx-auto mt-3 hidden max-w-2xl text-pretty text-base leading-relaxed text-slate-500 md:mt-4 md:block md:text-lg">
                 Kurum duyurularını, veli bilgilendirmelerini ve afişlerini hızlıca oluştur. Metni gir, şablonu seç,
@@ -246,56 +235,21 @@ export function CategoryHome({
           </div>
         </div>
 
-        <div className="mx-auto mt-6 grid min-w-0 max-w-7xl grid-cols-2 gap-2 max-md:[&>:first-child]:col-span-2 md:mt-16 md:grid-cols-2 md:gap-7 lg:mt-20 lg:grid-cols-3 lg:gap-8">
+        <div className="mx-auto mt-6 grid min-w-0 max-w-3xl grid-cols-1 gap-3 md:mt-16 md:grid-cols-2 md:gap-6 lg:mt-20">
           <CategoryCard
             baslik="Veli Bilgilendirme"
-            aciklama="Günlük faaliyetleri, dersleri ve öğrenci gelişimini velilere profesyonel görselle aktar."
+            aciklama="Bugünkü çalışmayı yazın; sistem veliye uygun afiş ve paylaşım metni hazırlasın. Hızlı üretim · Fotoğraflı afiş · PDF/PNG · WhatsApp."
             durum="aktif"
             ikon={Users}
             vurgulu
             onEylem={onVeliBilgilendirme}
           />
           <CategoryCard
-            baslik="Deneme Sınavı"
-            aciklama="Ödüllü deneme, sınav duyurusu ve katılım afişlerini hızlıca hazırla."
-            durum="yeni"
-            ikon={GraduationCap}
-            onEylem={onDenemeSinavi}
-          />
-          <CategoryCard
-            baslik="Logo / Kurumsal Kimlik"
-            aciklama="Yurt, program ve etkinlikler için özgün logo aileleri oluşturun."
-            durum="yeni"
-            ikon={Palette}
-            onEylem={onKurumsalKimlik}
-          />
-          <CategoryCard
-            baslik="Duyuru"
-            aciklama="Kurum içi bilgilendirme, toplantı ve genel duyurular için sade afişler oluştur."
+            baslik="Yatılı Alıştırma"
+            aciklama="Yurt ve etüt çalışmaları için afiş ve bilgilendirme modülü hazırlanıyor."
             durum="yakinda"
-            ikon={Bell}
-            onEylem={() => onYakinda("Duyuru")}
-          />
-          <CategoryCard
-            baslik="İş İlanı"
-            aciklama="Personel, öğretmen, yardımcı ekip ve kurum ilanlarını kurumsal görselle paylaş."
-            durum="yakinda"
-            ikon={Briefcase}
-            onEylem={() => onYakinda("İş İlanı")}
-          />
-          <CategoryCard
-            baslik="Reklam / Kampanya"
-            aciklama="Kurs, kayıt dönemi, ürün veya hizmet tanıtımlarını dikkat çekici hale getir."
-            durum="yakinda"
-            ikon={Megaphone}
-            onEylem={() => onYakinda("Reklam / Kampanya")}
-          />
-          <CategoryCard
-            baslik="Etkinlik"
-            aciklama="Seminer, gezi, kermes, program ve özel gün etkinliklerini afişe dönüştür."
-            durum="yakinda"
-            ikon={CalendarDays}
-            onEylem={() => onYakinda("Etkinlik")}
+            ikon={Moon}
+            onEylem={() => onYakinda("Yatılı Alıştırma")}
           />
         </div>
 
@@ -311,7 +265,7 @@ export function CategoryHome({
               <h2 className="text-lg font-bold tracking-tight text-slate-900 md:text-2xl">3 adımda profesyonel çıktı</h2>
               <p className="mt-1 text-xs font-medium text-slate-500 md:mt-2 md:text-sm">Türünü seç → bilgileri doldur → paylaş.</p>
             </div>
-            <Sparkles className="h-7 w-7 shrink-0 text-indigo-500 drop-shadow-sm md:h-9 md:w-9" strokeWidth={1.5} />
+            <LayoutTemplate className="h-7 w-7 shrink-0 text-indigo-500 drop-shadow-sm md:h-9 md:w-9" strokeWidth={1.5} />
           </div>
           <ol className="relative mt-5 grid min-w-0 gap-3 md:mt-10 md:grid-cols-3 md:gap-6">
             {[

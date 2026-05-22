@@ -3,6 +3,15 @@ import { FormData, SablonTuru, Faaliyet } from "../types";
 import { api, type KayitliProfil } from "../lib/api";
 import { baslikAlternatifleri } from "../lib/dil";
 import { SABLON_LISTESI, SABLON_GORSEL_LIMITLERI, TEMALI_LAYOUT } from "../lib/sablonlar";
+import {
+  ALAN_YARDIM,
+  BOLUM_YARDIM,
+  FAALIYET_TURLERI,
+  GORSEL_YERLESIM,
+  METIN_TON_ACIKLAMA,
+  METIN_UZUNLUK_ACIKLAMA,
+  hizliOrnekForm,
+} from "../lib/veli/veliFormYardimMetinleri";
 
 interface Props {
   form: FormData;
@@ -14,8 +23,6 @@ interface Props {
   kullaniciId?: string;
   adim2Ref?: React.MutableRefObject<(() => void) | undefined>;
 }
-
-const FAALIYETLER = ["Ders", "Etüt", "Gezi", "Etkinlik", "Rehberlik"];
 
 function dosyayaBase64Cevir(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -47,6 +54,18 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function SectionDivider() {
   return <div style={{ height: 1, background: "#e2e8f0", margin: "4px 0" }} />;
+}
+
+function SectionHelp({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{ fontSize: 11, color: "#64748b", lineHeight: 1.45, margin: "0 0 10px", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>
+      {children}
+    </p>
+  );
+}
+
+function FieldHint({ aciklama }: { aciklama: string }) {
+  return <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0", lineHeight: 1.35 }}>{aciklama}</p>;
 }
 
 /* ─── Mini SVG Thumbnail per Template ─── */
@@ -385,11 +404,34 @@ export default function FormAlani({
   const adim1 = (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* Rehber Banner */}
+      <button
+        type="button"
+        onClick={() => {
+          setMetinDuzenlendi(false);
+          setForm(hizliOrnekForm());
+          onMetinYenile();
+        }}
+        style={{
+          width: "100%",
+          padding: "12px",
+          borderRadius: 12,
+          border: "1.5px solid #fbbf24",
+          background: "#fffbeb",
+          color: "#92400e",
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: "pointer",
+        }}
+      >
+        ⚡ Hızlı örnek doldur
+      </button>
+
       <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f0f4ff 100%)", border: "1px solid #c7d2fe", borderRadius: 14, padding: "14px 16px" }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#1e40af", margin: "0 0 8px" }}>3 adımda veli bilgilendirme afişi oluştur:</p>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#1e40af", margin: "0 0 8px" }}>
+          Bugünkü çalışmayı yazın; sistem veliye uygun afiş ve paylaşım metni hazırlasın.
+        </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {["Kimlik bilgilerini gir ve faaliyeti seç", "Şablonu seç, fotoğraflarını ekle", "Önizle ve afişi indir"].map((s, i) => (
+          {["Kimlik ve kurum bilgileri", "Bugün yapılan çalışma", "Şablon, görsel ve metin", "Önizleme ve indirme"].map((s, i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#c7d2fe", color: "#3730a3", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
               <span style={{ fontSize: 12, color: "#3730a3", fontWeight: 600 }}>{s}</span>
@@ -404,9 +446,10 @@ export default function FormAlani({
           <SectionHeader>Kayıtlı Profiller</SectionHeader>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={profilKaydet}
+              title="Sadece profil bilgilerinizi kaydeder, afişi kaydetmez"
               style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1.5px solid #cbd5e1", background: "#f8fafc", color: "#475569", cursor: "pointer" }}>
               <svg width={11} height={11} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-              Kaydet
+              Profili kaydet
             </button>
             {profiller.length > 0 && (
               <button onClick={() => setProfillerAcik(!profillerAcik)}
@@ -418,8 +461,10 @@ export default function FormAlani({
         </div>
         {profilYukleniyor && <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Yükleniyor...</p>}
         {!profilYukleniyor && profiller.length === 0 && (
-          <p style={{ fontSize: 12, color: "#94a3b8", background: "#f8fafc", borderRadius: 8, padding: "8px 12px", margin: 0 }}>
-            Bilgileri doldurup "Kaydet" ile profil oluşturun
+          <p style={{ fontSize: 12, color: "#64748b", background: "#f8fafc", borderRadius: 8, padding: "10px 12px", margin: 0, lineHeight: 1.45 }}>
+            Henüz kayıtlı profil yok. Ad, görev ve kurum bilgilerinizi bir kez kaydedin; sonraki afişlerde tek tıkla kullanın.
+            <br />
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>Bu işlem sadece profil bilgilerinizi kaydeder, afişi kaydetmez.</span>
           </p>
         )}
         {profillerAcik && profiller.length > 0 && (
@@ -439,31 +484,34 @@ export default function FormAlani({
 
       <SectionDivider />
 
-      {/* Temel Bilgiler */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <SectionHeader>Kimlik Bilgileri</SectionHeader>
+        <SectionHeader>1. Kimlik ve Kurum Bilgileri</SectionHeader>
+        <SectionHelp>{BOLUM_YARDIM.kimlik}</SectionHelp>
         <div>
-          <label style={labelStyle}>Ad Soyad</label>
+          <label style={labelStyle}>{ALAN_YARDIM.isim.label}</label>
           <input type="text" value={form.isim} onChange={(e) => update("isim", e.target.value)}
-            placeholder="Örn: Ayşe Kaya" style={inputStyle} />
+            placeholder={ALAN_YARDIM.isim.placeholder} style={inputStyle} />
+          <FieldHint aciklama={ALAN_YARDIM.isim.aciklama} />
         </div>
         <div>
-          <label style={labelStyle}>Kurum Adı</label>
+          <label style={labelStyle}>{ALAN_YARDIM.kurumAdi.label}</label>
           <input type="text" value={form.kurumAdi} onChange={(e) => update("kurumAdi", e.target.value)}
-            placeholder="Örn: Marmara Anadolu Lisesi" style={inputStyle} />
+            placeholder={ALAN_YARDIM.kurumAdi.placeholder} style={inputStyle} />
+          <FieldHint aciklama={ALAN_YARDIM.kurumAdi.aciklama} />
         </div>
         <div>
-          <label style={labelStyle}>Ünvan / Görev</label>
+          <label style={labelStyle}>{ALAN_YARDIM.rol.label}</label>
           <input type="text" value={form.rol} onChange={(e) => update("rol", e.target.value)}
-            placeholder="Örn: Sınıf Öğretmeni, Yurt Hocası..." style={inputStyle} />
+            placeholder={ALAN_YARDIM.rol.placeholder} style={inputStyle} />
+          <FieldHint aciklama={ALAN_YARDIM.rol.aciklama} />
         </div>
       </div>
 
       <SectionDivider />
 
-      {/* Bugün Ne Yapıldı? */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <SectionHeader>Bugün Ne Yapıldı?</SectionHeader>
+        <SectionHeader>2. Bugün Yapılan Çalışma</SectionHeader>
+        <SectionHelp>{BOLUM_YARDIM.calisma}</SectionHelp>
 
         {Array.from({ length: form.faaliyetSayisi }).map((_, idx) => {
           const f = form.faaliyetler[idx] ?? { tur: "", alan: "", ozelNot: "" };
@@ -481,12 +529,13 @@ export default function FormAlani({
                 )}
               </div>
               <div>
-                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>Faaliyet Türü</label>
+                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.faaliyetTuru.label}</label>
+                <FieldHint aciklama={ALAN_YARDIM.faaliyetTuru.aciklama} />
                 <div style={{ position: "relative" }}>
                   <select value={f.tur} onChange={(e) => updateFaaliyet(idx, "tur", e.target.value)}
                     style={{ ...inputStyle, paddingRight: 36, cursor: "pointer" }}>
                     <option value="">Seçiniz...</option>
-                    {FAALIYETLER.map((v) => <option key={v} value={v}>{v}</option>)}
+                    {FAALIYET_TURLERI.map((v) => <option key={v} value={v}>{v}</option>)}
                   </select>
                   <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
                     <svg width={16} height={16} fill="none" stroke="#94a3b8" viewBox="0 0 24 24">
@@ -496,9 +545,16 @@ export default function FormAlani({
                 </div>
               </div>
               <div>
-                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>Ders / Alan</label>
+                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.alan.label}</label>
                 <input type="text" value={f.alan} onChange={(e) => updateFaaliyet(idx, "alan", e.target.value)}
-                  placeholder="Örn: Matematik, Türkçe..." style={inputStyle} />
+                  placeholder={ALAN_YARDIM.alan.placeholder} style={inputStyle} />
+                <FieldHint aciklama={ALAN_YARDIM.alan.aciklama} />
+              </div>
+              <div>
+                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.ozelNot.label}</label>
+                <input type="text" value={f.ozelNot} onChange={(e) => updateFaaliyet(idx, "ozelNot", e.target.value)}
+                  placeholder={ALAN_YARDIM.ozelNot.placeholder} style={inputStyle} />
+                <FieldHint aciklama={ALAN_YARDIM.ozelNot.aciklama} />
               </div>
             </div>
           );
@@ -516,7 +572,8 @@ export default function FormAlani({
         <div style={{ background: "#f0f4ff", border: "1.5px solid #c7d2fe", borderRadius: 12, padding: "12px 14px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Afiş Başlığı</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{ALAN_YARDIM.baslik.label}</div>
+              <FieldHint aciklama={ALAN_YARDIM.baslik.aciklama} />
               <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1b4b", lineHeight: 1.4 }}>{basliklar[form.seciliBaslikIdx ?? 0]}</div>
             </div>
             <button onClick={() => setBaslikAcik(!baslikAcik)}
@@ -556,9 +613,10 @@ export default function FormAlani({
   const adim2 = (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* Şablon Seçimi */}
       <div>
-        <SectionHeader>Şablon Seçin</SectionHeader>
+        <SectionHeader>3. Şablon ve Görseller</SectionHeader>
+        <SectionHelp>{BOLUM_YARDIM.sablon}</SectionHelp>
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#64748b", margin: "12px 0 8px" }}>Şablon seçin</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
           {SABLON_LISTESI.map((s) => {
             const secili = seciliSablon === s.id;
@@ -600,18 +658,23 @@ export default function FormAlani({
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "#f0f4ff", border: "1px solid #c7d2fe" }}>
           <p style={{ fontSize: 12, color: "#3730a3", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
             📐 <strong>{secilenSablonMeta?.ad}</strong> — en fazla <strong>{maxGorsel} görsel</strong> destekler.
-            {maxGorsel === 1 && " Tek büyük kapak fotoğrafı için idealdir."}
-            {maxGorsel === 4 && " 4 fotoğrafa kadar kolaj düzeni sunar."}
+            {secilenSablonMeta?.kullanim ? <> {secilenSablonMeta.kullanim}</> : null}
           </p>
+          {secilenSablonMeta?.etiketler?.length ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+              {secilenSablonMeta.etiketler.map((t) => (
+                <span key={t} style={{ fontSize: 9, fontWeight: 700, background: "#e0e7ff", color: "#4338ca", padding: "2px 6px", borderRadius: 4 }}>{t}</span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
       <SectionDivider />
 
-      {/* Görsel Yükleme */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <SectionHeader>Görseller</SectionHeader>
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase" }}>Görseller</span>
           <span style={{
             fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 8,
             background: gorselAsimiVar ? "#fee2e2" : form.gorseller.length === maxGorsel ? "#dcfce7" : "#f1f5f9",
@@ -620,6 +683,21 @@ export default function FormAlani({
             {form.gorseller.length}/{maxGorsel} yüklendi
           </span>
         </div>
+
+        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#475569", margin: "0 0 6px" }}>Fotoğraf yerleşimi</p>
+          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 10, color: "#64748b", lineHeight: 1.45 }}>
+            {GORSEL_YERLESIM.map((satir) => (
+              <li key={satir}>{satir}</li>
+            ))}
+          </ul>
+        </div>
+
+        {form.gorseller.length === 0 && (
+          <p style={{ fontSize: 11, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+            Fotoğraf eklenmedi. Görselsiz şablonlar daha uygun olabilir.
+          </p>
+        )}
 
         {gorselAsimiVar && (
           <div style={{ padding: "10px 12px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", marginBottom: 10 }}>
@@ -690,9 +768,9 @@ export default function FormAlani({
 
       <SectionDivider />
 
-      {/* Metin Ayarları */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <SectionHeader>Metin Ayarları</SectionHeader>
+        <SectionHeader>4. Metin Ayarları</SectionHeader>
+        <SectionHelp>{BOLUM_YARDIM.metin}</SectionHelp>
         <div>
           <label style={labelStyle}>Metin Uzunluğu</label>
           <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 10, padding: 3 }}>
@@ -706,14 +784,17 @@ export default function FormAlani({
               );
             })}
           </div>
+          <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 6 }}>
+            {(form.metinUzunlugu ?? "detayli") === "kisa" ? METIN_UZUNLUK_ACIKLAMA.kisa : METIN_UZUNLUK_ACIKLAMA.detayli}
+          </p>
         </div>
         <div>
           <label style={labelStyle}>Metin Tonu</label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
             {([
-              { id: "kurumsal", label: "🏛 Kurumsal", aciklama: "Resmi dil" },
-              { id: "sicak", label: "☀️ Sıcak", aciklama: "Samimi dil" },
-              { id: "aciklayici", label: "📖 Açıklayıcı", aciklama: "Detaylı anlatım" },
+              { id: "kurumsal", label: "🏛 Kurumsal", aciklama: METIN_TON_ACIKLAMA.kurumsal },
+              { id: "sicak", label: "☀️ Sıcak", aciklama: METIN_TON_ACIKLAMA.sicak },
+              { id: "aciklayici", label: "📖 Açıklayıcı", aciklama: METIN_TON_ACIKLAMA.aciklayici },
             ] as const).map(({ id, label, aciklama }) => {
               const secili = (form.metinTonu ?? "kurumsal") === id;
               return (
@@ -730,10 +811,9 @@ export default function FormAlani({
 
       <SectionDivider />
 
-      {/* Poster Metni */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>Poster Metni</label>
+          <label style={{ ...labelStyle, marginBottom: 0 }}>{ALAN_YARDIM.posterMetni.label}</label>
           <button onClick={() => { setMetinDuzenlendi(false); onMetinYenile(); }}
             style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1.5px solid #cbd5e1", background: "#f1f5f9", color: "#475569", cursor: "pointer" }}>
             <svg width={12} height={12} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -742,7 +822,7 @@ export default function FormAlani({
             Yenile
           </button>
         </div>
-        <p style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>Otomatik oluşturulur — düzenleyebilirsiniz</p>
+        <FieldHint aciklama={ALAN_YARDIM.posterMetni.aciklama} />
         <textarea value={form.posterMetni}
           onChange={(e) => { setMetinDuzenlendi(true); update("posterMetni", e.target.value); }}
           rows={5} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.7, fontFamily: "inherit" }} />

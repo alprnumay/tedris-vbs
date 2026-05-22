@@ -1,4 +1,4 @@
-import { LogoRenderer } from "./render/LogoRenderer";
+import { logoKalkanMi, logoYatayMi, LogoRenderer } from "./render/LogoRenderer";
 import type { LogoConfigV1 } from "@/types/logoKimlik";
 
 interface Props {
@@ -13,7 +13,10 @@ export function LogoOnizleme({ config }: Props) {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
         <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Büyük önizleme</p>
         <div className="flex justify-center rounded-xl bg-slate-50 p-6">
-          <LogoRenderer config={config} size={320} />
+          <LogoRenderer
+            config={config}
+            size={logoYatayMi(config.templateId) ? 520 : logoKalkanMi(config.templateId) ? 400 : 360}
+          />
         </div>
       </div>
 
@@ -22,7 +25,10 @@ export function LogoOnizleme({ config }: Props) {
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">WhatsApp profil</p>
           <div className="flex items-center gap-3 rounded-xl bg-slate-100 p-3">
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-white shadow">
-              <LogoRenderer config={config} size={56} />
+              <LogoRenderer
+                config={config}
+                size={config.templateId === "monogramProfileTemplate" ? 56 : logoYatayMi(config.templateId) ? 96 : 56}
+              />
             </div>
             <div className="min-w-0">
               <p className="truncate text-xs font-bold text-slate-800">{ad}</p>

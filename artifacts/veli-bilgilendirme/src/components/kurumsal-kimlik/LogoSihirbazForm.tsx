@@ -1,5 +1,7 @@
+import { LOGO_EMBLEMS, LOGO_SHIELDS } from "@/lib/logo/logoAssets";
 import { LOGO_KARAKTERLER, karakterToggle } from "@/lib/logo/logoKarakterler";
 import { LOGO_RENK_TEMALARI } from "@/lib/logo/logoRenkTemalari";
+import { LOGO_TEST_BAGLARBASI, LOGO_TEST_KEMER } from "@/lib/logo/logoTestVerisi";
 import type { LogoGorselYon, LogoSihirbazForm } from "@/types/logoKimlik";
 
 const GORSEL_YONLER: { id: LogoGorselYon; label: string }[] = [
@@ -136,6 +138,43 @@ export function LogoSihirbazForm({ form, onChange, onUret, uretiliyor }: Props) 
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Modüler kalkan parçaları</h2>
+        <p className="text-xs text-slate-500">
+          Premium Kalkan şablonu için önceden çizilmiş parçaları seçin. Diğer 3 şablon etkilenmez.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label>
+            <span className="mb-1 block text-xs font-semibold text-slate-600">Kalkan formu</span>
+            <select
+              className={inputCls}
+              value={form.selectedShieldId}
+              onChange={(e) => onChange({ ...form, selectedShieldId: e.target.value })}
+            >
+              {LOGO_SHIELDS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-xs font-semibold text-slate-600">Amblem</span>
+            <select
+              className={inputCls}
+              value={form.selectedEmblemId}
+              onChange={(e) => onChange({ ...form, selectedEmblemId: e.target.value })}
+            >
+              {LOGO_EMBLEMS.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Renk yönü</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {LOGO_RENK_TEMALARI.map((t) => (
@@ -160,13 +199,33 @@ export function LogoSihirbazForm({ form, onChange, onUret, uretiliyor }: Props) 
         </div>
       </section>
 
+      <section className="space-y-2 rounded-xl border border-dashed border-amber-200 bg-amber-50/80 p-3">
+        <p className="text-xs font-bold text-amber-900">Test verisi (geliştirme)</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ ...form, kurum: { ...LOGO_TEST_BAGLARBASI } })}
+            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+          >
+            Bağlarbaşı Eğitim Kurumu
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...form, kurum: { ...LOGO_TEST_KEMER } })}
+            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+          >
+            Kemer Öğrenci Yurdu
+          </button>
+        </div>
+      </section>
+
       <button
         type="button"
         disabled={!formGecerli || uretiliyor}
         onClick={onUret}
         className="w-full rounded-2xl bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-600 py-3.5 text-sm font-bold text-white shadow-lg transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {uretiliyor ? "Öneriler hazırlanıyor…" : "Logo önerilerini oluştur"}
+        {uretiliyor ? "Şablonlar hazırlanıyor…" : "4 premium şablonu önizle"}
       </button>
     </div>
   );

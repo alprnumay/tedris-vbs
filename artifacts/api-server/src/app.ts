@@ -40,10 +40,25 @@ app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/", (_req: Request, res: Response) => {
+  const frontend =
+    process.env.FRONTEND_URL ||
+    (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
+  res.status(200).json({
+    ok: true,
+    message: "Tedris VBS API sunucusu. Arayüz bu adreste değil.",
+    hint: frontend
+      ? `Uygulamayı tarayıcıda açın: ${frontend}`
+      : "Frontend adresi için FRONTEND_URL ortam değişkenini ayarlayın.",
+    apiHealth: "/api/health",
+  });
+});
+
 app.get("/api/health", (_req: Request, res: Response) => {
   res.status(200).json({
     ok: true,
     message: "API çalışıyor",
+    adminRoutes: true,
   });
 });
 
@@ -72,10 +87,17 @@ app.get("/api/db-check", async (_req: Request, res: Response) => {
 app.use(authMiddleware);
 app.use("/api", router);
 
-app.use((_req: Request, res: Response) => {
+app.use((req: Request, res: Response) => {
+  const isApi = req.path.startsWith("/api");
   res.status(404).json({
     ok: false,
-    message: "Route bulunamadı",
+    message: isApi ? "API route bulunamadı" : "Route bulunamadı",
+    ...(isApi
+      ? {}
+      : {
+          hint:
+            "Bu port yalnızca API içindir. Tedris VBS arayüzü için geliştirmede http://localhost:3000 adresini kullanın (npm run dev).",
+        }),
   });
 });
 

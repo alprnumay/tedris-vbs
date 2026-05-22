@@ -41,9 +41,9 @@ export default defineConfig({
       "/api": {
         target:
           process.env.VITE_API_PROXY_TARGET ||
-          "https://workspaceapi-server-production-c211.up.railway.app",
+          "http://127.0.0.1:3001",
         changeOrigin: true,
-        secure: true,
+        secure: false,
       },
     },
   },

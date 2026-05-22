@@ -37,6 +37,9 @@ export interface SablonMeta {
   etiket: string;
   maxGorsel: number;
   yeni?: boolean;
+  /** Kullanıcıya hangi durumda seçileceği */
+  kullanim?: string;
+  etiketler?: string[];
 }
 
 export const SABLON_LISTESI: SablonMeta[] = [
@@ -49,10 +52,63 @@ export const SABLON_LISTESI: SablonMeta[] = [
   { id: "turuncu",         ad: "Bahar Turuncu",   chipRenk: "#c2410c", etiket: "Temalı",    maxGorsel: 4 },
   { id: "pembe",           ad: "Anaokulu Pembe",  chipRenk: "#9d174d", etiket: "Temalı",    maxGorsel: 4 },
   { id: "teal",            ad: "Doğa Teal",       chipRenk: "#115e59", etiket: "Temalı",    maxGorsel: 4 },
-  { id: "altin",           ad: "Altın Sarı",      chipRenk: "#92400e", etiket: "Temalı",    maxGorsel: 4 },
-  { id: "premium-minimal", ad: "Premium Minimal", chipRenk: "#334155", etiket: "Minimal",   maxGorsel: 4, yeni: true },
-  { id: "kartli-bilgi",    ad: "Kartlı Bilgi",    chipRenk: "#2563eb", etiket: "Kartlı",    maxGorsel: 4, yeni: true },
-  { id: "kurumsal-resmi",  ad: "Kurumsal Resmi",  chipRenk: "#1e293b", etiket: "Resmi",     maxGorsel: 4, yeni: true },
-  { id: "hikaye",          ad: "Hikaye Stili",    chipRenk: "#c8956c", etiket: "Hikaye",    maxGorsel: 4, yeni: true },
-  { id: "fotograf-odakli", ad: "Fotoğraf Odaklı", chipRenk: "#0ea5e9", etiket: "Kolaj",     maxGorsel: 3, yeni: true },
+  {
+    id: "altin",
+    ad: "Altın Sarı",
+    chipRenk: "#92400e",
+    etiket: "Temalı",
+    maxGorsel: 4,
+    kullanim: "Fotoğraflı ve sıcak veli bilgilendirmeleri için.",
+    etiketler: ["Fotoğraflı", "Sıcak"],
+  },
+  {
+    id: "premium-minimal",
+    ad: "Premium Minimal",
+    chipRenk: "#334155",
+    etiket: "Minimal",
+    maxGorsel: 4,
+    yeni: true,
+    kullanim: "Az metinli, sade ve kurumsal afişler için.",
+    etiketler: ["Az metin", "Kurumsal", "Görselsiz uygun"],
+  },
+  {
+    id: "kartli-bilgi",
+    ad: "Kartlı Bilgi",
+    chipRenk: "#2563eb",
+    etiket: "Kartlı",
+    maxGorsel: 4,
+    yeni: true,
+    kullanim: "Ders / etüt çalışmalarını net göstermek için.",
+    etiketler: ["Ders/etüt", "Detaylı bilgi"],
+  },
+  {
+    id: "kurumsal-resmi",
+    ad: "Kurumsal Resmi",
+    chipRenk: "#1e293b",
+    etiket: "Resmi",
+    maxGorsel: 4,
+    yeni: true,
+    kullanim: "Resmi duyuru ve kurumsal bilgilendirme için.",
+    etiketler: ["Kurumsal", "Görselsiz uygun"],
+  },
+  {
+    id: "hikaye",
+    ad: "Hikaye Stili",
+    chipRenk: "#c8956c",
+    etiket: "Hikaye",
+    maxGorsel: 4,
+    yeni: true,
+    kullanim: "Sıcak, hikâye anlatımı hissi veren paylaşımlar için.",
+    etiketler: ["Sıcak", "Fotoğraflı"],
+  },
+  {
+    id: "fotograf-odakli",
+    ad: "Fotoğraf Odaklı",
+    chipRenk: "#0ea5e9",
+    etiket: "Kolaj",
+    maxGorsel: 3,
+    yeni: true,
+    kullanim: "1–2 güçlü fotoğrafla dikkat çekici bilgilendirme için.",
+    etiketler: ["Fotoğraflı", "Dikkat çekici"],
+  },
 ];

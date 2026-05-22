@@ -4,6 +4,7 @@ import authRouter from "./auth";
 import localAuthRouter from "./localAuth";
 import postersRouter from "./posters";
 import supportRouter from "./support";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(authRouter);
 router.use(localAuthRouter);
 router.use(postersRouter);
 router.use(supportRouter);
+router.use(adminRouter);
 
 export default router;

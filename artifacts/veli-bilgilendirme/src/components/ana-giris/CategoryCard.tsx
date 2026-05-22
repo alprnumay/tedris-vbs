@@ -78,7 +78,9 @@ export function CategoryCard({
             </h3>
             <p
               className={[
-                "hidden text-sm leading-relaxed md:block md:text-[0.9375rem]",
+                durum === "yakinda"
+                  ? "text-[10px] leading-snug text-slate-500 md:text-sm md:leading-relaxed md:text-[0.9375rem]"
+                  : "hidden text-sm leading-relaxed md:block md:text-[0.9375rem]",
                 oneCikar ? "text-slate-600" : "text-slate-500 md:group-hover:text-slate-600",
               ].join(" ")}
             >

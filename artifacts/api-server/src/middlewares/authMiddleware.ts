@@ -69,34 +69,37 @@ export async function authMiddleware(
     return;
   }
 
-  const session = await getSession(sid);
-  if (!session) {
-    await clearSession(res, sid);
-    next();
-    return;
-  }
+  try {
+    const session = await getSession(sid);
+    if (!session) {
+      await clearSession(res, sid);
+      next();
+      return;
+    }
 
-  // Local email/password user
-  if (session.localUser?.id) {
-    req.localUser = session.localUser;
-    next();
-    return;
-  }
+    if (session.localUser?.id) {
+      req.localUser = session.localUser;
+      next();
+      return;
+    }
 
-  // OIDC (Replit) user
-  if (!session.user?.id) {
-    await clearSession(res, sid);
-    next();
-    return;
-  }
+    if (!session.user?.id) {
+      await clearSession(res, sid);
+      next();
+      return;
+    }
 
-  const refreshed = await refreshIfExpired(sid, session);
-  if (!refreshed) {
-    await clearSession(res, sid);
-    next();
-    return;
-  }
+    const refreshed = await refreshIfExpired(sid, session);
+    if (!refreshed) {
+      await clearSession(res, sid);
+      next();
+      return;
+    }
 
-  req.user = refreshed.user;
-  next();
+    req.user = refreshed.user;
+    next();
+  } catch (err) {
+    console.error("[authMiddleware]", err);
+    next();
+  }
 }

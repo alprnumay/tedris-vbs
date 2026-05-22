@@ -1,16 +1,16 @@
 import { useRef, useState } from "react";
 import type { KullaniciBilgisi } from "@/lib/api";
-import { logoOnerileriUret, yeniMotorSeed } from "@/lib/logo/logoMotor";
+import { logoOnerileriUret, sonrakiVaryasyonIndex } from "@/lib/logo/logoMotor";
 import { logoToPng, pngIndir } from "@/lib/logo/logoPngExport";
 import { LOGO_KATEGORILERI } from "@/lib/logo/logoKategoriler";
-import type { LogoConfigV1, LogoModulAsama, LogoSihirbazForm } from "@/types/logoKimlik";
+import type { LogoConfigV1, LogoModulAsama, LogoSihirbazForm as LogoFormState } from "@/types/logoKimlik";
 import { bosLogoSihirbazForm } from "@/types/logoKimlik";
 import { LogoKategoriSecimi } from "./LogoKategoriSecimi";
-import { LogoSihirbazForm } from "./LogoSihirbazForm";
+import { LogoSihirbazForm as LogoSihirbazFormPanel } from "./LogoSihirbazForm";
 import { LogoOneriGrid } from "./LogoOneriGrid";
 import { LogoOnizleme } from "./LogoOnizleme";
 import { LogoIndirmePaneli } from "./LogoIndirmePaneli";
-import { LogoRenderer } from "./render/LogoRenderer";
+import { logoKalkanMi, logoYatayMi, LogoRenderer } from "./render/LogoRenderer";
 
 export interface KurumsalKimlikModuluProps {
   kullanici: KullaniciBilgisi;
@@ -21,14 +21,15 @@ export interface KurumsalKimlikModuluProps {
 
 export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis }: KurumsalKimlikModuluProps) {
   const [asama, setAsama] = useState<LogoModulAsama>("kategori");
-  const [form, setForm] = useState<LogoSihirbazForm>(bosLogoSihirbazForm);
+  const [form, setForm] = useState<LogoFormState>(bosLogoSihirbazForm);
   const [oneriler, setOneriler] = useState<LogoConfigV1[]>([]);
   const [secili, setSecili] = useState<LogoConfigV1 | null>(null);
   const [uretiliyor, setUretiliyor] = useState(false);
+  const [varyasyonIndex, setVaryasyonIndex] = useState(0);
   const [indiriliyor, setIndiriliyor] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const kategoriSec = (id: LogoSihirbazForm["kategori"]) => {
+  const kategoriSec = (id: LogoFormState["kategori"]) => {
     const meta = LOGO_KATEGORILERI.find((k) => k.id === id);
     setForm((f) => ({
       ...f,
@@ -40,9 +41,9 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
 
   const onerileriUret = () => {
     setUretiliyor(true);
-    const seed = yeniMotorSeed();
+    setVaryasyonIndex(0);
     requestAnimationFrame(() => {
-      const list = logoOnerileriUret(form, seed);
+      const list = logoOnerileriUret(form, 0);
       setOneriler(list);
       setSecili(null);
       setAsama("oneriler");
@@ -51,8 +52,9 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
   };
 
   const yenidenUret = () => {
-    const seed = yeniMotorSeed();
-    setOneriler(logoOnerileriUret(form, seed));
+    const next = sonrakiVaryasyonIndex(varyasyonIndex);
+    setVaryasyonIndex(next);
+    setOneriler(logoOnerileriUret(form, next));
     setSecili(null);
   };
 
@@ -113,7 +115,7 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
         {asama === "kategori" && (
           <div className="mx-auto max-w-3xl">
             <p className="mb-6 text-center text-sm text-slate-600">
-              Logo türünü seçin. İlk sürümde Kurumsal Arma ve Monogram kategorileri aktiftir.
+              4 premium şablon önizlemesi — geliştirme sürümü. Ana ekranda modül henüz kullanıcılara kapalıdır.
             </p>
             <LogoKategoriSecimi secili={form.kategori} onSec={kategoriSec} />
           </div>
@@ -128,7 +130,7 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
             >
               ← Kategori değiştir
             </button>
-            <LogoSihirbazForm form={form} onChange={setForm} onUret={onerileriUret} uretiliyor={uretiliyor} />
+            <LogoSihirbazFormPanel form={form} onChange={setForm} onUret={onerileriUret} uretiliyor={uretiliyor} />
           </>
         )}
 
@@ -161,8 +163,18 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
 
       {secili && (
         <div className="pointer-events-none fixed -left-[9999px] top-0" aria-hidden>
-          <div ref={exportRef} style={{ width: 512, background: secili.palette.accent }}>
-            <LogoRenderer config={secili} size={512} />
+          <div
+            ref={exportRef}
+            style={{
+              width: logoYatayMi(secili.templateId) ? 900 : logoKalkanMi(secili.templateId) ? 720 : 512,
+              height: logoYatayMi(secili.templateId) ? 300 : logoKalkanMi(secili.templateId) ? 920 : 512,
+              background: secili.palette.accent,
+            }}
+          >
+            <LogoRenderer
+              config={secili}
+              size={logoYatayMi(secili.templateId) ? 900 : logoKalkanMi(secili.templateId) ? 720 : 512}
+            />
           </div>
         </div>
       )}

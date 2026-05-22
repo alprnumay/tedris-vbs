@@ -7,6 +7,9 @@ export const supportRequestsTable = pgTable("support_requests", {
   userName: text("user_name"),
   message: text("message").notNull(),
   imageBase64: text("image_base64"),
+  /** yeni | inceleniyor | cozuldu */
+  status: text("status").notNull().default("yeni"),
+  adminNote: text("admin_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

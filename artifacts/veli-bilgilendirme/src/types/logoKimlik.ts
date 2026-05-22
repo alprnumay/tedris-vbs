@@ -20,12 +20,15 @@ export type LogoRenkTema =
   | "siyah_beyaz"
   | "kahve_bej";
 
-export type LogoShapeId = "daire_arma" | "kalkan" | "rozet" | "minimal_yuvarlak";
+/** Elle tanımlı premium logo şablonları — yalnızca 4 kontrollü şablon */
+export type LogoTemplateId =
+  | "officialSealTemplate"
+  | "premiumShieldTemplate"
+  | "horizontalInstitutionTemplate"
+  | "monogramProfileTemplate";
+
 export type LogoIconId = "kitap" | "mesale" | "yildiz" | "defne" | "kalem";
-export type LogoLayoutId = "merkez_ust_ad" | "merkez_alt_slogan" | "rozet_cevre" | "monogram_merkez";
 export type LogoFontPairId = "klasik_serif" | "modern_sans" | "guclu_kurumsal" | "sade_minimal";
-export type LogoBorderId = "ince" | "kalin" | "cift" | "yok";
-export type LogoOrnamentId = "none" | "ust_cizgi" | "alt_cizgi" | "kose_nokta";
 
 export type LogoGrupEtiketi = "en_kurumsal" | "daha_modern" | "daha_sade" | "daha_ayirt_edici";
 
@@ -38,20 +41,31 @@ export interface LogoKurumBilgisi {
   kurulusYili: string;
 }
 
+/** Modüler kalkan — önceden çizilmiş parça seçimi */
+export interface LogoLegoSecim {
+  shieldId: string;
+  emblemId: string;
+}
+
 export interface LogoSihirbazForm {
   kategori: LogoKategori | null;
   kurum: LogoKurumBilgisi;
   karakterler: LogoKarakter[];
   gorselYon: LogoGorselYon;
   renkTema: LogoRenkTema;
+  selectedShieldId: string;
+  selectedEmblemId: string;
 }
 
 export interface LogoPalette {
   primary: string;
+  primaryDark: string;
   secondary: string;
+  secondarySoft: string;
   accent: string;
   text: string;
   muted: string;
+  white: string;
 }
 
 export interface LogoConfigV1 {
@@ -61,13 +75,10 @@ export interface LogoConfigV1 {
   traits: LogoKarakter[];
   visualDirection: LogoGorselYon;
   colorTheme: LogoRenkTema;
+  templateId: LogoTemplateId;
   variant: {
-    shapeId: LogoShapeId;
-    borderId: LogoBorderId;
     iconId: LogoIconId;
-    layoutId: LogoLayoutId;
     fontPairId: LogoFontPairId;
-    ornamentId: LogoOrnamentId;
   };
   display: {
     showTagline: boolean;
@@ -79,6 +90,7 @@ export interface LogoConfigV1 {
   seed: string;
   groupLabel: LogoGrupEtiketi;
   fingerprint: string;
+  lego?: LogoLegoSecim;
 }
 
 export type LogoModulAsama = "kategori" | "form" | "oneriler" | "secim";
@@ -97,5 +109,7 @@ export function bosLogoSihirbazForm(): LogoSihirbazForm {
     karakterler: [],
     gorselYon: "combined",
     renkTema: "lacivert_altin",
+    selectedShieldId: "shield_luxury_curved",
+    selectedEmblemId: "emblem_abstract_flame",
   };
 }

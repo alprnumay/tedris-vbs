@@ -6,38 +6,67 @@ export interface LogoRenkTemaMeta {
   palette: LogoPalette;
 }
 
+/** Premium kontrollü paletler — rastgele renk yok */
 export const LOGO_RENK_TEMALARI: LogoRenkTemaMeta[] = [
   {
     id: "lacivert_altin",
     ad: "Lacivert — Altın",
-    palette: { primary: "#1e3a5f", secondary: "#c9a227", accent: "#f8fafc", text: "#0f172a", muted: "#64748b" },
-  },
-  {
-    id: "yesil_krem",
-    ad: "Yeşil — Krem",
-    palette: { primary: "#166534", secondary: "#d6cfc0", accent: "#faf8f5", text: "#14532d", muted: "#4d7c57" },
+    palette: {
+      primary: "#16345C",
+      primaryDark: "#0E223F",
+      secondary: "#C99A2E",
+      secondarySoft: "#E7C86E",
+      accent: "#F8F1DD",
+      text: "#10233F",
+      muted: "#3D5472",
+      white: "#FFFFFF",
+    },
   },
   {
     id: "bordo_altin",
     ad: "Bordo — Altın",
-    palette: { primary: "#7f1d1d", secondary: "#ca8a04", accent: "#fffbeb", text: "#450a0a", muted: "#9f1239" },
+    palette: {
+      primary: "#8B1E24",
+      primaryDark: "#5F1116",
+      secondary: "#C99A2E",
+      secondarySoft: "#E7C86E",
+      accent: "#F8F1DD",
+      text: "#5F1116",
+      muted: "#7A3A3F",
+      white: "#FFFFFF",
+    },
   },
   {
-    id: "mavi_gumus",
-    ad: "Mavi — Gümüş",
-    palette: { primary: "#1d4ed8", secondary: "#94a3b8", accent: "#f1f5f9", text: "#1e3a8a", muted: "#64748b" },
+    id: "yesil_krem",
+    ad: "Yeşil — Krem",
+    palette: {
+      primary: "#1D6B46",
+      primaryDark: "#0F3E2A",
+      secondary: "#C99A2E",
+      secondarySoft: "#E7C86E",
+      accent: "#F8F1DD",
+      text: "#0F3E2A",
+      muted: "#3A6B52",
+      white: "#FFFFFF",
+    },
   },
   {
     id: "siyah_beyaz",
-    ad: "Siyah — Beyaz",
-    palette: { primary: "#0f172a", secondary: "#e2e8f0", accent: "#ffffff", text: "#0f172a", muted: "#475569" },
-  },
-  {
-    id: "kahve_bej",
-    ad: "Kahve — Bej",
-    palette: { primary: "#78350f", secondary: "#e7e5e4", accent: "#fafaf9", text: "#44403c", muted: "#78716c" },
+    ad: "Siyah — Altın",
+    palette: {
+      primary: "#151515",
+      primaryDark: "#0A0A0A",
+      secondary: "#C99A2E",
+      secondarySoft: "#E7C86E",
+      accent: "#F8F1DD",
+      text: "#2A2A2A",
+      muted: "#5A5A5A",
+      white: "#FFFFFF",
+    },
   },
 ];
+
+export const LOGO_PREMIUM_TEMA_IDS = LOGO_RENK_TEMALARI.map((t) => t.id);
 
 export function paletAl(tema: LogoRenkTema): LogoPalette {
   return LOGO_RENK_TEMALARI.find((t) => t.id === tema)?.palette ?? LOGO_RENK_TEMALARI[0].palette;

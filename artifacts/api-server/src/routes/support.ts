@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { supportRequestsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import nodemailer from "nodemailer";
+import { requireAdmin } from "../middlewares/requireAdmin";
 
 const router: IRouter = Router();
 
@@ -104,7 +105,7 @@ router.post("/support", async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-router.get("/support/admin", async (req: Request, res: Response) => {
+router.get("/support/admin", requireAdmin, async (req: Request, res: Response) => {
   const requests = await db
     .select({
       id: supportRequestsTable.id,
@@ -119,7 +120,7 @@ router.get("/support/admin", async (req: Request, res: Response) => {
   res.json({ requests });
 });
 
-router.get("/support/stats", async (_req: Request, res: Response) => {
+router.get("/support/stats", requireAdmin, async (_req: Request, res: Response) => {
   try {
     const [userCount, supportCount, dailyUsers, recentUsers] = await Promise.all([
       db.execute(sql`SELECT COUNT(*)::int AS count FROM local_users`),

@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { logActivity } from "../lib/activityLog";
 import {
   createSession,
   clearSession,
@@ -71,45 +72,67 @@ router.post("/auth/register", async (req: Request, res: Response) => {
 });
 
 router.post("/auth/login", async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    res.status(400).json({ error: "Email ve şifre zorunludur." });
-    return;
+    if (!email || !password) {
+      res.status(400).json({ error: "Email ve şifre zorunludur." });
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase();
+
+    const [user] = await db
+      .select()
+      .from(localUsersTable)
+      .where(eq(localUsersTable.email, normalizedEmail));
+
+    if (!user) {
+      res.status(401).json({ error: "E-posta veya şifre hatalı." });
+      return;
+    }
+
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isValid) {
+      res.status(401).json({ error: "E-posta veya şifre hatalı." });
+      return;
+    }
+
+    if (user.isActive === false) {
+      res.status(403).json({ error: "Hesabınız pasif durumda. Yöneticinizle iletişime geçin." });
+      return;
+    }
+
+    try {
+      await db
+        .update(localUsersTable)
+        .set({ lastLoginAt: new Date() })
+        .where(eq(localUsersTable.id, user.id));
+      await logActivity(user, "login");
+    } catch (err) {
+      console.error("[auth/login] lastLoginAt veya activity log güncellenemedi:", err);
+    }
+
+    const isAdmin =
+      normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
+
+    const sessionUser = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin,
+    };
+
+    const sid = await createSession({ localUser: sessionUser });
+    setSessionCookie(res, sid);
+
+    res.json({ user: sessionUser, sessionToken: sid });
+  } catch (err) {
+    console.error("[auth/login]", err);
+    res.status(500).json({
+      error: "Giriş işlemi tamamlanamadı. Veritabanı şeması güncel mi? (pnpm db:push)",
+    });
   }
-
-  const normalizedEmail = email.toLowerCase();
-
-  const [user] = await db
-    .select()
-    .from(localUsersTable)
-    .where(eq(localUsersTable.email, normalizedEmail));
-
-  if (!user) {
-    res.status(401).json({ error: "E-posta veya şifre hatalı." });
-    return;
-  }
-
-  const isValid = await bcrypt.compare(password, user.passwordHash);
-  if (!isValid) {
-    res.status(401).json({ error: "E-posta veya şifre hatalı." });
-    return;
-  }
-
-  const isAdmin =
-    normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
-
-  const sessionUser = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    isAdmin,
-  };
-
-  const sid = await createSession({ localUser: sessionUser });
-  setSessionCookie(res, sid);
-
-  res.json({ user: sessionUser, sessionToken: sid });
 });
 
 router.post("/auth/logout", async (req: Request, res: Response) => {

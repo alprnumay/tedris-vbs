@@ -130,6 +130,91 @@ export interface AdminStats {
   recentUsers: { id: string; name: string; email: string; created_at: string }[];
 }
 
+export type KullaniciRol = "hoca" | "kurum_mesulu" | "admin";
+export type AktiviteDurum = "today" | "week" | "inactive" | "never";
+
+export interface AdminKullanici {
+  id: string;
+  email: string;
+  name: string;
+  province: string | null;
+  district: string | null;
+  institutionName: string | null;
+  institutionCode: string | null;
+  role: string;
+  isActive: boolean;
+  isAdmin: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  activityStatus?: AktiviteDurum;
+  daysSinceLogin?: number | null;
+  login_time?: string | null;
+  activeInRange?: boolean;
+}
+
+export interface AdminOverview {
+  totalUsers: number;
+  todayLogins: number;
+  activeUsers7d: number;
+  totalSupport: number;
+  activeInstitutions: number;
+  passiveInstitutions: number;
+  totalPosters: number;
+  dailyLogins: { day: string; count: number }[];
+  districtActivityToday: { district: string; province: string; today_count: number }[];
+  recentLogins: {
+    id: string;
+    name: string;
+    email: string;
+    institution_name: string | null;
+    district: string | null;
+    province: string | null;
+    role: string;
+    last_login_at: string;
+  }[];
+}
+
+export interface AdminKurum {
+  institution_code: string;
+  institution_name: string | null;
+  province: string | null;
+  district: string | null;
+  user_count: number;
+  today_active: number;
+  active_7d: number;
+  last_login_at: string | null;
+  status?: string;
+}
+
+export interface AdminDestek extends DestekMesaji {
+  status?: string;
+  admin_note?: string | null;
+  province?: string | null;
+  district?: string | null;
+  institution_name?: string | null;
+  institution_code?: string | null;
+}
+
+export interface AdminFiltreler {
+  provinces: string[];
+  districts: { district: string; province: string }[];
+  institutions: {
+    institution_code: string;
+    institution_name: string | null;
+    district: string | null;
+    province: string | null;
+  }[];
+}
+
+function qs(params: Record<string, string | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v) p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 export const api = {
   me: () => istek<{ user: KullaniciBilgisi | null }>("GET", "/auth/me"),
 
@@ -201,4 +286,59 @@ export const api = {
     istek<{ requests: DestekMesaji[] }>("GET", "/support/admin"),
 
   adminStats: () => istek<AdminStats>("GET", "/support/stats"),
+
+  adminOverview: () => istek<AdminOverview>("GET", "/admin/overview"),
+
+  adminFiltreler: () => istek<AdminFiltreler>("GET", "/admin/filters"),
+
+  adminKullanicilar: (params: Record<string, string | undefined> = {}) =>
+    istek<{ users: AdminKullanici[] }>("GET", `/admin/users${qs(params)}`),
+
+  adminKullaniciOlustur: (data: {
+    email: string;
+    password: string;
+    name: string;
+    province?: string;
+    district?: string;
+    institutionName?: string;
+    institutionCode?: string;
+    role?: KullaniciRol;
+    isActive?: boolean;
+    isAdmin?: boolean;
+  }) => istek<{ user: AdminKullanici }>("POST", "/admin/users", data),
+
+  adminKullaniciGuncelle: (id: string, data: Partial<AdminKullanici>) =>
+    istek<{ user: AdminKullanici }>("PATCH", `/admin/users/${id}`, data),
+
+  adminSifreSifirla: (id: string, password: string) =>
+    istek<{ ok: boolean }>("POST", `/admin/users/${id}/reset-password`, { password }),
+
+  adminBugunGirisler: (params: Record<string, string | undefined> = {}) =>
+    istek<{ count: number; logins: AdminKullanici[] }>("GET", `/admin/today-logins${qs(params)}`),
+
+  adminKurumlar: (params: Record<string, string | undefined> = {}) =>
+    istek<{ institutions: AdminKurum[] }>("GET", `/admin/institutions${qs(params)}`),
+
+  adminKullanimTakibi: (type: string, params: Record<string, string | undefined> = {}) =>
+    istek<{ users: AdminKullanici[]; inactiveInstitutions: unknown[] }>(
+      "GET",
+      `/admin/usage-tracking${qs({ type, ...params })}`,
+    ),
+
+  adminBolgeRaporu: (params: Record<string, string | undefined> = {}) =>
+    istek<{
+      summary: Record<string, number>;
+      users: AdminKullanici[];
+    }>("GET", `/admin/region-report${qs(params)}`),
+
+  adminDestek: () => istek<{ requests: AdminDestek[] }>("GET", "/admin/support"),
+
+  adminDestekGuncelle: (id: number, data: { status?: string; adminNote?: string }) =>
+    istek<{ ok: boolean }>("PATCH", `/admin/support/${id}`, data),
+
+  adminSlugOner: (district: string, institutionName: string) =>
+    istek<{ code: string }>(
+      "GET",
+      `/admin/slug-suggest?district=${encodeURIComponent(district)}&institutionName=${encodeURIComponent(institutionName)}`,
+    ),
 };
