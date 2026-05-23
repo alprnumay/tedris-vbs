@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export function FormAkordeon({
   id,
   baslik,
+  aciklama,
   acik,
   onToggle,
   children,
@@ -11,31 +12,24 @@ export function FormAkordeon({
 }: {
   id: string;
   baslik: string;
+  aciklama?: string;
   acik: boolean;
   onToggle: (id: string) => void;
   children: React.ReactNode;
   zorunlu?: boolean;
 }) {
   return (
-    <div style={{ ...cardStyle }}>
+    <div className={`veli-form-accordion${acik ? " veli-form-accordion--open" : ""}`}>
       <button
         type="button"
         onClick={() => onToggle(id)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          padding: 0,
-          border: "none",
-          background: "transparent",
-          cursor: "pointer",
-          textAlign: "left",
-        }}
+        className="veli-form-accordion__trigger"
       >
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#1e293b" }}>
-          {acik ? "▼" : "▶"} {baslik}
+        <span className="veli-form-accordion__head">
+          <span className="veli-form-accordion__title">
+            {acik ? "▼" : "▶"} {baslik}
+          </span>
+          {aciklama ? <span className="veli-form-accordion__desc">{aciklama}</span> : null}
         </span>
         {zorunlu && !acik && (
           <span style={{ fontSize: 10, fontWeight: 700, color: "#b45309", background: "#fffbeb", padding: "2px 8px", borderRadius: 8 }}>
@@ -59,11 +53,3 @@ export function FormAkordeon({
     </div>
   );
 }
-
-const cardStyle: React.CSSProperties = {
-  background: "#ffffff",
-  borderRadius: 20,
-  padding: "14px 14px",
-  border: "1px solid #e8edf2",
-  boxShadow: "0 4px 24px rgba(15, 23, 42, 0.06)",
-};

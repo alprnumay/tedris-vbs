@@ -28,7 +28,9 @@ interface Props {
   kullaniciId?: string;
   adim2Ref?: React.MutableRefObject<(() => void) | undefined>;
   mobilMod?: boolean;
+  desktopMod?: boolean;
   onTasarimaGec?: () => void;
+  onAdimChange?: (adim: 1 | 2) => void;
 }
 
 function dosyayaBase64Cevir(file: File): Promise<string> {
@@ -258,7 +260,15 @@ function SablonMiniThumbnail({ id, renk }: { id: SablonTuru; renk: string }) {
 }
 
 /* ─── Adım Göstergesi ─── */
-function AdimGostergesi({ adim, setAdim }: { adim: 1 | 2; setAdim: (a: 1 | 2) => void }) {
+function AdimGostergesi({
+  adim,
+  setAdim,
+  desktopMod,
+}: {
+  adim: 1 | 2;
+  setAdim: (a: 1 | 2) => void;
+  desktopMod?: boolean;
+}) {
   return (
     <div style={{ display: "flex", gap: 6, marginBottom: 16, position: "relative" }}>
       {([1, 2] as const).map((n) => {
@@ -308,9 +318,11 @@ function AdimGostergesi({ adim, setAdim }: { adim: 1 | 2; setAdim: (a: 1 | 2) =>
           </button>
         );
       })}
-      <p style={{ position: "absolute", bottom: -18, left: 0, right: 0, textAlign: "center", fontSize: 10, color: "#94a3b8", margin: 0 }}>
-        Kaydırarak adımlar arasında geçebilirsiniz
-      </p>
+      {!desktopMod && (
+        <p style={{ position: "absolute", bottom: -18, left: 0, right: 0, textAlign: "center", fontSize: 10, color: "#94a3b8", margin: 0 }}>
+          Kaydırarak adımlar arasında geçebilirsiniz
+        </p>
+      )}
     </div>
   );
 }
@@ -319,7 +331,9 @@ export default function FormAlani({
   form, setForm, seciliSablon, setSeciliSablon,
   onMetinYenile, setMetinDuzenlendi, kullaniciId, adim2Ref,
   mobilMod = false,
+  desktopMod = false,
   onTasarimaGec,
+  onAdimChange,
 }: Props) {
   const [adim, setAdim] = useState<1 | 2>(1);
   const [profiller, setProfiller] = useState<KayitliProfil[]>([]);
@@ -342,8 +356,12 @@ export default function FormAlani({
   };
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [adim]);
+    if (!desktopMod) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [adim, desktopMod]);
+
+  useEffect(() => {
+    onAdimChange?.(adim);
+  }, [adim, onAdimChange]);
 
   useEffect(() => {
     if (!kullaniciId) return;
@@ -630,7 +648,7 @@ export default function FormAlani({
   const adim2 = (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      <FormAkordeon id="sablon" baslik="Şablon Seçimi" acik={acikBolum === "sablon"} onToggle={bolumToggle}>
+      <FormAkordeon id="sablon" baslik="Şablon Seçimi" aciklama="Afişin genel görünümünü belirleyin." acik={acikBolum === "sablon"} onToggle={bolumToggle}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {SABLON_LISTESI.map((s) => {
             const secili = seciliSablon === s.id;
@@ -678,7 +696,7 @@ export default function FormAlani({
         </div>
       </FormAkordeon>
 
-      <FormAkordeon id="gorseller" baslik="Görseller" acik={acikBolum === "gorseller"} onToggle={bolumToggle}>
+      <FormAkordeon id="gorseller" baslik="Görseller" aciklama="1–4 fotoğraf ekleyebilirsiniz." acik={acikBolum === "gorseller"} onToggle={bolumToggle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>Yüklenen</span>
           <span style={{
@@ -778,7 +796,7 @@ export default function FormAlani({
         )}
       </FormAkordeon>
 
-      <FormAkordeon id="metin" baslik="Metin Ayarları" acik={acikBolum === "metin"} onToggle={bolumToggle}>
+      <FormAkordeon id="metin" baslik="Metin Ayarları" aciklama="Metnin uzunluğunu ve üslubunu ayarlayın." acik={acikBolum === "metin"} onToggle={bolumToggle}>
         <div>
           <label style={labelStyle}>Metin Uzunluğu</label>
           <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 10, padding: 3 }}>
@@ -832,7 +850,7 @@ export default function FormAlani({
         </div>
       </FormAkordeon>
 
-      {onTasarimaGec ? (
+      {onTasarimaGec && !desktopMod ? (
         <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={onTasarimaGec} style={primaryBtn}>
           Afişe Geç
         </motion.button>
@@ -848,10 +866,10 @@ export default function FormAlani({
   return (
     <div
       style={{ display: "flex", flexDirection: "column", paddingBottom: mobilMod ? 8 : 0 }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
+      onTouchStart={desktopMod ? undefined : onTouchStart}
+      onTouchEnd={desktopMod ? undefined : onTouchEnd}
     >
-      <AdimGostergesi adim={adim} setAdim={adimDegistir} />
+      <AdimGostergesi adim={adim} setAdim={adimDegistir} desktopMod={desktopMod} />
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={adim}

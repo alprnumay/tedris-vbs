@@ -24,6 +24,23 @@ export function formatTarih(iso: string | null | undefined): string {
   }
 }
 
+export function YurtDurumRozet({ durum }: { durum: string }) {
+  const cfg: Record<string, { bg: string; color: string; label: string }> = {
+    bugun_aktif: { bg: "#dcfce7", color: "#166534", label: "Bugün aktif" },
+    son_7_gun_aktif: { bg: "#dbeafe", color: "#1e40af", label: "Son 7 gün aktif" },
+    pasif_7: { bg: "#fef9c3", color: "#854d0e", label: "7+ gün pasif" },
+    pasif_30: { bg: "#ffedd5", color: "#9a3412", label: "30+ gün pasif" },
+    hic_giris_yok: { bg: "#fee2e2", color: "#991b1b", label: "Hiç giriş yok" },
+    veri_eksik: { bg: "#f1f5f9", color: "#475569", label: "Veri eksik" },
+  };
+  const c = cfg[durum] ?? { bg: "#f1f5f9", color: "#64748b", label: durum };
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: c.bg, color: c.color, whiteSpace: "nowrap" }}>
+      {c.label}
+    </span>
+  );
+}
+
 export function DurumRozet({ durum }: { durum: AktiviteDurum | string }) {
   const cfg: Record<string, { bg: string; color: string; label: string }> = {
     today: { bg: "#dcfce7", color: "#166534", label: "Bugün giriş" },

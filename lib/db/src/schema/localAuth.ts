@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { boolean, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { institutionsTable } from "./institutions";
 
 /** hoca | kurum_mesulu | admin */
 export type UserRole = "hoca" | "kurum_mesulu" | "admin";
@@ -12,6 +13,9 @@ export const localUsersTable = pgTable("local_users", {
   isAdmin: boolean("is_admin").notNull().default(false),
   province: varchar("province"),
   district: varchar("district"),
+  institutionId: varchar("institution_id").references(() => institutionsTable.id, {
+    onDelete: "set null",
+  }),
   institutionName: varchar("institution_name"),
   institutionCode: varchar("institution_code"),
   role: varchar("role").notNull().default("hoca"),

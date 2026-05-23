@@ -19,3 +19,11 @@ export function hatirlatmaMesaji(u: {
     .filter((line) => line !== undefined)
     .join("\n");
 }
+
+export function yurtHatirlatmaMesaji(yurt: {
+  institutionName: string;
+  gun?: number;
+}): string {
+  const gun = yurt.gun ?? 7;
+  return `Hocam selamünaleyküm. Tedris VBS kullanım raporunda ${yurt.institutionName} için son ${gun} gündür giriş görünmüyor. Veli bilgilendirme afişlerini sistem üzerinden kolayca hazırlayabilirsiniz. Bir sorun varsa bize ulaşabilirsiniz.`;
+}

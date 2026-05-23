@@ -16,11 +16,13 @@ export function VeliYanPanel({
   seciliSablon,
   onSablonOner,
   kompakt = false,
+  studio = false,
 }: {
   form: FormData;
   seciliSablon: SablonTuru;
   onSablonOner?: (id: SablonTuru) => void;
   kompakt?: boolean;
+  studio?: boolean;
 }) {
   const [kopyalandi, setKopyalandi] = useState(false);
   const kalite = veliKaliteKontrol(form, seciliSablon);
@@ -39,9 +41,11 @@ export function VeliYanPanel({
     }
   };
 
+  const cardCls = studio ? "veli-studio-info-card" : "rounded-xl border p-3";
+
   return (
-    <div className={`flex flex-col gap-3 ${kompakt ? "" : "mt-4"}`}>
-      <div className="rounded-xl border p-3" style={{ background: st.bg, borderColor: st.border }}>
+    <div className={studio ? "veli-studio-side-cards" : `flex flex-col gap-3 ${kompakt ? "" : "mt-4"}`}>
+      <div className={cardCls} style={studio ? { background: st.bg, borderColor: st.border } : { background: st.bg, borderColor: st.border }}>
         <p className="text-xs font-extrabold" style={{ color: st.color }}>
           Afiş kalitesi: {st.label}
         </p>
@@ -55,7 +59,7 @@ export function VeliYanPanel({
       </div>
 
       {oneriler.length > 0 && (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/80 p-3">
+        <div className={studio ? "veli-studio-info-card border-indigo-100 bg-indigo-50/80" : "rounded-xl border border-indigo-100 bg-indigo-50/80 p-3"}>
           <p className="text-xs font-extrabold text-indigo-900">Sistem önerisi</p>
           <ul className="mt-1.5 space-y-1">
             {oneriler.map((o, i) => (
@@ -68,7 +72,7 @@ export function VeliYanPanel({
       )}
 
       {sablonOner && onSablonOner ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-700">
+        <div className={studio ? "veli-studio-info-card text-[11px] text-slate-700" : "rounded-xl border border-slate-200 bg-white p-3 text-[11px] text-slate-700"}>
           <span className="font-bold">Önerilen şablon:</span> {sablonOner.ad}
           <br />
           <span className="text-slate-500">{sablonOner.neden}</span>
@@ -82,7 +86,7 @@ export function VeliYanPanel({
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className={studio ? "veli-studio-info-card" : "rounded-xl border border-slate-200 bg-white p-3"}>
         <p className="text-xs font-extrabold text-slate-800">WhatsApp mesaj önerisi</p>
         <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{waMetin}</p>
         <button

@@ -1,4 +1,5 @@
 import { normalizeTurkish, slugifyKurum } from "./normalizeTurkish";
+import { TRACKED_DISTRICTS } from "./trackedDistricts";
 
 export const MINTIKA_IL: Record<string, string> = {
   alanya: "Antalya",
@@ -29,9 +30,7 @@ export const DISTRICT_PASSWORD_CODES: Record<string, string> = {
 
 export const VARSAYILAN_SIFRE = "tedris2026";
 
-export const BILINEN_MINTIKALAR = [
-  "Alanya", "Kemer", "Manavgat", "Burdur", "Merkez", "Ağlasun", "Yeşilova", "Isparta",
-];
+export const BILINEN_MINTIKALAR: string[] = [...TRACKED_DISTRICTS];
 
 export function ilTahminEt(mintika: string): string {
   const key = mintika.trim().toLowerCase();

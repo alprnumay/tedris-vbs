@@ -6,10 +6,12 @@ import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
 import { api, type KullaniciBilgisi } from "./lib/api";
 import FormAlani from "./components/FormAlani";
-import { VeliYanPanel } from "./components/veli/VeliYanPanel";
 import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
+import { VeliYanPanel } from "./components/veli/VeliYanPanel";
 import { VeliMobilNav } from "./components/veli/VeliMobilNav";
 import { VeliOnizlemeMobil } from "./components/veli/VeliOnizlemeMobil";
+import { SABLON_LISTESI } from "./lib/sablonlar";
+import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
@@ -53,13 +55,17 @@ function MainApp() {
   const [pdfYukleniyor, setPdfYukleniyor] = useState(false);
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
+  const [formAdim, setFormAdim] = useState<1 | 2>(1);
 
   const downloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const desktopSahneRef = useRef<HTMLDivElement>(null);
   const adim2Ref = useRef<(() => void) | undefined>(undefined);
   const [zoom, setZoom] = useState(1);
+  const [desktopZoom, setDesktopZoom] = useState(0.72);
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
+  const veliModulLoglandi = useRef(false);
 
   const logoGelistirmeAcik =
     import.meta.env.DEV ||
@@ -68,6 +74,13 @@ function MainApp() {
   useEffect(() => {
     api.me().then((r) => setKullanici(r.user)).catch(() => setKullanici(null));
   }, []);
+
+  useEffect(() => {
+    if (homeModu === "veli" && kullanici?.id && !veliModulLoglandi.current) {
+      veliModulLoglandi.current = true;
+      void api.activityLog("open_veli_module").catch(() => {});
+    }
+  }, [homeModu, kullanici?.id]);
 
   useEffect(() => {
     if (logoGelistirmeAcik && kullanici && new URLSearchParams(window.location.search).get("modul") === "logo") {
@@ -85,6 +98,26 @@ function MainApp() {
     if (wrapperRef.current) obs.observe(wrapperRef.current);
     return () => obs.disconnect();
   }, [aktifSekme]);
+
+  useEffect(() => {
+    const el = desktopSahneRef.current;
+    if (!el) return;
+    const sigdir = () => {
+      const w = el.clientWidth - 20;
+      setDesktopZoom(Math.min(1, Math.max(0.6, w / POSTER_W)));
+    };
+    sigdir();
+    const obs = new ResizeObserver(sigdir);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [form, seciliSablon]);
+
+  const desktopSigdir = useCallback(() => {
+    const el = desktopSahneRef.current;
+    if (!el) return;
+    const w = el.clientWidth - 20;
+    setDesktopZoom(Math.min(1, Math.max(0.6, w / POSTER_W)));
+  }, []);
 
   useEffect(() => {
     if (captureSnapshot && captureResolveFn.current) {
@@ -132,11 +165,16 @@ function MainApp() {
     }
   };
 
+  const aktiviteKaydet = (action: string) => {
+    void api.activityLog(action).catch(() => {});
+  };
+
   const afisiIndir = async () => {
     setIndiriliyor(true);
     try {
       const dataUrl = await posterPngYakala();
       if (!dataUrl) return;
+      aktiviteKaydet("export_png");
 
       if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
         window.open(dataUrl, "_blank");
@@ -170,6 +208,7 @@ function MainApp() {
 
       pdf.addImage(dataUrl, "PNG", margin, y, imgW, finalH);
       pdf.save(`tedris-vbs-${seciliSablon}.pdf`);
+      aktiviteKaydet("export_pdf");
     } finally {
       setPdfYukleniyor(false);
     }
@@ -196,6 +235,7 @@ function MainApp() {
               title: "Tedris Vbs - Veli Bilgilendirme Afişi",
               text: metin,
             });
+            aktiviteKaydet("share_whatsapp");
             return;
           }
         }
@@ -203,6 +243,7 @@ function MainApp() {
     }
 
     window.open(`https://wa.me/?text=${encodeURIComponent(metin)}`, "_blank");
+    aktiviteKaydet("share_whatsapp");
   };
 
   const cikisYap = useCallback(async () => {
@@ -431,6 +472,11 @@ function MainApp() {
     </div>
   );
 
+  const desktopKalite = veliKaliteKontrol(form, seciliSablon);
+  const desktopSablonAd = SABLON_LISTESI.find((s) => s.id === seciliSablon)?.ad ?? seciliSablon;
+  const desktopKaliteEtiket =
+    desktopKalite.durum === "hazir" ? "Hazır" : desktopKalite.durum === "dikkat" ? "Dikkat" : "Eksik";
+
   return (
     <div className="flex flex-col" style={{ height: "100dvh", background: "#f1f5f9" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -578,49 +624,106 @@ function MainApp() {
         </div>
       </header>
 
-      <div className="hidden lg:flex flex-1 overflow-hidden">
-        <aside className="w-80 flex-shrink-0 overflow-y-auto border-r border-slate-200" style={{ background: "#f8fafc" }}>
-          <div className="p-5">
-            <FormAlani
-              form={form}
-              setForm={setForm}
-              seciliSablon={seciliSablon}
-              setSeciliSablon={setSeciliSablon}
-              onMetinYenile={yeniMetinUret}
-              setMetinDuzenlendi={setMetinDuzenlendi}
-              kullaniciId={kullanici.id}
-              adim2Ref={adim2Ref}
-            />
+      <div className="veli-desktop-workspace hidden lg:flex flex-1 min-h-0">
+        {aktifSekme === "yonetim" && kullanici?.isAdmin ? (
+          <div className="veli-desktop-inner w-full">
+            <AdminSayfasi />
           </div>
-        </aside>
+        ) : (
+          <div className="veli-desktop-inner w-full mx-auto">
+            <div className="veli-studio-shell">
+              <header className="veli-studio-toolbar">
+                <div className="veli-studio-toolbar__brand">
+                  <h2 className="veli-studio-toolbar__title">Veli Bilgilendirme Oluştur</h2>
+                  <p className="veli-studio-toolbar__desc">
+                    Bilgileri doldurun, tasarımı seçin, önizleyip indirin.
+                  </p>
+                </div>
+                <div className="veli-studio-toolbar__meta">
+                  <span className="veli-desktop-pill">
+                    <span className="veli-desktop-pill__label">Adım</span>
+                    {formAdim === 1 ? "Bilgiler" : "Tasarım"}
+                  </span>
+                  <span className="veli-desktop-pill">
+                    <span className="veli-desktop-pill__label">Şablon</span>
+                    {desktopSablonAd}
+                  </span>
+                  <span className={`veli-desktop-pill veli-desktop-pill--${desktopKalite.durum}`}>
+                    <span className="veli-desktop-pill__label">Kalite</span>
+                    {desktopKaliteEtiket}
+                  </span>
+                </div>
+                <span className="veli-studio-toolbar__live">Önizleme canlı güncellenir</span>
+              </header>
 
-        <main className="flex-1 overflow-y-auto p-6 flex flex-col items-center" style={{ background: "#e8edf2" }}>
-          {aktifSekme === "yonetim" && kullanici?.isAdmin ? (
-            <div className="w-full">
-              <AdminSayfasi />
-            </div>
-          ) : (
-            <div className="w-full max-w-lg">
-              <h2 className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "#64748b" }}>
-                5. Önizleme ve İndirme
-              </h2>
-              <p className="text-[11px] mb-4" style={{ color: "#94a3b8" }}>
-                Afişi kontrol edin; PNG / PDF indirin veya WhatsApp ile paylaşın.
-              </p>
-              <div
-                className="rounded-2xl overflow-hidden mb-4"
-                style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
-              >
-                <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
+              <div className="veli-studio-workspace">
+                <div className="veli-desktop-form-col">
+                  <div className="veli-desktop-form-shell">
+                    <FormAlani
+                      form={form}
+                      setForm={setForm}
+                      seciliSablon={seciliSablon}
+                      setSeciliSablon={setSeciliSablon}
+                      onMetinYenile={yeniMetinUret}
+                      setMetinDuzenlendi={setMetinDuzenlendi}
+                      kullaniciId={kullanici.id}
+                      adim2Ref={adim2Ref}
+                      desktopMod
+                      onAdimChange={setFormAdim}
+                    />
+                  </div>
+                </div>
+
+                <div className="veli-desktop-preview-col">
+                  <div className="veli-studio-stage">
+                    <div className="veli-stage-toolbar">
+                      <div className="veli-stage-toolbar__left">
+                        <span className="veli-stage-toolbar__label">Önizleme</span>
+                        <span className="veli-stage-toolbar__sub">Canlı afiş görünümü</span>
+                      </div>
+                      <div className="veli-stage-toolbar__right">
+                        <button type="button" className="veli-stage-btn" onClick={desktopSigdir}>
+                          Sığdır
+                        </button>
+                        <span className="veli-stage-zoom">{Math.round(desktopZoom * 100)}%</span>
+                      </div>
+                    </div>
+                    <div ref={desktopSahneRef} className="veli-studio-sahne">
+                      <div className="veli-studio-poster-wrap" style={{ zoom: desktopZoom } as React.CSSProperties}>
+                        <div style={{ width: POSTER_W }}>
+                          <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
+                        </div>
+                      </div>
+                    </div>
+                    <p className="veli-studio-hint">Formu doldurdukça afiş canlı güncellenir.</p>
+                  </div>
+                  <div className="veli-studio-actions">
+                    <PaylasBtnlari />
+                  </div>
+                  <div className="veli-desktop-aside-below">
+                    <VeliYanPanel
+                      form={form}
+                      seciliSablon={seciliSablon}
+                      onSablonOner={setSeciliSablon}
+                      studio
+                    />
+                  </div>
+                </div>
+
+                <aside className="veli-desktop-aside-col" aria-label="Yardımcı panel">
+                  <div className="veli-desktop-aside-sticky">
+                    <VeliYanPanel
+                      form={form}
+                      seciliSablon={seciliSablon}
+                      onSablonOner={setSeciliSablon}
+                      studio
+                    />
+                  </div>
+                </aside>
               </div>
-              <VeliYanPanel form={form} seciliSablon={seciliSablon} onSablonOner={setSeciliSablon} />
-              <PaylasBtnlari />
-              <p className="text-center text-xs mt-3" style={{ color: "#94a3b8" }}>
-                Formu doldurun — afiş otomatik güncellenir
-              </p>
             </div>
-          )}
-        </main>
+          </div>
+        )}
       </div>
 
       <div className="lg:hidden flex-1 overflow-hidden flex flex-col">

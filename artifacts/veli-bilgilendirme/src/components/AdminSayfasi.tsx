@@ -1,164 +1,169 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   api,
-  type AdminOverview,
   type AdminKullanici,
-  type AdminKurum,
   type AdminDestek,
-  type AdminFiltreler,
+  type AdminDashboard,
+  type AdminMintikaMetrik,
+  type AdminYurtMetrik,
+  type AdminVeriSagligi,
+  type AdminAktiviteResponse,
 } from "../lib/api";
-import { hatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
-import { girisBilgisiMetni } from "../lib/admin/adminKullaniciUret";
+import { TRACKED_DISTRICTS } from "../lib/admin/trackedDistricts";
+import { hatirlatmaMesaji, yurtHatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
 import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
+import { indirAdminExcel } from "../lib/admin/adminExcel";
 import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
 import {
-  StatKart, DurumRozet, formatTarih, inputStyle, labelStyle,
-  FiltreSatir, FiltreAlan, selectStyle,
+  StatKart,
+  DurumRozet,
+  YurtDurumRozet,
+  formatTarih,
+  inputStyle,
+  selectStyle,
+  FiltreSatir,
+  FiltreAlan,
 } from "./admin/adminUi";
 
-type Sekme = "genel" | "bolge" | "kurumlar" | "kullanicilar" | "kullanim" | "destek";
+type Sekme =
+  | "genel"
+  | "mintika"
+  | "yurt"
+  | "kullanicilar"
+  | "aktivite"
+  | "veri"
+  | "destek"
+  | "excel";
 
 const SEKMELER: { id: Sekme; label: string; simge: string }[] = [
   { id: "genel", label: "Genel Bakış", simge: "📊" },
-  { id: "bolge", label: "Bölge Raporu", simge: "🗺️" },
-  { id: "kurumlar", label: "Kurumlar", simge: "🏫" },
+  { id: "mintika", label: "Mıntıka Panosu", simge: "🗺️" },
+  { id: "yurt", label: "Yurt Takibi", simge: "🏫" },
   { id: "kullanicilar", label: "Kullanıcılar", simge: "👥" },
-  { id: "kullanim", label: "Kullanım Takibi", simge: "📉" },
+  { id: "aktivite", label: "Aktivite Takibi", simge: "📋" },
+  { id: "veri", label: "Veri Sağlığı", simge: "🩺" },
   { id: "destek", label: "Destek", simge: "💬" },
+  { id: "excel", label: "Excel Raporları", simge: "📥" },
 ];
 
-function GunlukGrafik({ dailyLogins }: { dailyLogins: { day: string; count: number }[] }) {
-  const today = new Date();
-  const gunler = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - (6 - i));
-    const key = d.toISOString().slice(0, 10);
-    const gunAd = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][d.getDay()];
-    return { key, label: gunAd, count: dailyLogins.find((r) => r.day === key)?.count ?? 0 };
-  });
-  const maxVal = Math.max(1, ...gunler.map((g) => g.count));
-  const CHART_H = 90;
-  const CHART_W = 280;
-  const barW = 22;
-  const groupW = CHART_W / 7;
-
-  return (
-    <div style={{ background: "#fff", borderRadius: 14, padding: 18, border: "1.5px solid #e2e8f0" }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 12 }}>Son 7 Gün Giriş</div>
-      <svg width="100%" viewBox={`0 0 ${CHART_W} ${CHART_H + 20}`}>
-        {gunler.map((g, i) => {
-          const x = i * groupW + groupW / 2;
-          const h = (g.count / maxVal) * CHART_H;
-          return (
-            <g key={g.key}>
-              <rect x={x - barW / 2} y={CHART_H - h} width={barW} height={h || 2} rx={3} fill="#2563eb" opacity={0.85} />
-              {g.count > 0 && <text x={x} y={CHART_H - h - 3} textAnchor="middle" fontSize={9} fill="#2563eb" fontWeight="700">{g.count}</text>}
-              <text x={x} y={CHART_H + 14} textAnchor="middle" fontSize={10} fill="#94a3b8" fontWeight="600">{g.label}</text>
-            </g>
-          );
-        })}
-        <line x1={0} y1={CHART_H} x2={CHART_W} y2={CHART_H} stroke="#e2e8f0" strokeWidth={1} />
-      </svg>
-    </div>
-  );
-}
+const TARIH_SECENEKLERI = [
+  { v: "today", l: "Bugün" },
+  { v: "yesterday", l: "Dün" },
+  { v: "7d", l: "Son 7 gün" },
+  { v: "30d", l: "Son 30 gün" },
+  { v: "this_month", l: "Bu ay" },
+  { v: "last_month", l: "Geçen ay" },
+  { v: "period", l: "Bu dönem" },
+  { v: "season", l: "Bu sezon" },
+  { v: "custom", l: "Özel aralık" },
+];
 
 export default function AdminSayfasi() {
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
-  const [overview, setOverview] = useState<AdminOverview | null>(null);
-  const [filtreler, setFiltreler] = useState<AdminFiltreler | null>(null);
 
-  const [il, setIl] = useState("");
-  const [ilce, setIlce] = useState("");
+  const [mintika, setMintika] = useState("");
   const [kurum, setKurum] = useState("");
   const [tarihAralik, setTarihAralik] = useState("7d");
+  const [ozelBaslangic, setOzelBaslangic] = useState("");
+  const [ozelBitis, setOzelBitis] = useState("");
+  const [yurtPreset, setYurtPreset] = useState("");
 
-  const [kullanicilar, setKullanicilar] = useState<AdminKullanici[]>([]);
+  const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
+  const [mintikalar, setMintikalar] = useState<AdminMintikaMetrik[]>([]);
+  const [yurts, setYurts] = useState<AdminYurtMetrik[]>([]);
+  const [veriSagligi, setVeriSagligi] = useState<AdminVeriSagligi | null>(null);
+  const [aktivite, setAktivite] = useState<AdminAktiviteResponse | null>(null);
   const [bugunGirisler, setBugunGirisler] = useState<AdminKullanici[]>([]);
-  const [kurumlar, setKurumlar] = useState<AdminKurum[]>([]);
-  const [bolgeRapor, setBolgeRapor] = useState<{ summary: Record<string, number>; users: AdminKullanici[] } | null>(null);
-  const [kullanimTip, setKullanimTip] = useState("never");
-  const [kullanimListe, setKullanimListe] = useState<AdminKullanici[]>([]);
-  const [pasifKurumlar, setPasifKurumlar] = useState<unknown[]>([]);
+  const [kullanicilar, setKullanicilar] = useState<AdminKullanici[]>([]);
   const [destekler, setDestekler] = useState<AdminDestek[]>([]);
-  const [destekFiltre, setDestekFiltre] = useState("");
 
   const [arama, setArama] = useState("");
   const [rolFiltre, setRolFiltre] = useState("");
   const [aktifFiltre, setAktifFiltre] = useState("");
+  const [destekFiltre, setDestekFiltre] = useState("");
+  const [aktiviteAction, setAktiviteAction] = useState("");
+  const [donemBaslangic, setDonemBaslangic] = useState("");
+  const [donemBitis, setDonemBitis] = useState("");
+  const [sezonBaslangic, setSezonBaslangic] = useState("");
+  const [sezonBitis, setSezonBitis] = useState("");
 
-  const filtreParams = useCallback(() => ({
-    province: il || undefined,
-    district: ilce || undefined,
-    institutionCode: kurum || undefined,
-  }), [il, ilce, kurum]);
+  const filtreParams = useCallback(
+    () => ({
+      district: mintika || undefined,
+      institutionCode: kurum || undefined,
+      range: tarihAralik,
+      from: tarihAralik === "custom" ? ozelBaslangic || undefined : undefined,
+      to: tarihAralik === "custom" ? ozelBitis || undefined : undefined,
+      preset: yurtPreset || undefined,
+    }),
+    [mintika, kurum, tarihAralik, ozelBaslangic, ozelBitis, yurtPreset],
+  );
+
+  const filtreMetni = () => {
+    const p = [mintika && `Mıntıka: ${mintika}`, kurum && `Kurum kodu: ${kurum}`, `Aralık: ${tarihAralik}`].filter(Boolean);
+    return p.join(" · ") || "Tüm kayıtlar";
+  };
 
   const veriYukle = useCallback(async () => {
     setYukleniyor(true);
     setHata(null);
+    const fp = filtreParams();
     try {
-      setHata(null);
-      const fp = filtreParams();
-      const results = await Promise.allSettled([
-        api.adminOverview(),
-        api.adminFiltreler(),
-        api.adminBugunGirisler(fp),
-        api.adminKurumlar(fp),
-        api.adminBolgeRaporu({ ...fp, range: tarihAralik }),
-        api.adminKullanicilar({ ...fp, search: arama || undefined, role: rolFiltre || undefined, active: aktifFiltre || undefined }),
-        api.adminKullanimTakibi(kullanimTip, fp),
-        api.adminDestek(),
-      ]);
+      const jobs: Promise<void>[] = [
+        api.adminDashboard(fp).then(setDashboard),
+        api.adminBugunGirisler(fp).then((r) => setBugunGirisler(r.logins)),
+        api.adminKullanicilar({
+          district: fp.district,
+          institutionCode: fp.institutionCode,
+          search: arama || undefined,
+          role: rolFiltre || undefined,
+          active: aktifFiltre || undefined,
+        }).then((r) => setKullanicilar(r.users)),
+        api.adminDestek().then((r) => setDestekler(r.requests)),
+      ];
 
-      const errMsgs: string[] = [];
-      const get = <T,>(i: number): T | null => {
-        const r = results[i];
-        if (r.status === "fulfilled") return r.value as T;
-        errMsgs.push(r.reason instanceof Error ? r.reason.message : "İstek başarısız");
-        return null;
-      };
-
-      const ov = get<Awaited<ReturnType<typeof api.adminOverview>>>(0);
-      const fl = get<Awaited<ReturnType<typeof api.adminFiltreler>>>(1);
-      if (ov) setOverview(ov);
-      if (fl) setFiltreler(fl);
-
-      const bg = get<Awaited<ReturnType<typeof api.adminBugunGirisler>>>(2);
-      const ku = get<Awaited<ReturnType<typeof api.adminKurumlar>>>(3);
-      const br = get<Awaited<ReturnType<typeof api.adminBolgeRaporu>>>(4);
-      const kl = get<Awaited<ReturnType<typeof api.adminKullanicilar>>>(5);
-      const kt = get<Awaited<ReturnType<typeof api.adminKullanimTakibi>>>(6);
-      const destek = get<Awaited<ReturnType<typeof api.adminDestek>>>(7);
-
-      if (bg) setBugunGirisler(bg.logins);
-      if (ku) setKurumlar(ku.institutions);
-      if (br) setBolgeRapor(br);
-      if (kl) setKullanicilar(kl.users);
-      if (kt) {
-        setKullanimListe(kt.users);
-        setPasifKurumlar(kt.inactiveInstitutions);
+      if (aktifSekme === "mintika" || aktifSekme === "genel" || aktifSekme === "excel") {
+        jobs.push(api.adminMintikaBoard(fp).then((r) => setMintikalar(r.mintikalar)));
       }
-      if (destek) setDestekler(destek.requests);
-
-      if (errMsgs.length > 0) {
-        setHata(errMsgs[0] ?? "Bazı veriler yüklenemedi.");
+      if (aktifSekme === "yurt" || aktifSekme === "genel" || aktifSekme === "excel") {
+        jobs.push(api.adminYurtTakibi(fp).then((r) => setYurts(r.yurts)));
       }
+      if (aktifSekme === "veri" || aktifSekme === "excel") {
+        jobs.push(api.adminVeriSagligi().then(setVeriSagligi));
+      }
+      if (aktifSekme === "aktivite") {
+        jobs.push(
+          api
+            .adminAktivite({ ...fp, action: aktiviteAction || undefined })
+            .then(setAktivite),
+        );
+      }
+
+      const settingsRes = await api.adminSettings().catch(() => null);
+      if (settingsRes?.settings) {
+        setDonemBaslangic(settingsRes.settings.periodStart?.slice(0, 10) ?? "");
+        setDonemBitis(settingsRes.settings.periodEnd?.slice(0, 10) ?? "");
+        setSezonBaslangic(settingsRes.settings.seasonStart?.slice(0, 10) ?? "");
+        setSezonBitis(settingsRes.settings.seasonEnd?.slice(0, 10) ?? "");
+      }
+
+      await Promise.allSettled(jobs);
     } catch (e) {
       setHata(e instanceof Error ? e.message : "Veriler yüklenemedi.");
     } finally {
       setYukleniyor(false);
     }
-  }, [filtreParams, tarihAralik, arama, rolFiltre, aktifFiltre, kullanimTip]);
-
-  useEffect(() => { veriYukle(); }, []);
+  }, [filtreParams, arama, rolFiltre, aktifFiltre, aktifSekme, aktiviteAction]);
 
   useEffect(() => {
-    if (!yukleniyor && (aktifSekme === "bolge" || aktifSekme === "kullanim")) {
-      veriYukle();
-    }
-  }, [tarihAralik, kullanimTip]);
+    veriYukle();
+  }, []);
+
+  useEffect(() => {
+    if (!yukleniyor) veriYukle();
+  }, [aktifSekme, tarihAralik, yurtPreset, aktiviteAction]);
 
   const kullaniciPasif = async (u: AdminKullanici) => {
     await api.adminKullaniciGuncelle(u.id, { isActive: !u.isActive } as Partial<AdminKullanici>);
@@ -174,53 +179,38 @@ export default function AdminSayfasi() {
     }
   };
 
-  const girisBilgisiKopyala = (u: AdminKullanici) => {
-    const rol = normalizeRole(u.role, u.isAdmin);
-    void navigator.clipboard.writeText(
-      girisBilgisiMetni({
-        name: u.name,
-        email: u.email,
-        password: "(mıntıka koduna göre — şifre sıfırla)",
-        mintika: u.district || "",
-        kurum: u.institutionName || "",
-        il: u.province || "",
-        rol: ROL_LABEL[rol],
-      }),
-    );
+  const kurumSec = (code: string, district?: string) => {
+    if (district) setMintika(district);
+    setKurum(code);
+    setAktifSekme("kullanicilar");
   };
 
-  const kurumKullanicilariniGoster = (k: AdminKurum) => {
-    if (k.province) setIl(k.province);
-    if (k.district) setIlce(k.district);
-    setKurum(k.institution_code);
-    setAktifSekme("kullanicilar");
-    setTimeout(() => veriYukle(), 0);
-  };
+  const kurumSecenekleri = [...new Map(yurts.map((y) => [y.institutionCode, y])).values()];
 
   const filtreliDestek = destekler.filter((d) => {
-    if (destekFiltre === "yeni" && d.status !== "yeni") return false;
-    if (destekFiltre === "cozuldu" && d.status !== "cozuldu") return false;
-    if (il && d.province !== il) return false;
-    if (ilce && d.district !== ilce) return false;
+    if (destekFiltre && d.status !== destekFiltre) return false;
+    if (mintika && d.district !== mintika) return false;
+    if (kurum && d.institution_code !== kurum) return false;
     return true;
   });
 
-  const ilceSecenekleri = filtreler?.districts.filter((d) => !il || d.province === il) ?? [];
-  const kurumSecenekleri = filtreler?.institutions.filter((i) => {
-    if (il && i.province !== il) return false;
-    if (ilce && i.district !== ilce) return false;
-    return true;
-  }) ?? [];
-
-  const filtreBaslik = () => {
-    if (kurum) {
-      const k = kurumSecenekleri.find((x) => x.institution_code === kurum);
-      return `(${k?.institution_name || kurum})`;
-    }
-    if (ilce && il) return `(${il} / ${ilce})`;
-    if (ilce) return `(${ilce})`;
-    if (il) return `(${il})`;
-    return "(Tüm bölgeler)";
+  const excelIndir = async (tip: "genel" | "mintika" | "yurt" | "veri") => {
+    const ozet = dashboard?.summary ?? {};
+    await indirAdminExcel({
+      raporAdi: tip === "genel" ? "Genel Bakış" : tip === "mintika" ? "Mıntıka Panosu" : tip === "yurt" ? "Yurt Takibi" : "Veri Sağlığı",
+      rangeLabel: dashboard?.range.label ?? tarihAralik,
+      filtreler: filtreMetni(),
+      ozet: {
+        "Toplam yurt": ozet.totalYurts ?? yurts.length,
+        "Toplam kullanıcı": ozet.totalUsers ?? 0,
+        "Bugün aktif yurt": ozet.todayActiveYurts ?? 0,
+        "7+ gün pasif yurt": ozet.passive7dYurts ?? 0,
+        "Açık destek": ozet.openSupport ?? 0,
+      },
+      mintikalar: tip !== "yurt" ? mintikalar : undefined,
+      yurts: tip !== "mintika" ? yurts : undefined,
+      issues: tip === "veri" ? veriSagligi?.issues : undefined,
+    });
   };
 
   const mevcutEpostalar = kullanicilar.map((u) => u.email.toLowerCase());
@@ -228,47 +218,67 @@ export default function AdminSayfasi() {
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
       <header style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)", padding: "16px 20px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛡️</div>
           <div style={{ flex: 1 }}>
             <h1 style={{ fontSize: 18, fontWeight: 800, color: "#fff", margin: 0 }}>Yönetim Paneli</h1>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "2px 0 0" }}>Kurum / yurt takip merkezi</p>
+            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "2px 0 0" }}>Mıntıka / yurt takip merkezi</p>
           </div>
           <a href="/" style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)", textDecoration: "none", padding: "7px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)" }}>← Uygulama</a>
         </div>
       </header>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "16px" }}>
         <FiltreSatir>
-          <FiltreAlan label="İl">
-            <select value={il} onChange={(e) => { setIl(e.target.value); setIlce(""); setKurum(""); }} style={selectStyle}>
+          <FiltreAlan label="Mıntıka">
+            <select value={mintika} onChange={(e) => { setMintika(e.target.value); setKurum(""); }} style={selectStyle}>
               <option value="">Tümü</option>
-              {filtreler?.provinces.map((p) => <option key={p} value={p}>{p}</option>)}
+              {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </FiltreAlan>
-          <FiltreAlan label="Mıntıka / İlçe">
-            <select value={ilce} onChange={(e) => { setIlce(e.target.value); setKurum(""); }} style={selectStyle}>
-              <option value="">Tümü</option>
-              {ilceSecenekleri.map((d) => <option key={`${d.province}-${d.district}`} value={d.district}>{d.district}</option>)}
-            </select>
-          </FiltreAlan>
-          <FiltreAlan label="Kurum">
+          <FiltreAlan label="Yurt / Kurum">
             <select value={kurum} onChange={(e) => setKurum(e.target.value)} style={selectStyle}>
               <option value="">Tümü</option>
-              {kurumSecenekleri.map((k) => (
-                <option key={k.institution_code} value={k.institution_code}>{k.institution_name || k.institution_code}</option>
+              {kurumSecenekleri.map((y) => (
+                <option key={y.institutionCode} value={y.institutionCode}>{y.institutionName}</option>
               ))}
             </select>
           </FiltreAlan>
-          <button onClick={veriYukle} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", alignSelf: "flex-end" }}>
-            Filtrele
+          <FiltreAlan label="Tarih aralığı">
+            <select value={tarihAralik} onChange={(e) => setTarihAralik(e.target.value)} style={selectStyle}>
+              {TARIH_SECENEKLERI.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
+            </select>
+          </FiltreAlan>
+          {tarihAralik === "custom" && (
+            <>
+              <FiltreAlan label="Başlangıç">
+                <input type="date" value={ozelBaslangic} onChange={(e) => setOzelBaslangic(e.target.value)} style={inputStyle} />
+              </FiltreAlan>
+              <FiltreAlan label="Bitiş">
+                <input type="date" value={ozelBitis} onChange={(e) => setOzelBitis(e.target.value)} style={inputStyle} />
+              </FiltreAlan>
+            </>
+          )}
+          <button type="button" onClick={veriYukle} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", alignSelf: "flex-end" }}>
+            Uygula
           </button>
         </FiltreSatir>
 
+        {(dashboard?.range.warning || dashboard?.activityWarning) && (
+          <div style={{ padding: 12, borderRadius: 10, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: 12, marginBottom: 12 }}>
+            {dashboard.range.warning || dashboard.activityWarning}
+          </div>
+        )}
+        {dashboard?.dataQualityWarning && (
+          <div style={{ padding: 12, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: 12, marginBottom: 12 }}>
+            {dashboard.dataQualityWarning}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", background: "#fff", borderRadius: 12, padding: 4, border: "1.5px solid #e2e8f0", marginBottom: 16 }}>
           {SEKMELER.map((s) => (
-            <button key={s.id} onClick={() => setAktifSekme(s.id)}
-              style={{ flex: "1 1 auto", padding: "8px 10px", borderRadius: 9, fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer",
+            <button key={s.id} type="button" onClick={() => setAktifSekme(s.id)}
+              style={{ flex: "1 1 auto", minWidth: 100, padding: "8px 8px", borderRadius: 9, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer",
                 background: aktifSekme === s.id ? "linear-gradient(135deg, #1e3a5f, #2563eb)" : "transparent",
                 color: aktifSekme === s.id ? "#fff" : "#64748b" }}>
               {s.simge} {s.label}
@@ -279,235 +289,310 @@ export default function AdminSayfasi() {
         {hata && <div style={{ padding: 14, borderRadius: 12, background: "#fee2e2", color: "#991b1b", marginBottom: 12, fontWeight: 600 }}>{hata}</div>}
         {yukleniyor && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Yükleniyor...</div>}
 
-        {!yukleniyor && !hata && aktifSekme === "genel" && overview && (
+        {!yukleniyor && aktifSekme === "genel" && dashboard && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              <StatKart baslik="Toplam Kullanıcı" deger={overview.totalUsers} renk="#2563eb" simge="👤" />
-              <StatKart baslik="Bugün Giriş Yapan" deger={overview.todayLogins} renk="#16a34a" simge="✅" />
-              <StatKart baslik="Aktif Kurum (7g)" deger={overview.activeInstitutions} renk="#0d9488" simge="🏫" />
-              <StatKart baslik="Pasif Kurum" deger={overview.passiveInstitutions} renk="#d97706" simge="⏸️" />
-              <StatKart baslik="Destek Talebi" deger={overview.totalSupport} renk="#f59e0b" simge="💬" />
-              <StatKart baslik="7 Gün Aktif Kullanıcı" deger={overview.activeUsers7d} renk="#7c3aed" simge="📈" />
+              <StatKart baslik="Toplam mıntıka" deger={dashboard.summary.totalDistricts} renk="#1e3a5f" simge="🗺️" />
+              <StatKart baslik="Toplam yurt" deger={dashboard.summary.totalYurts} renk="#2563eb" simge="🏫" />
+              <StatKart baslik="Toplam kullanıcı" deger={dashboard.summary.totalUsers} renk="#7c3aed" simge="👤" />
+              <StatKart baslik="Bugün aktif yurt" deger={dashboard.summary.todayActiveYurts} renk="#16a34a" simge="✅" />
+              <StatKart baslik="7+ gün pasif yurt" deger={dashboard.summary.passive7dYurts} renk="#d97706" simge="⏸️" />
+              <StatKart baslik="Hiç giriş yok" deger={dashboard.summary.neverLoginYurts} renk="#dc2626" simge="⛔" />
+              <StatKart baslik="Açık destek" deger={dashboard.summary.openSupport} renk="#f59e0b" simge="💬" />
+              <StatKart baslik="Veri sorunu" deger={dashboard.summary.dataIssueCount} renk="#64748b" simge="🩺" />
             </div>
-
-            <div style={{ background: "#eff6ff", borderRadius: 12, padding: "12px 14px", border: "1px solid #bfdbfe", fontSize: 12, color: "#1e40af" }}>
-              <strong>Hazır raporlar:</strong>{" "}
-              {[
-                ["Bugün Kimler Girdi?", "genel"],
-                ["Bölge Raporu", "bolge"],
-                ["Pasif Kullanıcılar", "kullanim"],
-                ["Kurum Özeti", "kurumlar"],
-              ].map(([label, tab], i) => (
-                <button key={i} onClick={() => setAktifSekme(tab as Sekme)}
-                  style={{ marginLeft: 6, padding: "4px 10px", borderRadius: 8, border: "1px solid #93c5fd", background: "#fff", fontSize: 11, fontWeight: 700, color: "#2563eb", cursor: "pointer" }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <GunlukGrafik dailyLogins={overview.dailyLogins} />
 
             <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
-                Bugün Giriş Yapanlar {filtreBaslik()}
-              </div>
-              {bugunGirisler.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#94a3b8" }}>Bugün bu filtreye uygun giriş kaydı yok.</p>
-              ) : (
-                <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>
-                  Bugün <strong>{bugunGirisler.length}</strong> kullanıcı giriş yaptı.
-                </p>
-              )}
-              {bugunGirisler.length > 0 && (
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ textAlign: "left", color: "#64748b" }}>
-                        <th style={{ padding: 8 }}>Saat</th><th>Ad</th><th>Kurum</th><th>Mıntıka</th><th>E-posta</th>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>Mıntıka durum özeti</div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ color: "#64748b", textAlign: "left" }}>
+                      <th style={{ padding: 8 }}>Mıntıka</th><th>Yurt</th><th>Bugün aktif</th><th>7g aktif</th><th>7g+ pasif</th><th>Hiç giriş</th><th>Sağlık</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboard.mintikaSummary.map((m) => (
+                      <tr key={m.districtName} style={{ borderTop: "1px solid #f1f5f9", cursor: "pointer" }} onClick={() => { setMintika(m.districtName); setAktifSekme("mintika"); }}>
+                        <td style={{ padding: 8, fontWeight: 700 }}>{m.districtName}</td>
+                        <td>{m.totalYurts}</td>
+                        <td>{m.todayActiveYurts}</td>
+                        <td>{m.active7dYurts}</td>
+                        <td>{m.passive7dYurts}</td>
+                        <td>{m.neverLoginYurts}</td>
+                        <td>{m.healthScore ?? "—"} ({m.healthLabel})</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {bugunGirisler.map((u) => (
-                        <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: 8 }}>{u.login_time || "—"}</td>
-                          <td>{u.name}</td>
-                          <td>{u.institutionName || "—"}</td>
-                          <td>{u.district || "—"}</td>
-                          <td>{u.email}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            {overview.districtActivityToday.length > 0 && (
-              <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Bugün İlçe Bazlı Aktivite</div>
-                {overview.districtActivityToday.map((d) => (
-                  <div key={`${d.province}-${d.district}`} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 12 }}>
-                    <span>{d.district} ({d.province})</span>
-                    <strong>{d.today_count} giriş</strong>
+            {dashboard.attentionYurts.length > 0 && (
+              <div style={{ background: "#fff7ed", borderRadius: 14, padding: 16, border: "1px solid #fed7aa" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#9a3412", marginBottom: 8 }}>Dikkat gerektiren yurtlar</div>
+                {dashboard.attentionYurts.map((y) => (
+                  <div key={y.institutionCode} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 0", fontSize: 12, borderBottom: "1px solid #ffedd5" }}>
+                    <span><strong>{y.institutionName}</strong> · {y.districtName}</span>
+                    <YurtDurumRozet durum={y.activityStatus} />
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
 
-        {!yukleniyor && !hata && aktifSekme === "bolge" && bolgeRapor && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <FiltreSatir>
-              <FiltreAlan label="Tarih aralığı">
-                <select value={tarihAralik} onChange={(e) => setTarihAralik(e.target.value)} style={selectStyle}>
-                  <option value="today">Bugün</option>
-                  <option value="7d">Son 7 gün</option>
-                  <option value="30d">Son 30 gün</option>
-                </select>
-              </FiltreAlan>
-            </FiltreSatir>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              <StatKart baslik="Toplam kullanıcı" deger={bolgeRapor.summary.total_users ?? 0} renk="#2563eb" simge="👤" />
-              <StatKart baslik="Aralıkta aktif" deger={bolgeRapor.summary.active_in_range ?? 0} renk="#16a34a" simge="✓" />
-              <StatKart baslik="Hiç giriş yok" deger={bolgeRapor.summary.never_logged_in ?? 0} renk="#dc2626" simge="!" />
-              <StatKart baslik="Aktif kurum" deger={bolgeRapor.summary.active_institutions ?? 0} renk="#0d9488" simge="🏫" />
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Bugün giriş yapanlar</div>
+              {bugunGirisler.length === 0 ? (
+                <p style={{ color: "#94a3b8", fontSize: 13 }}>Veri yok</p>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 6 }}>Saat</th><th>Kullanıcı</th><th>Yurt</th><th>Mıntıka</th></tr></thead>
+                  <tbody>
+                    {bugunGirisler.map((u) => (
+                      <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: 6 }}>{u.login_time || "—"}</td>
+                        <td>{u.name}</td>
+                        <td>{u.institutionName || "—"}</td>
+                        <td>{u.district || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            <RaporTablo kullanicilar={bolgeRapor.users} showRol />
           </div>
         )}
 
-        {!yukleniyor && !hata && aktifSekme === "kurumlar" && (
-          <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
-                  <th style={{ padding: 10 }}>Kurum</th><th>İl</th><th>Mıntıka</th><th>Kullanıcı</th>
-                  <th>Bugün</th><th>7 gün</th><th>Son giriş</th><th>Durum</th><th>İşlem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {kurumlar.map((k) => (
-                  <tr key={k.institution_code} style={{ borderTop: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: 10, fontWeight: 700 }}>{k.institution_name || k.institution_code}</td>
-                    <td>{k.province || "—"}</td>
-                    <td>{k.district || "—"}</td>
-                    <td>{k.user_count}</td>
-                    <td>{k.today_active}</td>
-                    <td>{k.active_7d}</td>
-                    <td>{formatTarih(k.last_login_at)}</td>
-                    <td><DurumRozet durum={k.today_active > 0 ? "today" : k.active_7d > 0 ? "week" : "inactive"} /></td>
-                    <td style={{ padding: 8 }}>
-                      <button type="button" onClick={() => kurumKullanicilariniGoster(k)}
-                        style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
-                        Kullanıcıları göster
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {kurumlar.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Kurum kaydı yok.</p>}
+        {!yukleniyor && aktifSekme === "mintika" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {mintikalar.length === 0 ? <p style={{ color: "#94a3b8" }}>Veri yok</p> : mintikalar.map((m) => (
+              <div key={m.districtName} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800 }}>{m.districtName}</div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>Son hareket: {formatTarih(m.lastMovementAt)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: m.healthScore != null && m.healthScore >= 80 ? "#16a34a" : m.healthScore != null && m.healthScore >= 50 ? "#d97706" : "#dc2626" }}>
+                      {m.healthScore ?? "—"}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700 }}>{m.healthLabel}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, fontSize: 11 }}>
+                  <span>Yurt: <strong>{m.totalYurts}</strong></span>
+                  <span>Kullanıcı: <strong>{m.totalUsers}</strong></span>
+                  <span>Bugün aktif yurt: <strong>{m.todayActiveYurts}</strong></span>
+                  <span>7g aktif: <strong>{m.active7dYurts}</strong></span>
+                  <span>7g+ pasif: <strong>{m.passive7dYurts}</strong></span>
+                  <span>Hiç giriş: <strong>{m.neverLoginYurts}</strong></span>
+                  <span>Kullanım: <strong>{m.usageRate != null ? `${m.usageRate}%` : "—"}</strong></span>
+                </div>
+                <button type="button" onClick={() => { setMintika(m.districtName); setAktifSekme("yurt"); veriYukle(); }}
+                  style={{ marginTop: 10, fontSize: 11, fontWeight: 700, padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer" }}>
+                  Yurtları listele
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
-        {!yukleniyor && !hata && aktifSekme === "kullanicilar" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
-
-            <FiltreSatir>
-              <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta, kurum" /></FiltreAlan>
-              <FiltreAlan label="Rol">
-                <select style={selectStyle} value={rolFiltre} onChange={(e) => setRolFiltre(e.target.value)}>
-                  <option value="">Tümü</option>
-                  <option value="user">Kullanıcı</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </FiltreAlan>
-              <FiltreAlan label="Durum">
-                <select style={selectStyle} value={aktifFiltre} onChange={(e) => setAktifFiltre(e.target.value)}>
-                  <option value="">Tümü</option>
-                  <option value="true">Aktif</option>
-                  <option value="false">Pasif</option>
-                </select>
-              </FiltreAlan>
-              <button onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
-            </FiltreSatir>
-
-            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onGirisKopyala={girisBilgisiKopyala} showActions />
-          </div>
-        )}
-
-        {!yukleniyor && !hata && aktifSekme === "kullanim" && (
+        {!yukleniyor && aktifSekme === "yurt" && (
           <div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
               {[
-                { id: "never", label: "Hiç giriş yapmayanlar" },
-                { id: "inactive7", label: "7+ gün pasif" },
-                { id: "inactive30", label: "30+ gün pasif" },
-                { id: "inactiveInstitutions", label: "Pasif kurumlar" },
-              ].map((t) => (
-                <button key={t.id} onClick={() => setKullanimTip(t.id)}
-                  style={{ padding: "8px 12px", borderRadius: 10, border: kullanimTip === t.id ? "none" : "1.5px solid #e2e8f0",
-                    background: kullanimTip === t.id ? "#2563eb" : "#fff", color: kullanimTip === t.id ? "#fff" : "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
-                  {t.label}
+                { id: "", label: "Tümü" },
+                { id: "today_active", label: "Bugün aktif" },
+                { id: "week_active", label: "Bu hafta aktif" },
+                { id: "passive7", label: "7 gün pasif" },
+                { id: "passive30", label: "30 gün pasif" },
+                { id: "never", label: "Hiç giriş yok" },
+              ].map((p) => (
+                <button key={p.id} type="button" onClick={() => setYurtPreset(p.id)}
+                  style={{ padding: "6px 10px", borderRadius: 8, border: yurtPreset === p.id ? "none" : "1px solid #e2e8f0", background: yurtPreset === p.id ? "#2563eb" : "#fff", color: yurtPreset === p.id ? "#fff" : "#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  {p.label}
                 </button>
               ))}
             </div>
-            {kullanimTip === "inactiveInstitutions" ? (
-              <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-                {(pasifKurumlar as { institution_name?: string; institution_code?: string; user_count?: number }[]).map((k) => (
-                  <div key={k.institution_code} style={{ padding: "8px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-                    <strong>{k.institution_name || k.institution_code}</strong> — {k.user_count} kullanıcı, son 7 günde aktif yok
-                  </div>
-                ))}
-                {pasifKurumlar.length === 0 && <p style={{ color: "#94a3b8" }}>Pasif yurt bulunamadı.</p>}
-              </div>
-            ) : (
-              <RaporTablo kullanicilar={kullanimListe} onPasif={kullaniciPasif} onSifre={sifreSifirla} onHatirlat showActions showDays showRol />
-            )}
+            <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}>
+                    <th style={{ padding: 10 }}>Yurt</th><th>Mıntıka</th><th>Kullanıcı</th><th>Bugün</th><th>7g</th><th>PNG</th><th>PDF</th><th>WA</th><th>Son giriş</th><th>Durum</th><th>İşlem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {yurts.map((y) => (
+                    <tr key={y.institutionCode} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: 10, fontWeight: 700 }}>{y.institutionName}{!y.inRegistry && <span style={{ marginLeft: 4, fontSize: 9, color: "#b45309" }}>kayıtsız</span>}</td>
+                      <td>{y.districtName}</td>
+                      <td>{y.userCount}</td>
+                      <td>{y.todayLoginUsers}</td>
+                      <td>{y.logins7d}</td>
+                      <td>{y.exportPng ?? 0}</td>
+                      <td>{y.exportPdf ?? 0}</td>
+                      <td>{y.shareWhatsapp ?? 0}</td>
+                      <td>{formatTarih(y.lastLoginAt)}</td>
+                      <td><YurtDurumRozet durum={y.activityStatus} /></td>
+                      <td style={{ padding: 8 }}>
+                        <button type="button" onClick={() => kurumSec(y.institutionCode, y.districtName)} style={{ fontSize: 10, marginRight: 4, cursor: "pointer" }}>Kullanıcılar</button>
+                        <button type="button" onClick={() => navigator.clipboard.writeText(yurtHatirlatmaMesaji({ institutionName: y.institutionName }))} style={{ fontSize: 10, cursor: "pointer" }}>Hatırlatma</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {yurts.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Veri yok</p>}
+            </div>
           </div>
         )}
 
-        {!yukleniyor && !hata && aktifSekme === "destek" && (
+        {!yukleniyor && aktifSekme === "kullanicilar" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
+            <FiltreSatir>
+              <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta" /></FiltreAlan>
+              <FiltreAlan label="Rol">
+                <select style={selectStyle} value={rolFiltre} onChange={(e) => setRolFiltre(e.target.value)}>
+                  <option value="">Tümü</option><option value="user">Kullanıcı</option><option value="admin">Admin</option>
+                </select>
+              </FiltreAlan>
+              <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
+            </FiltreSatir>
+            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} showActions showRol />
+          </div>
+        )}
+
+        {!yukleniyor && aktifSekme === "aktivite" && (
+          <div>
+            <FiltreSatir>
+              <FiltreAlan label="İşlem">
+                <select style={selectStyle} value={aktiviteAction} onChange={(e) => setAktiviteAction(e.target.value)}>
+                  <option value="">Tümü</option>
+                  <option value="login">login</option>
+                </select>
+              </FiltreAlan>
+            </FiltreSatir>
+            {aktivite?.warning && <p style={{ fontSize: 12, color: "#b45309", marginBottom: 8 }}>{aktivite.warning}</p>}
+            {aktivite && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                <StatKart baslik="Giriş" deger={aktivite.summary.loginCount} renk="#2563eb" simge="🔑" />
+                <StatKart baslik="Aktif yurt" deger={aktivite.summary.activeYurts} renk="#16a34a" simge="🏫" />
+                <StatKart baslik="PNG" deger={aktivite.hasActivityLogs ? aktivite.summary.exportPng : "—"} renk="#64748b" simge="🖼️" altMetin={!aktivite.hasActivityLogs ? "Kayıt yok" : undefined} />
+              </div>
+            )}
+            <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tarih</th><th>Kullanıcı</th><th>Yurt</th><th>Mıntıka</th><th>İşlem</th></tr></thead>
+                <tbody>
+                  {(aktivite?.logs ?? []).map((l) => (
+                    <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: 8 }}>{formatTarih(l.createdAt)}</td>
+                      <td>{l.userName || "—"}</td>
+                      <td>{l.institutionName || l.institutionCode || "—"}</td>
+                      <td>{l.district || "—"}</td>
+                      <td>{l.action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {(!aktivite?.logs || aktivite.logs.length === 0) && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Veri yok</p>}
+            </div>
+          </div>
+        )}
+
+        {!yukleniyor && aktifSekme === "veri" && veriSagligi && (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const r = await api.adminReconcile();
+                    alert(
+                      `Eşleştirme tamamlandı.\nBağlanan: ${r.linked}\nYeni kurum: ${r.institutionsCreated}\nAtlanan: ${r.skipped}\nEşleşmeyen: ${r.unmatched.length}`,
+                    );
+                    veriYukle();
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : "Eşleştirme başarısız");
+                  }
+                }}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+              >
+                Kullanıcıları kurumlara eşleştir (onarım)
+              </button>
+              <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+                Mevcut kullanıcıları institutionCode ve institutionId ile kurum envanterine bağlar.
+              </p>
+            </div>
+            <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
+            <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", marginTop: 12, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tür</th><th>Kayıt</th><th>Açıklama</th><th>Öneri</th></tr></thead>
+                <tbody>
+                  {veriSagligi.issues.map((i, idx) => (
+                    <tr key={idx} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: 8 }}>{i.type}</td>
+                      <td>{i.record}</td>
+                      <td>{i.description}</td>
+                      <td>{i.suggestion}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {veriSagligi.issues.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Kritik sorun yok</p>}
+            </div>
+          </div>
+        )}
+
+        {!yukleniyor && aktifSekme === "destek" && (
           <div>
             <FiltreSatir>
               <FiltreAlan label="Durum">
                 <select style={selectStyle} value={destekFiltre} onChange={(e) => setDestekFiltre(e.target.value)}>
                   <option value="">Tümü</option>
                   <option value="yeni">Yeni</option>
+                  <option value="inceleniyor">İnceleniyor</option>
                   <option value="cozuldu">Çözüldü</option>
                 </select>
               </FiltreAlan>
             </FiltreSatir>
-            {filtreliDestek.length === 0 && (
-              <p style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 }}>
-                Bu filtreye uygun destek talebi yok.
-              </p>
-            )}
+            {filtreliDestek.length === 0 && <p style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Veri yok</p>}
             {filtreliDestek.map((m) => (
               <div key={m.id} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{m.userName || "İsimsiz"}</div>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{m.userEmail} · {m.institution_name || "Kurum bilinmiyor"}</div>
-                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{m.district}, {m.province}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: m.status === "cozuldu" ? "#dcfce7" : "#fef9c3", color: m.status === "cozuldu" ? "#166534" : "#854d0e" }}>
-                      {m.status === "cozuldu" ? "Çözüldü" : m.status === "inceleniyor" ? "İnceleniyor" : "Yeni"}
-                    </span>
-                    <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>{formatTarih(m.createdAt)}</div>
-                  </div>
-                </div>
-                <p style={{ fontSize: 13, lineHeight: 1.6, background: "#f8fafc", padding: 12, borderRadius: 8, margin: 0 }}>{m.message}</p>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button onClick={() => api.adminDestekGuncelle(m.id, { status: "inceleniyor" }).then(veriYukle)}
-                    style={{ fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>İnceleniyor</button>
-                  <button onClick={() => api.adminDestekGuncelle(m.id, { status: "cozuldu" }).then(veriYukle)}
-                    style={{ fontSize: 11, fontWeight: 700, padding: "6px 10px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer" }}>Çözüldü</button>
+                <div style={{ fontWeight: 800 }}>{m.userName || "İsimsiz"}</div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{m.institution_name || "—"} · {m.district || "—"} · {formatTarih(m.createdAt)}</div>
+                <p style={{ fontSize: 13, marginTop: 8 }}>{m.message}</p>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button type="button" onClick={() => api.adminDestekGuncelle(m.id, { status: "inceleniyor" }).then(veriYukle)} style={{ fontSize: 11, padding: "6px 10px", cursor: "pointer" }}>İnceleniyor</button>
+                  <button type="button" onClick={() => api.adminDestekGuncelle(m.id, { status: "cozuldu" }).then(veriYukle)} style={{ fontSize: 11, padding: "6px 10px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>Çözüldü</button>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        {!yukleniyor && aktifSekme === "excel" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Dönem / sezon tarihleri</div>
+              <FiltreSatir>
+                <FiltreAlan label="Dönem başlangıç"><input type="date" value={donemBaslangic} onChange={(e) => setDonemBaslangic(e.target.value)} style={inputStyle} /></FiltreAlan>
+                <FiltreAlan label="Dönem bitiş"><input type="date" value={donemBitis} onChange={(e) => setDonemBitis(e.target.value)} style={inputStyle} /></FiltreAlan>
+                <FiltreAlan label="Sezon başlangıç"><input type="date" value={sezonBaslangic} onChange={(e) => setSezonBaslangic(e.target.value)} style={inputStyle} /></FiltreAlan>
+                <FiltreAlan label="Sezon bitiş"><input type="date" value={sezonBitis} onChange={(e) => setSezonBitis(e.target.value)} style={inputStyle} /></FiltreAlan>
+                <button type="button" onClick={() => api.adminSettingsKaydet({ periodStart: donemBaslangic, periodEnd: donemBitis, seasonStart: sezonBaslangic, seasonEnd: sezonBitis }).then(() => alert("Kaydedildi"))}
+                  style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                  Kaydet
+                </button>
+              </FiltreSatir>
+            </div>
+            <p style={{ fontSize: 13, color: "#64748b" }}>Renkli .xlsx raporları — gerçek kayıtlara dayanır.</p>
+            {(["genel", "mintika", "yurt", "veri"] as const).map((t) => (
+              <button key={t} type="button" onClick={() => excelIndir(t)}
+                style={{ padding: 12, borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "left" }}>
+                📥 {t === "genel" ? "Genel Bakış" : t === "mintika" ? "Mıntıka Panosu" : t === "yurt" ? "Yurt Takibi" : "Veri Sağlığı"} Excel indir
+              </button>
             ))}
           </div>
         )}
@@ -520,19 +605,13 @@ function RaporTablo({
   kullanicilar,
   onPasif,
   onSifre,
-  onHatirlat,
-  onGirisKopyala,
   showActions,
-  showDays,
   showRol,
 }: {
   kullanicilar: AdminKullanici[];
   onPasif?: (u: AdminKullanici) => void;
   onSifre?: (u: AdminKullanici) => void;
-  onHatirlat?: boolean;
-  onGirisKopyala?: (u: AdminKullanici) => void;
   showActions?: boolean;
-  showDays?: boolean;
   showRol?: boolean;
 }) {
   return (
@@ -540,9 +619,9 @@ function RaporTablo({
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
-            <th style={{ padding: 10 }}>Ad</th><th>Kurum</th><th>Mıntıka</th><th>İl</th>
+            <th style={{ padding: 10 }}>Ad</th><th>Yurt</th><th>Mıntıka</th>
             {showRol && <th>Rol</th>}
-            <th>Son giriş</th>{showDays && <th>Gün</th>}<th>Durum</th>
+            <th>Son giriş</th><th>Durum</th>
             {showActions && <th>İşlem</th>}
           </tr>
         </thead>
@@ -552,45 +631,25 @@ function RaporTablo({
               <td style={{ padding: 10 }}>
                 <div style={{ fontWeight: 700 }}>{u.name}</div>
                 <div style={{ fontSize: 10, color: "#94a3b8" }}>{u.email}</div>
+                {!u.institutionCode && <span style={{ fontSize: 9, color: "#b45309", fontWeight: 700 }}>Yurt eşleşmemiş</span>}
               </td>
               <td>{u.institutionName || "—"}</td>
               <td>{u.district || "—"}</td>
-              <td>{u.province || "—"}</td>
-              {showRol && <td>{ROL_LABEL[normalizeRole(u.role, u.isAdmin)] || u.role}</td>}
+              {showRol && <td>{ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}</td>}
               <td>{formatTarih(u.lastLoginAt)}</td>
-              {showDays && <td>{u.daysSinceLogin ?? "—"}</td>}
               <td>{u.activityStatus && <DurumRozet durum={u.activityStatus} />}</td>
               {showActions && (
                 <td style={{ padding: 8 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {onPasif && (
-                      <button onClick={() => onPasif(u)} style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
-                        {u.isActive ? "Pasif yap" : "Aktif yap"}
-                      </button>
-                    )}
-                    {onSifre && (
-                      <button onClick={() => onSifre(u)} style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>Şifre sıfırla</button>
-                    )}
-                    {onHatirlat && (
-                      <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u))}
-                        style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "none", background: "#eff6ff", color: "#2563eb", cursor: "pointer" }}>
-                        Hatırlatma kopyala
-                      </button>
-                    )}
-                    {onGirisKopyala && (
-                      <button type="button" onClick={() => onGirisKopyala(u)}
-                        style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
-                        Giriş bilgisi
-                      </button>
-                    )}
-                  </div>
+                  {onPasif && <button type="button" onClick={() => onPasif(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>{u.isActive ? "Pasif" : "Aktif"}</button>}
+                  {onSifre && <button type="button" onClick={() => onSifre(u)} style={{ fontSize: 10, cursor: "pointer" }}>Şifre sıfırla</button>}
+                  <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u))} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer" }}>Hatırlatma</button>
                 </td>
               )}
             </tr>
           ))}
         </tbody>
       </table>
-      {kullanicilar.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Kayıt yok.</p>}
+      {kullanicilar.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Veri yok</p>}
     </div>
   );
 }

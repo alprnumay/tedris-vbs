@@ -11,11 +11,28 @@ import { requireAdmin } from "../middlewares/requireAdmin";
 import { kurumKoduOner } from "../lib/institutionSlug";
 import { normalizeRole } from "../lib/roleUtils";
 import { sifreFromMintika } from "../lib/mintikaSifre";
+import { resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
+import { normalizeDistrictName } from "../lib/trackedDistricts";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
 
 const TZ = "Europe/Istanbul";
+
+function adminSafe(
+  label: string,
+  handler: (req: Request, res: Response) => Promise<void>,
+  empty: (res: Response) => void,
+) {
+  return async (req: Request, res: Response) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      console.error(`[admin ${label}]`, err);
+      empty(res);
+    }
+  };
+}
 
 function mapUser(u: LocalUser) {
   const role = normalizeRole(u.role, u.isAdmin);
@@ -26,6 +43,7 @@ function mapUser(u: LocalUser) {
     province: u.province ?? null,
     district: u.district ?? null,
     institutionName: u.institutionName ?? null,
+    institutionId: u.institutionId ?? null,
     institutionCode: u.institutionCode ?? null,
     role,
     isActive: u.isActive,
@@ -122,7 +140,11 @@ router.get("/admin/overview", async (_req: Request, res: Response) => {
   }
 });
 
-router.get("/admin/users", async (req: Request, res: Response) => {
+router.get(
+  "/admin/users",
+  adminSafe(
+    "users",
+    async (req: Request, res: Response) => {
   const {
     province,
     district,
@@ -180,12 +202,16 @@ router.get("/admin/users", async (req: Request, res: Response) => {
     .orderBy(desc(localUsersTable.createdAt));
 
   res.json({
+    ok: true,
     users: users.map((u) => ({
       ...mapUser(u),
       activityStatus: activityStatus(u.lastLoginAt),
     })),
   });
-});
+    },
+    (res) => res.status(200).json({ ok: true, users: [] }),
+  ),
+);
 
 router.post("/admin/users", async (req: Request, res: Response) => {
   const {
@@ -231,9 +257,18 @@ router.post("/admin/users", async (req: Request, res: Response) => {
     return;
   }
 
-  const code =
-    institutionCode?.trim() ||
-    kurumKoduOner(String(district || ""), String(institutionName || ""));
+  const districtNorm = normalizeDistrictName(String(district)) ?? String(district).trim();
+  const inst = await resolveInstitution({
+    district: districtNorm,
+    institutionName: String(institutionName).trim(),
+    institutionCode: institutionCode?.trim() || undefined,
+    province: province?.trim() || null,
+  });
+
+  if (!inst) {
+    res.status(400).json({ error: "Kurum kaydı oluşturulamadı. Mıntıka ve kurum adını kontrol edin." });
+    return;
+  }
 
   const normRole = normalizeRole(role, isAdmin);
   const passwordHash = await bcrypt.hash(pwd, 12);
@@ -243,10 +278,11 @@ router.post("/admin/users", async (req: Request, res: Response) => {
       email: normalizedEmail,
       passwordHash,
       name: String(name).trim(),
-      province: province?.trim() || null,
-      district: String(district).trim(),
-      institutionName: String(institutionName).trim(),
-      institutionCode: code || null,
+      province: inst.province,
+      district: inst.districtName,
+      institutionName: inst.institutionName,
+      institutionCode: inst.institutionCode,
+      institutionId: inst.id,
       role: normRole,
       isActive: isActive !== false,
       isAdmin: normRole === "admin",
@@ -282,6 +318,25 @@ router.patch("/admin/users/:id", async (req: Request, res: Response) => {
   }
   if (body.institutionCode != null) {
     updates.institutionCode = String(body.institutionCode).trim() || null;
+  }
+  if (body.district != null || body.institutionName != null || body.institutionCode != null) {
+    const district = String(body.district ?? existing.district ?? "").trim();
+    const institutionName = String(body.institutionName ?? existing.institutionName ?? "").trim();
+    if (district && institutionName) {
+      const inst = await resolveInstitution({
+        district,
+        institutionName,
+        institutionCode: String(body.institutionCode ?? existing.institutionCode ?? ""),
+        province: String(body.province ?? existing.province ?? ""),
+      });
+      if (inst) {
+        updates.institutionId = inst.id;
+        updates.institutionCode = inst.institutionCode;
+        updates.institutionName = inst.institutionName;
+        updates.district = inst.districtName;
+        updates.province = inst.province;
+      }
+    }
   }
   if (body.role != null || body.isAdmin != null) {
     const normRole = normalizeRole(
@@ -337,7 +392,11 @@ router.post("/admin/users/:id/reset-password", async (req: Request, res: Respons
   res.json({ ok: true, password: pwd });
 });
 
-router.get("/admin/today-logins", async (req: Request, res: Response) => {
+router.get(
+  "/admin/today-logins",
+  adminSafe(
+    "today-logins",
+    async (req: Request, res: Response) => {
   const { province, district, institutionCode } = req.query;
   const conditions = [
     isNotNull(localUsersTable.lastLoginAt),
@@ -360,6 +419,7 @@ router.get("/admin/today-logins", async (req: Request, res: Response) => {
     .orderBy(desc(localUsersTable.lastLoginAt));
 
   res.json({
+    ok: true,
     count: users.length,
     logins: users.map((u) => ({
       ...mapUser(u),
@@ -372,9 +432,16 @@ router.get("/admin/today-logins", async (req: Request, res: Response) => {
         : null,
     })),
   });
-});
+    },
+    (res) => res.status(200).json({ ok: true, count: 0, logins: [] }),
+  ),
+);
 
-router.get("/admin/institutions", async (req: Request, res: Response) => {
+router.get(
+  "/admin/institutions",
+  adminSafe(
+    "institutions",
+    async (req: Request, res: Response) => {
   const { province, district } = req.query;
   const users = await db.select().from(localUsersTable);
 
@@ -432,10 +499,17 @@ router.get("/admin/institutions", async (req: Request, res: Response) => {
     }))
     .sort((a, b) => b.active_7d - a.active_7d || b.user_count - a.user_count);
 
-  res.json({ institutions });
-});
+  res.json({ ok: true, institutions });
+    },
+    (res) => res.status(200).json({ ok: true, institutions: [] }),
+  ),
+);
 
-router.get("/admin/usage-tracking", async (req: Request, res: Response) => {
+router.get(
+  "/admin/usage-tracking",
+  adminSafe(
+    "usage-tracking",
+    async (req: Request, res: Response) => {
   const type = (req.query.type as string) || "never";
   const { province, district } = req.query;
 
@@ -496,6 +570,7 @@ router.get("/admin/usage-tracking", async (req: Request, res: Response) => {
   }
 
   res.json({
+    ok: true,
     users: users.map((u) => ({
       ...mapUser(u),
       daysSinceLogin: u.lastLoginAt
@@ -505,9 +580,17 @@ router.get("/admin/usage-tracking", async (req: Request, res: Response) => {
     })),
     inactiveInstitutions,
   });
-});
+    },
+    (res) =>
+      res.status(200).json({ ok: true, users: [], inactiveInstitutions: [] }),
+  ),
+);
 
-router.get("/admin/region-report", async (req: Request, res: Response) => {
+router.get(
+  "/admin/region-report",
+  adminSafe(
+    "region-report",
+    async (req: Request, res: Response) => {
   const range = (req.query.range as string) || "7d";
   const { province, district, institutionCode } = req.query;
 
@@ -556,6 +639,7 @@ router.get("/admin/region-report", async (req: Request, res: Response) => {
   );
 
   res.json({
+    ok: true,
     summary: {
       total_users: users.length,
       active_in_range: mapped.filter((u) => u.activeInRange).length,
@@ -564,9 +648,26 @@ router.get("/admin/region-report", async (req: Request, res: Response) => {
     },
     users: mapped,
   });
-});
+    },
+    (res) =>
+      res.status(200).json({
+        ok: true,
+        summary: {
+          total_users: 0,
+          active_in_range: 0,
+          never_logged_in: 0,
+          active_institutions: 0,
+        },
+        users: [],
+      }),
+  ),
+);
 
-router.get("/admin/support", async (_req: Request, res: Response) => {
+router.get(
+  "/admin/support",
+  adminSafe(
+    "support",
+    async (_req: Request, res: Response) => {
   const rows = await db.execute(sql`
     SELECT sr.id, sr.user_id, sr.user_email, sr.user_name, sr.message,
            sr.status, sr.admin_note, sr.created_at,
@@ -575,8 +676,11 @@ router.get("/admin/support", async (_req: Request, res: Response) => {
     LEFT JOIN local_users lu ON lu.id::text = sr.user_id
     ORDER BY sr.created_at DESC
   `);
-  res.json({ requests: rows.rows });
-});
+  res.json({ ok: true, requests: rows.rows });
+    },
+    (res) => res.status(200).json({ ok: true, requests: [] }),
+  ),
+);
 
 router.patch("/admin/support/:id", async (req: Request, res: Response) => {
   const id = Number(
@@ -594,7 +698,11 @@ router.patch("/admin/support/:id", async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-router.get("/admin/filters", async (_req: Request, res: Response) => {
+router.get(
+  "/admin/filters",
+  adminSafe(
+    "filters",
+    async (_req: Request, res: Response) => {
   const provinces = await db.execute(sql`
     SELECT DISTINCT province FROM local_users
     WHERE province IS NOT NULL AND province != ''
@@ -613,11 +721,16 @@ router.get("/admin/filters", async (_req: Request, res: Response) => {
   `);
 
   res.json({
+    ok: true,
     provinces: (provinces.rows as { province: string }[]).map((r) => r.province),
     districts: districts.rows,
     institutions: institutions.rows,
   });
-});
+    },
+    (res) =>
+      res.status(200).json({ ok: true, provinces: [], districts: [], institutions: [] }),
+  ),
+);
 
 router.get("/admin/slug-suggest", (req: Request, res: Response) => {
   const district = String(req.query.district || "");

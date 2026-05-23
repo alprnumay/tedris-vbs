@@ -344,4 +344,207 @@ export const api = {
       "GET",
       `/admin/slug-suggest?district=${encodeURIComponent(district)}&institutionName=${encodeURIComponent(institutionName)}`,
     ),
+
+  adminTrackedDistricts: () =>
+    istek<{ districts: string[] }>("GET", "/admin/tracked-districts"),
+
+  adminSettings: () =>
+    istek<{
+      settings: {
+        periodStart?: string | null;
+        periodEnd?: string | null;
+        seasonStart?: string | null;
+        seasonEnd?: string | null;
+      };
+    }>("GET", "/admin/settings"),
+
+  adminSettingsKaydet: (data: {
+    periodStart?: string;
+    periodEnd?: string;
+    seasonStart?: string;
+    seasonEnd?: string;
+  }) => istek<{ ok: boolean; settings: unknown }>("PATCH", "/admin/settings", data),
+
+  adminDashboard: (params: Record<string, string | undefined> = {}) =>
+    istek<AdminDashboard>("GET", `/admin/dashboard${qs(params)}`),
+
+  adminMintikaBoard: (params: Record<string, string | undefined> = {}) =>
+    istek<{ range: AdminRange; hasActivityLogs: boolean; mintikalar: AdminMintikaMetrik[] }>(
+      "GET",
+      `/admin/mintika-board${qs(params)}`,
+    ),
+
+  adminYurtTakibi: (params: Record<string, string | undefined> = {}) =>
+    istek<{
+      range: AdminRange;
+      hasActivityLogs: boolean;
+      yurts: AdminYurtMetrik[];
+      total: number;
+    }>("GET", `/admin/yurt-tracking${qs(params)}`),
+
+  adminVeriSagligi: () => istek<AdminVeriSagligi>("GET", "/admin/data-health"),
+
+  adminAktivite: (params: Record<string, string | undefined> = {}) =>
+    istek<AdminAktiviteResponse>("GET", `/admin/activity-logs${qs(params)}`),
+
+  adminYurtKayitlari: (params: Record<string, string | undefined> = {}) =>
+    istek<{ institutions: AdminYurtKayit[] }>("GET", `/admin/institutions-registry${qs(params)}`),
+
+  adminYurtKayitOlustur: (data: {
+    institutionName: string;
+    districtName: string;
+    province?: string;
+    institutionCode?: string;
+    expectedUserCount?: number;
+    status?: string;
+    notes?: string;
+  }) => istek<{ institution: AdminYurtKayit }>("POST", "/admin/institutions-registry", data),
+
+  adminYurtKayitGuncelle: (
+    id: string,
+    data: Partial<{ institutionName: string; districtName: string; province: string; status: string; notes: string }>,
+  ) => istek<{ institution: AdminYurtKayit }>("PATCH", `/admin/institutions-registry/${id}`, data),
+
+  activityLog: (action: string) => istek<{ ok: boolean }>("POST", "/activity/log", { action }),
+
+  adminReconcile: () =>
+    istek<{
+      linked: number;
+      institutionsCreated: number;
+      skipped: number;
+      unmatched: { id: string; name: string; email: string; reason: string }[];
+    }>("POST", "/admin/reconcile"),
 };
+
+export interface AdminRange {
+  preset: string;
+  label: string;
+  startIso: string;
+  endIso: string;
+  warning?: string;
+}
+
+export interface AdminYurtMetrik {
+  id: string | null;
+  institutionCode: string;
+  institutionName: string;
+  districtName: string;
+  province: string | null;
+  userCount: number;
+  todayLoginUsers: number;
+  loginsInRange: number;
+  logins7d: number;
+  logins30d: number;
+  lastLoginAt: string | null;
+  lastActivityAt: string | null;
+  openSupport: number;
+  activityStatus: string;
+  registryStatus: string;
+  inRegistry: boolean;
+  notes: string | null;
+  hasDataGap: boolean;
+  exportPng?: number;
+  exportPdf?: number;
+  shareWhatsapp?: number;
+}
+
+export interface AdminMintikaMetrik {
+  districtName: string;
+  totalYurts: number;
+  totalUsers: number;
+  todayActiveYurts: number;
+  todayActiveUsers: number;
+  active7dYurts: number;
+  passive7dYurts: number;
+  neverLoginYurts: number;
+  openSupport: number;
+  lastMovementAt: string | null;
+  usageRate: number | null;
+  healthScore: number | null;
+  healthLabel: string;
+}
+
+export interface AdminDashboard {
+  range: AdminRange;
+  hasActivityLogs: boolean;
+  activityWarning?: string;
+  dataQualityWarning?: string;
+  summary: {
+    totalDistricts: number;
+    totalYurts: number;
+    totalUsers: number;
+    todayActiveYurts: number;
+    todayActiveUsers: number;
+    active7dYurts: number;
+    passive7dYurts: number;
+    neverLoginYurts: number;
+    openSupport: number;
+    dataIssueCount: number;
+    unmatchedUsers: number;
+  };
+  mintikaSummary: AdminMintikaMetrik[];
+  attentionYurts: AdminYurtMetrik[];
+}
+
+export interface AdminDataHealthIssue {
+  type: string;
+  record: string;
+  description: string;
+  suggestion: string;
+}
+
+export interface AdminVeriSagligi {
+  score: number | null;
+  issueCount: number;
+  issues: AdminDataHealthIssue[];
+  unmatchedUsers: {
+    id: string;
+    name: string;
+    email: string;
+    institutionCode: string | null;
+    institutionName: string | null;
+    district: string | null;
+  }[];
+}
+
+export interface AdminAktiviteLog {
+  id: string;
+  createdAt: string;
+  action: string;
+  userId: string | null;
+  userName: string | null;
+  institutionCode: string | null;
+  institutionName: string | null;
+  district: string | null;
+  province: string | null;
+  metadata: unknown;
+}
+
+export interface AdminAktiviteResponse {
+  range: AdminRange;
+  hasActivityLogs: boolean;
+  warning?: string;
+  logs: AdminAktiviteLog[];
+  summary: {
+    loginCount: number;
+    activeYurts: number;
+    activeUsers: number;
+    exportPng: number;
+    exportPdf: number;
+    shareWhatsapp: number;
+    supportCreated: number;
+  };
+}
+
+export interface AdminYurtKayit {
+  id: string;
+  institutionName: string;
+  institutionCode: string;
+  districtName: string;
+  province: string | null;
+  expectedUserCount: number | null;
+  status: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -5,14 +5,18 @@ import localAuthRouter from "./localAuth";
 import postersRouter from "./posters";
 import supportRouter from "./support";
 import adminRouter from "./admin";
+import adminReportsRouter from "./adminReports";
+import activityRouter from "./activity";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
 router.use(localAuthRouter);
+router.use(activityRouter);
 router.use(postersRouter);
 router.use(supportRouter);
 router.use(adminRouter);
+router.use(adminReportsRouter);
 
 export default router;
