@@ -43,9 +43,33 @@ export interface SablonMeta {
 }
 
 export const SABLON_LISTESI: SablonMeta[] = [
-  { id: "akademik",        ad: "Kurumsal Mavi",   chipRenk: "#1e3a5f", etiket: "Kurumsal",  maxGorsel: 4 },
-  { id: "etkinlik",        ad: "Etkinlik Yeşil",  chipRenk: "#14532d", etiket: "Etkinlik",  maxGorsel: 4 },
-  { id: "bulten",          ad: "Bülten Kahve",    chipRenk: "#78350f", etiket: "Bülten",    maxGorsel: 4 },
+  {
+    id: "akademik",
+    ad: "Kurumsal Mavi",
+    chipRenk: "#1e3a5f",
+    etiket: "Kurumsal",
+    maxGorsel: 4,
+    kullanim: "Günlük ders ve etüt bilgilendirmeleri için ideal.",
+    etiketler: ["3–4 görsel", "Kurumsal"],
+  },
+  {
+    id: "etkinlik",
+    ad: "Etkinlik Yeşil",
+    chipRenk: "#14532d",
+    etiket: "Etkinlik",
+    maxGorsel: 4,
+    kullanim: "Etkinlikler ve gezi duyurularında güçlü görünür.",
+    etiketler: ["Etkinlik", "Fotoğraflı"],
+  },
+  {
+    id: "bulten",
+    ad: "Bülten Kahve",
+    chipRenk: "#78350f",
+    etiket: "Bülten",
+    maxGorsel: 4,
+    kullanim: "Çoklu görsel ve haftalık özet paylaşımları için.",
+    etiketler: ["4 görsel", "Özet"],
+  },
   { id: "lacivert",        ad: "Resmi Lacivert",  chipRenk: "#0f172a", etiket: "Temalı",    maxGorsel: 4 },
   { id: "mor",             ad: "Rehberlik Mor",   chipRenk: "#4c1d95", etiket: "Temalı",    maxGorsel: 4 },
   { id: "kirmizi",         ad: "Enerji Kırmızı",  chipRenk: "#991b1b", etiket: "Temalı",    maxGorsel: 4 },

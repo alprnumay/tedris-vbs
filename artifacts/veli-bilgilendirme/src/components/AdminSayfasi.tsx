@@ -6,12 +6,14 @@ import {
   type AdminKurum,
   type AdminDestek,
   type AdminFiltreler,
-  type KullaniciRol,
 } from "../lib/api";
-import { kurumKoduOner, hatirlatmaMesaji } from "../lib/kurumSlug";
+import { hatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
+import { girisBilgisiMetni } from "../lib/admin/adminKullaniciUret";
+import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
+import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
 import {
-  StatKart, DurumRozet, formatTarih, ROL_LABEL, inputStyle, labelStyle,
-  FiltreSatir, FiltreAlan,
+  StatKart, DurumRozet, formatTarih, inputStyle, labelStyle,
+  FiltreSatir, FiltreAlan, selectStyle,
 } from "./admin/adminUi";
 
 type Sekme = "genel" | "bolge" | "kurumlar" | "kullanicilar" | "kullanim" | "destek";
@@ -87,12 +89,6 @@ export default function AdminSayfasi() {
   const [rolFiltre, setRolFiltre] = useState("");
   const [aktifFiltre, setAktifFiltre] = useState("");
 
-  const [yeniKullanici, setYeniKullanici] = useState({
-    name: "", email: "", password: "", province: "", district: "",
-    institutionName: "", institutionCode: "", role: "hoca" as KullaniciRol, isActive: true,
-  });
-  const [kayitMesaj, setKayitMesaj] = useState<string | null>(null);
-
   const filtreParams = useCallback(() => ({
     province: il || undefined,
     district: ilce || undefined,
@@ -164,38 +160,41 @@ export default function AdminSayfasi() {
     }
   }, [tarihAralik, kullanimTip]);
 
-  const kurumKoduGuncelle = () => {
-    setYeniKullanici((k) => ({
-      ...k,
-      institutionCode: kurumKoduOner(k.district, k.institutionName),
-    }));
-  };
-
-  const kullaniciOlustur = async () => {
-    setKayitMesaj(null);
-    try {
-      await api.adminKullaniciOlustur({
-        ...yeniKullanici,
-        institutionCode: yeniKullanici.institutionCode || kurumKoduOner(yeniKullanici.district, yeniKullanici.institutionName),
-      });
-      setKayitMesaj("Kullanıcı oluşturuldu.");
-      setYeniKullanici({ name: "", email: "", password: "", province: "", district: "", institutionName: "", institutionCode: "", role: "hoca", isActive: true });
-      veriYukle();
-    } catch (e) {
-      setKayitMesaj(e instanceof Error ? e.message : "Hata");
-    }
-  };
-
   const kullaniciPasif = async (u: AdminKullanici) => {
     await api.adminKullaniciGuncelle(u.id, { isActive: !u.isActive } as Partial<AdminKullanici>);
     veriYukle();
   };
 
   const sifreSifirla = async (u: AdminKullanici) => {
-    const sifre = prompt(`${u.name} için yeni geçici şifre (min 6 karakter):`);
-    if (!sifre || sifre.length < 6) return;
-    await api.adminSifreSifirla(u.id, sifre);
-    alert("Şifre güncellendi.");
+    try {
+      const r = await api.adminSifreSifirla(u.id, { generate: true });
+      alert(`Yeni geçici şifre: ${r.password ?? "—"}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Şifre sıfırlanamadı.");
+    }
+  };
+
+  const girisBilgisiKopyala = (u: AdminKullanici) => {
+    const rol = normalizeRole(u.role, u.isAdmin);
+    void navigator.clipboard.writeText(
+      girisBilgisiMetni({
+        name: u.name,
+        email: u.email,
+        password: "(mıntıka koduna göre — şifre sıfırla)",
+        mintika: u.district || "",
+        kurum: u.institutionName || "",
+        il: u.province || "",
+        rol: ROL_LABEL[rol],
+      }),
+    );
+  };
+
+  const kurumKullanicilariniGoster = (k: AdminKurum) => {
+    if (k.province) setIl(k.province);
+    if (k.district) setIlce(k.district);
+    setKurum(k.institution_code);
+    setAktifSekme("kullanicilar");
+    setTimeout(() => veriYukle(), 0);
   };
 
   const filtreliDestek = destekler.filter((d) => {
@@ -213,6 +212,19 @@ export default function AdminSayfasi() {
     return true;
   }) ?? [];
 
+  const filtreBaslik = () => {
+    if (kurum) {
+      const k = kurumSecenekleri.find((x) => x.institution_code === kurum);
+      return `(${k?.institution_name || kurum})`;
+    }
+    if (ilce && il) return `(${il} / ${ilce})`;
+    if (ilce) return `(${ilce})`;
+    if (il) return `(${il})`;
+    return "(Tüm bölgeler)";
+  };
+
+  const mevcutEpostalar = kullanicilar.map((u) => u.email.toLowerCase());
+
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
       <header style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)", padding: "16px 20px" }}>
@@ -229,19 +241,19 @@ export default function AdminSayfasi() {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
         <FiltreSatir>
           <FiltreAlan label="İl">
-            <select value={il} onChange={(e) => { setIl(e.target.value); setIlce(""); setKurum(""); }} style={inputStyle}>
+            <select value={il} onChange={(e) => { setIl(e.target.value); setIlce(""); setKurum(""); }} style={selectStyle}>
               <option value="">Tümü</option>
               {filtreler?.provinces.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </FiltreAlan>
-          <FiltreAlan label="İlçe">
-            <select value={ilce} onChange={(e) => { setIlce(e.target.value); setKurum(""); }} style={inputStyle}>
+          <FiltreAlan label="Mıntıka / İlçe">
+            <select value={ilce} onChange={(e) => { setIlce(e.target.value); setKurum(""); }} style={selectStyle}>
               <option value="">Tümü</option>
               {ilceSecenekleri.map((d) => <option key={`${d.province}-${d.district}`} value={d.district}>{d.district}</option>)}
             </select>
           </FiltreAlan>
           <FiltreAlan label="Kurum">
-            <select value={kurum} onChange={(e) => setKurum(e.target.value)} style={inputStyle}>
+            <select value={kurum} onChange={(e) => setKurum(e.target.value)} style={selectStyle}>
               <option value="">Tümü</option>
               {kurumSecenekleri.map((k) => (
                 <option key={k.institution_code} value={k.institution_code}>{k.institution_name || k.institution_code}</option>
@@ -297,19 +309,21 @@ export default function AdminSayfasi() {
 
             <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
-                Bugün Giriş Yapanlar {il || ilce ? `(${il}${ilce ? ` / ${ilce}` : ""})` : ""}
+                Bugün Giriş Yapanlar {filtreBaslik()}
               </div>
-              <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>
-                Bugün <strong>{bugunGirisler.length}</strong> kullanıcı giriş yaptı.
-              </p>
               {bugunGirisler.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#94a3b8" }}>Bugün giriş kaydı yok.</p>
+                <p style={{ fontSize: 13, color: "#94a3b8" }}>Bugün bu filtreye uygun giriş kaydı yok.</p>
               ) : (
+                <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>
+                  Bugün <strong>{bugunGirisler.length}</strong> kullanıcı giriş yaptı.
+                </p>
+              )}
+              {bugunGirisler.length > 0 && (
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr style={{ textAlign: "left", color: "#64748b" }}>
-                        <th style={{ padding: 8 }}>Saat</th><th>Ad</th><th>Kurum</th><th>İlçe</th><th>E-posta</th>
+                        <th style={{ padding: 8 }}>Saat</th><th>Ad</th><th>Kurum</th><th>Mıntıka</th><th>E-posta</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -346,7 +360,7 @@ export default function AdminSayfasi() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <FiltreSatir>
               <FiltreAlan label="Tarih aralığı">
-                <select value={tarihAralik} onChange={(e) => setTarihAralik(e.target.value)} style={inputStyle}>
+                <select value={tarihAralik} onChange={(e) => setTarihAralik(e.target.value)} style={selectStyle}>
                   <option value="today">Bugün</option>
                   <option value="7d">Son 7 gün</option>
                   <option value="30d">Son 30 gün</option>
@@ -359,7 +373,7 @@ export default function AdminSayfasi() {
               <StatKart baslik="Hiç giriş yok" deger={bolgeRapor.summary.never_logged_in ?? 0} renk="#dc2626" simge="!" />
               <StatKart baslik="Aktif kurum" deger={bolgeRapor.summary.active_institutions ?? 0} renk="#0d9488" simge="🏫" />
             </div>
-            <RaporTablo kullanicilar={bolgeRapor.users} />
+            <RaporTablo kullanicilar={bolgeRapor.users} showRol />
           </div>
         )}
 
@@ -368,8 +382,8 @@ export default function AdminSayfasi() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
-                  <th style={{ padding: 10 }}>Kurum</th><th>İl</th><th>İlçe</th><th>Kullanıcı</th>
-                  <th>Bugün</th><th>7 gün</th><th>Son giriş</th><th>Durum</th>
+                  <th style={{ padding: 10 }}>Kurum</th><th>İl</th><th>Mıntıka</th><th>Kullanıcı</th>
+                  <th>Bugün</th><th>7 gün</th><th>Son giriş</th><th>Durum</th><th>İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -382,7 +396,13 @@ export default function AdminSayfasi() {
                     <td>{k.today_active}</td>
                     <td>{k.active_7d}</td>
                     <td>{formatTarih(k.last_login_at)}</td>
-                    <td><DurumRozet durum={k.status === "active" ? "week" : "inactive"} /></td>
+                    <td><DurumRozet durum={k.today_active > 0 ? "today" : k.active_7d > 0 ? "week" : "inactive"} /></td>
+                    <td style={{ padding: 8 }}>
+                      <button type="button" onClick={() => kurumKullanicilariniGoster(k)}
+                        style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
+                        Kullanıcıları göster
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -393,41 +413,19 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && !hata && aktifSekme === "kullanicilar" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>Yeni kullanıcı oluştur</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
-                <div><label style={labelStyle}>Ad Soyad</label><input style={inputStyle} value={yeniKullanici.name} onChange={(e) => setYeniKullanici({ ...yeniKullanici, name: e.target.value })} /></div>
-                <div><label style={labelStyle}>E-posta</label><input style={inputStyle} value={yeniKullanici.email} onChange={(e) => setYeniKullanici({ ...yeniKullanici, email: e.target.value })} /></div>
-                <div><label style={labelStyle}>Geçici şifre</label><input style={inputStyle} type="password" value={yeniKullanici.password} onChange={(e) => setYeniKullanici({ ...yeniKullanici, password: e.target.value })} /></div>
-                <div><label style={labelStyle}>İl</label><input style={inputStyle} value={yeniKullanici.province} onChange={(e) => setYeniKullanici({ ...yeniKullanici, province: e.target.value })} placeholder="Antalya" /></div>
-                <div><label style={labelStyle}>İlçe</label><input style={inputStyle} value={yeniKullanici.district} onChange={(e) => setYeniKullanici({ ...yeniKullanici, district: e.target.value })} onBlur={kurumKoduGuncelle} placeholder="Alanya" /></div>
-                <div><label style={labelStyle}>Kurum / Yurt</label><input style={inputStyle} value={yeniKullanici.institutionName} onChange={(e) => setYeniKullanici({ ...yeniKullanici, institutionName: e.target.value })} onBlur={kurumKoduGuncelle} /></div>
-                <div><label style={labelStyle}>Kurum kodu</label><input style={inputStyle} value={yeniKullanici.institutionCode} onChange={(e) => setYeniKullanici({ ...yeniKullanici, institutionCode: e.target.value })} placeholder="alanya-ferah" /></div>
-                <div><label style={labelStyle}>Rol</label>
-                  <select style={inputStyle} value={yeniKullanici.role} onChange={(e) => setYeniKullanici({ ...yeniKullanici, role: e.target.value as KullaniciRol })}>
-                    <option value="hoca">Hoca</option>
-                    <option value="kurum_mesulu">Kurum Mesulü</option>
-                    <option value="admin">Yönetici</option>
-                  </select>
-                </div>
-              </div>
-              <button onClick={kullaniciOlustur} style={{ marginTop: 12, padding: "10px 18px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}>
-                Kullanıcı oluştur
-              </button>
-              {kayitMesaj && <p style={{ fontSize: 12, marginTop: 8, color: kayitMesaj.includes("oluşturuldu") ? "#166534" : "#991b1b" }}>{kayitMesaj}</p>}
-            </div>
+            <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
 
             <FiltreSatir>
               <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta, kurum" /></FiltreAlan>
               <FiltreAlan label="Rol">
-                <select style={inputStyle} value={rolFiltre} onChange={(e) => setRolFiltre(e.target.value)}>
+                <select style={selectStyle} value={rolFiltre} onChange={(e) => setRolFiltre(e.target.value)}>
                   <option value="">Tümü</option>
-                  <option value="hoca">Hoca</option>
-                  <option value="kurum_mesulu">Kurum Mesulü</option>
+                  <option value="user">Kullanıcı</option>
+                  <option value="admin">Admin</option>
                 </select>
               </FiltreAlan>
               <FiltreAlan label="Durum">
-                <select style={inputStyle} value={aktifFiltre} onChange={(e) => setAktifFiltre(e.target.value)}>
+                <select style={selectStyle} value={aktifFiltre} onChange={(e) => setAktifFiltre(e.target.value)}>
                   <option value="">Tümü</option>
                   <option value="true">Aktif</option>
                   <option value="false">Pasif</option>
@@ -436,7 +434,7 @@ export default function AdminSayfasi() {
               <button onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
 
-            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} showActions />
+            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onGirisKopyala={girisBilgisiKopyala} showActions />
           </div>
         )}
 
@@ -444,10 +442,10 @@ export default function AdminSayfasi() {
           <div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
               {[
-                { id: "never", label: "Hiç giriş yok" },
+                { id: "never", label: "Hiç giriş yapmayanlar" },
                 { id: "inactive7", label: "7+ gün pasif" },
                 { id: "inactive30", label: "30+ gün pasif" },
-                { id: "inactiveInstitutions", label: "Pasif yurtlar" },
+                { id: "inactiveInstitutions", label: "Pasif kurumlar" },
               ].map((t) => (
                 <button key={t.id} onClick={() => setKullanimTip(t.id)}
                   style={{ padding: "8px 12px", borderRadius: 10, border: kullanimTip === t.id ? "none" : "1.5px solid #e2e8f0",
@@ -466,7 +464,7 @@ export default function AdminSayfasi() {
                 {pasifKurumlar.length === 0 && <p style={{ color: "#94a3b8" }}>Pasif yurt bulunamadı.</p>}
               </div>
             ) : (
-              <RaporTablo kullanicilar={kullanimListe} onPasif={kullaniciPasif} onSifre={sifreSifirla} onHatirlat showActions showDays />
+              <RaporTablo kullanicilar={kullanimListe} onPasif={kullaniciPasif} onSifre={sifreSifirla} onHatirlat showActions showDays showRol />
             )}
           </div>
         )}
@@ -475,13 +473,18 @@ export default function AdminSayfasi() {
           <div>
             <FiltreSatir>
               <FiltreAlan label="Durum">
-                <select style={inputStyle} value={destekFiltre} onChange={(e) => setDestekFiltre(e.target.value)}>
+                <select style={selectStyle} value={destekFiltre} onChange={(e) => setDestekFiltre(e.target.value)}>
                   <option value="">Tümü</option>
                   <option value="yeni">Yeni</option>
                   <option value="cozuldu">Çözüldü</option>
                 </select>
               </FiltreAlan>
             </FiltreSatir>
+            {filtreliDestek.length === 0 && (
+              <p style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 }}>
+                Bu filtreye uygun destek talebi yok.
+              </p>
+            )}
             {filtreliDestek.map((m) => (
               <div key={m.id} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
@@ -518,22 +521,27 @@ function RaporTablo({
   onPasif,
   onSifre,
   onHatirlat,
+  onGirisKopyala,
   showActions,
   showDays,
+  showRol,
 }: {
   kullanicilar: AdminKullanici[];
   onPasif?: (u: AdminKullanici) => void;
   onSifre?: (u: AdminKullanici) => void;
   onHatirlat?: boolean;
+  onGirisKopyala?: (u: AdminKullanici) => void;
   showActions?: boolean;
   showDays?: boolean;
+  showRol?: boolean;
 }) {
   return (
     <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
-            <th style={{ padding: 10 }}>Ad</th><th>Kurum</th><th>İlçe</th><th>İl</th><th>Rol</th>
+            <th style={{ padding: 10 }}>Ad</th><th>Kurum</th><th>Mıntıka</th><th>İl</th>
+            {showRol && <th>Rol</th>}
             <th>Son giriş</th>{showDays && <th>Gün</th>}<th>Durum</th>
             {showActions && <th>İşlem</th>}
           </tr>
@@ -548,7 +556,7 @@ function RaporTablo({
               <td>{u.institutionName || "—"}</td>
               <td>{u.district || "—"}</td>
               <td>{u.province || "—"}</td>
-              <td>{ROL_LABEL[u.role] || u.role}</td>
+              {showRol && <td>{ROL_LABEL[normalizeRole(u.role, u.isAdmin)] || u.role}</td>}
               <td>{formatTarih(u.lastLoginAt)}</td>
               {showDays && <td>{u.daysSinceLogin ?? "—"}</td>}
               <td>{u.activityStatus && <DurumRozet durum={u.activityStatus} />}</td>
@@ -564,9 +572,15 @@ function RaporTablo({
                       <button onClick={() => onSifre(u)} style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>Şifre sıfırla</button>
                     )}
                     {onHatirlat && (
-                      <button onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u.name))}
+                      <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u))}
                         style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "none", background: "#eff6ff", color: "#2563eb", cursor: "pointer" }}>
                         Hatırlatma kopyala
+                      </button>
+                    )}
+                    {onGirisKopyala && (
+                      <button type="button" onClick={() => onGirisKopyala(u)}
+                        style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}>
+                        Giriş bilgisi
                       </button>
                     )}
                   </div>

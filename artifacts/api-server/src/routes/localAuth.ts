@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { logActivity } from "../lib/activityLog";
+import { isAdminRole } from "../lib/roleUtils";
 import {
   createSession,
   clearSession,
@@ -56,7 +57,7 @@ router.post("/auth/register", async (req: Request, res: Response) => {
     .returning();
 
   const isAdmin =
-    normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
+    normalizedEmail === ADMIN_EMAIL || isAdminRole(user.role, user.isAdmin);
 
   const sessionUser = {
     id: user.id,
@@ -156,8 +157,11 @@ router.get("/auth/me", (req: Request, res: Response) => {
         email: localUser.email,
         name: localUser.name,
         isAdmin:
-          Boolean(localUser.isAdmin) ||
-          localUser.email?.toLowerCase() === ADMIN_EMAIL,
+          localUser.email?.toLowerCase() === ADMIN_EMAIL ||
+          isAdminRole(
+            (localUser as { role?: string }).role,
+            localUser.isAdmin,
+          ),
       },
     });
     return;

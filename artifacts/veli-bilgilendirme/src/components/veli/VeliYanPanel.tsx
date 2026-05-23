@@ -15,10 +15,12 @@ export function VeliYanPanel({
   form,
   seciliSablon,
   onSablonOner,
+  kompakt = false,
 }: {
   form: FormData;
   seciliSablon: SablonTuru;
   onSablonOner?: (id: SablonTuru) => void;
+  kompakt?: boolean;
 }) {
   const [kopyalandi, setKopyalandi] = useState(false);
   const kalite = veliKaliteKontrol(form, seciliSablon);
@@ -38,7 +40,7 @@ export function VeliYanPanel({
   };
 
   return (
-    <div className="mt-4 flex flex-col gap-3">
+    <div className={`flex flex-col gap-3 ${kompakt ? "" : "mt-4"}`}>
       <div className="rounded-xl border p-3" style={{ background: st.bg, borderColor: st.border }}>
         <p className="text-xs font-extrabold" style={{ color: st.color }}>
           Afiş kalitesi: {st.label}

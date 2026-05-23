@@ -5,21 +5,14 @@ import { jsPDF } from "jspdf";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
 import { api, type KullaniciBilgisi } from "./lib/api";
-import { SABLON_GORSEL_LIMITLERI } from "./lib/sablonlar";
 import FormAlani from "./components/FormAlani";
 import { VeliYanPanel } from "./components/veli/VeliYanPanel";
+import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
+import { VeliMobilNav } from "./components/veli/VeliMobilNav";
+import { VeliOnizlemeMobil } from "./components/veli/VeliOnizlemeMobil";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
-import SablonAkademik from "./components/sablonlar/SablonAkademik";
-import SablonEtkinlik from "./components/sablonlar/SablonEtkinlik";
-import SablonBulten from "./components/sablonlar/SablonBulten";
-import SablonTemali from "./components/sablonlar/SablonTemali";
-import SablonPremiumMinimal from "./components/sablonlar/SablonPremiumMinimal";
-import SablonKartliBilgi from "./components/sablonlar/SablonKartliBilgi";
-import SablonKurumsalResmi from "./components/sablonlar/SablonKurumsalResmi";
-import SablonHikaye from "./components/sablonlar/SablonHikaye";
-import SablonFotografOdakli from "./components/sablonlar/SablonFotografOdakli";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
 import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
@@ -31,7 +24,6 @@ const KurumsalKimlikModulu = lazy(() =>
 );
 
 const POSTER_W = 520;
-const TEMALI_SABLONLAR: SablonTuru[] = ["lacivert", "mor", "kirmizi", "turuncu", "pembe", "teal", "altin"];
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -49,37 +41,6 @@ const baslangicForm: FormData = {
   gorseller: [],
   seciliBaslikIdx: 0,
 };
-
-function bugunTarih(): string {
-  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric" };
-  try {
-    return new Date().toLocaleDateString("tr-TR", opts);
-  } catch {
-    try {
-      return new Date().toLocaleDateString(undefined, opts);
-    } catch {
-      return new Date().toDateString();
-    }
-  }
-}
-
-function OnizlemeIcerik({ form, sablon }: { form: FormData; sablon: SablonTuru }) {
-  const tarih = bugunTarih();
-  const limit = SABLON_GORSEL_LIMITLERI[sablon] ?? 4;
-  const f = { ...form, gorseller: form.gorseller.slice(0, limit) };
-
-  if (sablon === "akademik") return <SablonAkademik form={f} tarih={tarih} />;
-  if (sablon === "etkinlik") return <SablonEtkinlik form={f} tarih={tarih} />;
-  if (sablon === "bulten") return <SablonBulten form={f} tarih={tarih} />;
-  if (sablon === "premium-minimal") return <SablonPremiumMinimal form={f} tarih={tarih} />;
-  if (sablon === "kartli-bilgi") return <SablonKartliBilgi form={f} tarih={tarih} />;
-  if (sablon === "kurumsal-resmi") return <SablonKurumsalResmi form={f} tarih={tarih} />;
-  if (sablon === "hikaye") return <SablonHikaye form={f} tarih={tarih} />;
-  if (sablon === "fotograf-odakli") return <SablonFotografOdakli form={f} tarih={tarih} />;
-  if (TEMALI_SABLONLAR.includes(sablon)) return <SablonTemali form={f} tarih={tarih} sablonId={sablon} />;
-
-  return <SablonAkademik form={f} tarih={tarih} />;
-}
 
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
@@ -374,27 +335,34 @@ function MainApp() {
     );
   }
 
+  const paylasBtnStil = (gradient: string, disabled?: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: "13px 10px",
+    borderRadius: 16,
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#fff",
+    border: "none",
+    cursor: disabled ? "wait" : "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    background: gradient,
+    boxShadow: disabled ? "none" : "0 6px 18px rgba(15,23,42,0.15)",
+    opacity: disabled ? 0.75 : 1,
+    transition: "transform 0.12s ease, opacity 0.15s",
+  });
+
   const PaylasBtnlari = () => (
     <div style={{ display: "flex", gap: 8 }}>
       <button
         onClick={afisiIndir}
         disabled={indiriliyor}
-        className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-2xl text-sm font-bold text-white transition-all active:scale-95"
-        style={{
-          background: "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)",
-          border: "none",
-          cursor: "pointer",
-          flex: 1,
-          padding: "12px 8px",
-          borderRadius: 16,
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-        }}
+        style={paylasBtnStil("linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)", indiriliyor)}
+        onMouseDown={(e) => !indiriliyor && (e.currentTarget.style.transform = "scale(0.97)")}
+        onMouseUp={(e) => (e.currentTarget.style.transform = "")}
+        onMouseLeave={(e) => (e.currentTarget.style.transform = "")}
       >
         {indiriliyor ? (
           <span
@@ -424,21 +392,7 @@ function MainApp() {
       <button
         onClick={pdfIndir}
         disabled={pdfYukleniyor}
-        style={{
-          flex: 1,
-          padding: "12px 8px",
-          borderRadius: 16,
-          fontSize: 13,
-          fontWeight: 700,
-          border: "none",
-          background: "#ef4444",
-          color: "#fff",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-        }}
+        style={paylasBtnStil("linear-gradient(135deg, #dc2626 0%, #ef4444 100%)", pdfYukleniyor)}
       >
         {pdfYukleniyor ? (
           <span
@@ -467,21 +421,7 @@ function MainApp() {
 
       <button
         onClick={whatsappPaylas}
-        style={{
-          flex: 1,
-          padding: "12px 8px",
-          borderRadius: 16,
-          fontSize: 13,
-          fontWeight: 700,
-          border: "none",
-          background: "#16a34a",
-          color: "#fff",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-        }}
+        style={paylasBtnStil("linear-gradient(135deg, #15803d 0%, #22c55e 100%)")}
       >
         <svg width={16} height={16} fill="currentColor" viewBox="0 0 24 24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
@@ -671,7 +611,7 @@ function MainApp() {
                 className="rounded-2xl overflow-hidden mb-4"
                 style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}
               >
-                <OnizlemeIcerik form={form} sablon={seciliSablon} />
+                <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
               </div>
               <VeliYanPanel form={form} seciliSablon={seciliSablon} onSablonOner={setSeciliSablon} />
               <PaylasBtnlari />
@@ -686,7 +626,7 @@ function MainApp() {
       <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
         {aktifSekme === "form" && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
-            <div className="p-4 pb-6">
+            <div className="p-4 pb-28">
               <FormAlani
                 form={form}
                 setForm={setForm}
@@ -696,27 +636,27 @@ function MainApp() {
                 setMetinDuzenlendi={setMetinDuzenlendi}
                 kullaniciId={kullanici.id}
                 adim2Ref={adim2Ref}
+                mobilMod
+                onTasarimaGec={() => {
+                  adim2Ref.current?.();
+                  setAktifSekme("onizleme");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
               />
             </div>
           </div>
         )}
 
         {aktifSekme === "onizleme" && (
-          <div className="flex-1 overflow-y-auto" style={{ background: "#e8edf2" }}>
-            <div className="p-4 flex flex-col gap-4">
-              <div ref={wrapperRef} style={{ width: "100%" }}>
-                <div style={{ zoom } as React.CSSProperties}>
-                  <div style={{ width: POSTER_W }}>
-                    <OnizlemeIcerik form={form} sablon={seciliSablon} />
-                  </div>
-                </div>
-              </div>
-              <VeliYanPanel form={form} seciliSablon={seciliSablon} onSablonOner={setSeciliSablon} />
-              <PaylasBtnlari />
-              <p className="text-center text-xs" style={{ color: "#94a3b8" }}>
-                iPhone: görsel yeni sekmede açılır → basılı tutarak "Görseli Kaydet"
-              </p>
-            </div>
+          <div className="flex-1 overflow-y-auto">
+            <VeliOnizlemeMobil
+              form={form}
+              sablon={seciliSablon}
+              zoom={zoom}
+              wrapperRef={wrapperRef}
+              onSablonOner={setSeciliSablon}
+              paylasBtnlari={<PaylasBtnlari />}
+            />
           </div>
         )}
 
@@ -730,92 +670,21 @@ function MainApp() {
       {captureSnapshot && (
         <div style={{ position: "absolute", top: -9999, left: 0, width: POSTER_W, pointerEvents: "none" }}>
           <div ref={downloadRef} style={{ width: POSTER_W, background: "#ffffff" }}>
-            <OnizlemeIcerik form={captureSnapshot.form} sablon={captureSnapshot.sablon} />
+            <VeliOnizlemeIcerik form={captureSnapshot.form} sablon={captureSnapshot.sablon} />
           </div>
         </div>
       )}
 
-      <nav
-        className="lg:hidden flex-shrink-0 flex border-t border-slate-200"
-        style={{ background: "#ffffff", paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        {(["form", "onizleme"] as const).map((sekme) => (
-          <button
-            key={sekme}
-            onClick={() => {
-              if (sekme === "form" && aktifSekme === "onizleme") adim2Ref.current?.();
-              setAktifSekme(sekme);
-            }}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
-            style={{
-              color: aktifSekme === sekme ? "#1d4ed8" : "#94a3b8",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            {sekme === "form" ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={aktifSekme === sekme ? 2.5 : 1.5}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={aktifSekme === sekme ? 2.5 : 1.5}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-            )}
-            <span className="text-xs font-semibold">{sekme === "form" ? "Form" : "Önizleme"}</span>
-          </button>
-        ))}
-
-        {kullanici?.isAdmin && (
-          <button
-            onClick={() => setAktifSekme("yonetim")}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
-            style={{
-              color: aktifSekme === "yonetim" ? "#7c3aed" : "#94a3b8",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={aktifSekme === "yonetim" ? 2.5 : 1.5}
-                d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"
-              />
-            </svg>
-            <span className="text-xs font-semibold">Yönetim</span>
-          </button>
-        )}
-
-        <button
-          onClick={() => setDestekAcik(true)}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors"
-          style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-            />
-          </svg>
-          <span className="text-xs font-semibold">Destek</span>
-        </button>
-      </nav>
+      <VeliMobilNav
+        aktifSekme={aktifSekme}
+        onSekme={(sekme) => {
+          if (sekme === "form" && aktifSekme === "onizleme") adim2Ref.current?.();
+          setAktifSekme(sekme);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+        adminGoster={Boolean(kullanici?.isAdmin)}
+        onDestek={() => setDestekAcik(true)}
+      />
 
       {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
     </div>

@@ -130,7 +130,7 @@ export interface AdminStats {
   recentUsers: { id: string; name: string; email: string; created_at: string }[];
 }
 
-export type KullaniciRol = "hoca" | "kurum_mesulu" | "admin";
+export type KullaniciRol = "user" | "admin";
 export type AktiviteDurum = "today" | "week" | "inactive" | "never";
 
 export interface AdminKullanici {
@@ -310,8 +310,11 @@ export const api = {
   adminKullaniciGuncelle: (id: string, data: Partial<AdminKullanici>) =>
     istek<{ user: AdminKullanici }>("PATCH", `/admin/users/${id}`, data),
 
-  adminSifreSifirla: (id: string, password: string) =>
-    istek<{ ok: boolean }>("POST", `/admin/users/${id}/reset-password`, { password }),
+  adminSifreSifirla: (id: string, opts?: { password?: string; generate?: boolean }) =>
+    istek<{ ok: boolean; password?: string }>("POST", `/admin/users/${id}/reset-password`, {
+      password: opts?.password,
+      generate: opts?.generate ?? !opts?.password,
+    }),
 
   adminBugunGirisler: (params: Record<string, string | undefined> = {}) =>
     istek<{ count: number; logins: AdminKullanici[] }>("GET", `/admin/today-logins${qs(params)}`),

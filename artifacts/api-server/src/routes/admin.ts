@@ -9,6 +9,8 @@ import {
 import { eq, and, or, ilike, sql, desc, isNull, isNotNull } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { kurumKoduOner } from "../lib/institutionSlug";
+import { normalizeRole } from "../lib/roleUtils";
+import { sifreFromMintika } from "../lib/mintikaSifre";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
@@ -16,6 +18,7 @@ router.use(requireAdmin);
 const TZ = "Europe/Istanbul";
 
 function mapUser(u: LocalUser) {
+  const role = normalizeRole(u.role, u.isAdmin);
   return {
     id: u.id,
     email: u.email,
@@ -24,9 +27,9 @@ function mapUser(u: LocalUser) {
     district: u.district ?? null,
     institutionName: u.institutionName ?? null,
     institutionCode: u.institutionCode ?? null,
-    role: u.role,
+    role,
     isActive: u.isActive,
-    isAdmin: u.isAdmin,
+    isAdmin: role === "admin",
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
     createdAt: u.createdAt.toISOString(),
   };
@@ -142,8 +145,12 @@ router.get("/admin/users", async (req: Request, res: Response) => {
   if (typeof institutionCode === "string" && institutionCode) {
     conditions.push(eq(localUsersTable.institutionCode, institutionCode));
   }
-  if (typeof role === "string" && role) {
-    conditions.push(eq(localUsersTable.role, role));
+  if (typeof role === "string" && role === "admin") {
+    conditions.push(
+      or(eq(localUsersTable.isAdmin, true), eq(localUsersTable.role, "admin"))!,
+    );
+  } else if (typeof role === "string" && role === "user") {
+    conditions.push(eq(localUsersTable.isAdmin, false));
   }
   if (active === "true") conditions.push(eq(localUsersTable.isActive, true));
   if (active === "false") conditions.push(eq(localUsersTable.isActive, false));
@@ -194,16 +201,26 @@ router.post("/admin/users", async (req: Request, res: Response) => {
     isAdmin,
   } = req.body;
 
-  if (!email || !password || !name) {
-    res.status(400).json({ error: "E-posta, şifre ve ad soyad zorunludur." });
+  if (!name || !String(name).trim()) {
+    res.status(400).json({ error: "Ad soyad zorunludur." });
     return;
   }
-  if (String(password).length < 6) {
+  if (!district || !institutionName) {
+    res.status(400).json({ error: "Mıntıka ve kurum adı zorunludur." });
+    return;
+  }
+
+  const pwd = password ? String(password) : sifreFromMintika(String(district));
+  if (pwd.length < 6) {
     res.status(400).json({ error: "Şifre en az 6 karakter olmalıdır." });
     return;
   }
 
-  const normalizedEmail = String(email).toLowerCase().trim();
+  const normalizedEmail = String(email || "").toLowerCase().trim();
+  if (!normalizedEmail) {
+    res.status(400).json({ error: "E-posta zorunludur." });
+    return;
+  }
   const existing = await db
     .select({ id: localUsersTable.id })
     .from(localUsersTable)
@@ -218,7 +235,8 @@ router.post("/admin/users", async (req: Request, res: Response) => {
     institutionCode?.trim() ||
     kurumKoduOner(String(district || ""), String(institutionName || ""));
 
-  const passwordHash = await bcrypt.hash(String(password), 12);
+  const normRole = normalizeRole(role, isAdmin);
+  const passwordHash = await bcrypt.hash(pwd, 12);
   const [user] = await db
     .insert(localUsersTable)
     .values({
@@ -226,12 +244,12 @@ router.post("/admin/users", async (req: Request, res: Response) => {
       passwordHash,
       name: String(name).trim(),
       province: province?.trim() || null,
-      district: district?.trim() || null,
-      institutionName: institutionName?.trim() || null,
+      district: String(district).trim(),
+      institutionName: String(institutionName).trim(),
       institutionCode: code || null,
-      role: role || "hoca",
+      role: normRole,
       isActive: isActive !== false,
-      isAdmin: Boolean(isAdmin),
+      isAdmin: normRole === "admin",
     })
     .returning();
 
@@ -265,9 +283,15 @@ router.patch("/admin/users/:id", async (req: Request, res: Response) => {
   if (body.institutionCode != null) {
     updates.institutionCode = String(body.institutionCode).trim() || null;
   }
-  if (body.role != null) updates.role = String(body.role);
+  if (body.role != null || body.isAdmin != null) {
+    const normRole = normalizeRole(
+      body.role != null ? String(body.role) : existing.role,
+      body.isAdmin != null ? Boolean(body.isAdmin) : existing.isAdmin,
+    );
+    updates.role = normRole;
+    updates.isAdmin = normRole === "admin";
+  }
   if (body.isActive != null) updates.isActive = Boolean(body.isActive);
-  if (body.isAdmin != null) updates.isAdmin = Boolean(body.isAdmin);
 
   const [user] = await db
     .update(localUsersTable)
@@ -282,24 +306,35 @@ router.post("/admin/users/:id/reset-password", async (req: Request, res: Respons
   const id = String(
     Array.isArray(req.params.id) ? req.params.id[0] : req.params.id,
   );
-  const { password } = req.body;
-  if (!password || String(password).length < 6) {
+  const { password, generate } = req.body;
+
+  const [existing] = await db
+    .select()
+    .from(localUsersTable)
+    .where(eq(localUsersTable.id, id));
+
+  if (!existing) {
+    res.status(404).json({ error: "Kullanıcı bulunamadı." });
+    return;
+  }
+
+  const pwd =
+    generate || !password
+      ? sifreFromMintika(existing.district || "")
+      : String(password);
+
+  if (pwd.length < 6) {
     res.status(400).json({ error: "Yeni şifre en az 6 karakter olmalıdır." });
     return;
   }
 
-  const passwordHash = await bcrypt.hash(String(password), 12);
-  const updated = await db
+  const passwordHash = await bcrypt.hash(pwd, 12);
+  await db
     .update(localUsersTable)
     .set({ passwordHash })
-    .where(eq(localUsersTable.id, id))
-    .returning({ id: localUsersTable.id });
+    .where(eq(localUsersTable.id, id));
 
-  if (!updated.length) {
-    res.status(404).json({ error: "Kullanıcı bulunamadı." });
-    return;
-  }
-  res.json({ ok: true });
+  res.json({ ok: true, password: pwd });
 });
 
 router.get("/admin/today-logins", async (req: Request, res: Response) => {

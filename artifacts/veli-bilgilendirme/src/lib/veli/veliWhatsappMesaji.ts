@@ -1,25 +1,18 @@
 import type { FormData } from "@/types";
 
 export function veliWhatsappMesajiOlustur(form: FormData): string {
-  const kurum = form.kurumAdi.trim() || "kurumumuz";
   const faaliyet = form.faaliyetler[0];
-  const tur = faaliyet?.tur?.trim() || "çalışma";
+  const tur = faaliyet?.tur?.trim();
   const alan = faaliyet?.alan?.trim();
-  const ton = form.metinTonu ?? "kurumsal";
-
-  const hitap =
-    ton === "sicak"
-      ? "Saygıdeğer velimiz"
-      : "Değerli velimiz";
 
   const calisma =
     alan && tur
-      ? `${alan} alanında ${tur.toLowerCase()}`
+      ? `${alan} ${tur.toLowerCase()}`
       : alan
         ? `${alan} çalışması`
         : tur
-          ? `${tur} faaliyeti`
-          : "bugünkü çalışma";
+          ? `${tur} çalışması`
+          : "etüt çalışmamız";
 
-  return `${hitap}, bugün talebelerimizle ${calisma} gerçekleştirilmiştir. ${kurum} tarafından hazırlanan bilgilendirme görselini inceleyebilirsiniz. Sorularınız için bizimle iletişime geçebilirsiniz.`;
+  return `Bugünkü ${calisma} tamamlandı 🌿 Görselleri inceleyebilirsiniz.`;
 }

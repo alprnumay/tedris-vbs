@@ -2,9 +2,11 @@ import type { CSSProperties } from "react";
 import type { AktiviteDurum } from "../../lib/api";
 
 export const ROL_LABEL: Record<string, string> = {
-  hoca: "Hoca",
-  kurum_mesulu: "Kurum Mesulü",
-  admin: "Yönetici",
+  user: "Kullanıcı",
+  admin: "Admin",
+  hoca: "Kullanıcı",
+  kurum_mesulu: "Kullanıcı",
+  yonetici: "Admin",
 };
 
 export function formatTarih(iso: string | null | undefined): string {
@@ -55,6 +57,13 @@ export function StatKart({ baslik, deger, renk, simge, altMetin }: {
 export const inputStyle: CSSProperties = {
   width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid #e2e8f0",
   fontSize: 13, fontWeight: 500, color: "#1e293b", background: "#fff", boxSizing: "border-box",
+};
+
+export const selectStyle: CSSProperties = {
+  ...inputStyle,
+  height: 38,
+  padding: "8px 10px",
+  cursor: "pointer",
 };
 
 export const labelStyle: CSSProperties = {

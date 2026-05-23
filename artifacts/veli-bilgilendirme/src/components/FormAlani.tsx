@@ -1,17 +1,22 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { FormData, SablonTuru, Faaliyet } from "../types";
 import { api, type KayitliProfil } from "../lib/api";
 import { baslikAlternatifleri } from "../lib/dil";
 import { SABLON_LISTESI, SABLON_GORSEL_LIMITLERI, TEMALI_LAYOUT } from "../lib/sablonlar";
 import {
   ALAN_YARDIM,
-  BOLUM_YARDIM,
   FAALIYET_TURLERI,
   GORSEL_YERLESIM,
   METIN_TON_ACIKLAMA,
   METIN_UZUNLUK_ACIKLAMA,
   hizliOrnekForm,
 } from "../lib/veli/veliFormYardimMetinleri";
+import { inputStyle, labelStyle, primaryBtn, secondaryBtn } from "../lib/veli/veliMobilStil";
+import { gorselBoyutOku, dikeyGorselSablonOner } from "../lib/veli/gorselOrientasyon";
+import { InfoTip } from "./veli/InfoTip";
+import { FormAkordeon } from "./veli/FormAkordeon";
+import { VeliCanliOnizleme } from "./veli/VeliCanliOnizleme";
 
 interface Props {
   form: FormData;
@@ -22,6 +27,8 @@ interface Props {
   setMetinDuzenlendi: (v: boolean) => void;
   kullaniciId?: string;
   adim2Ref?: React.MutableRefObject<(() => void) | undefined>;
+  mobilMod?: boolean;
+  onTasarimaGec?: () => void;
 }
 
 function dosyayaBase64Cevir(file: File): Promise<string> {
@@ -33,40 +40,16 @@ function dosyayaBase64Cevir(file: File): Promise<string> {
   });
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%", border: "1.5px solid #e2e8f0", borderRadius: 12,
-  padding: "12px 14px", fontSize: 15, background: "#ffffff", color: "#1e293b",
-  outline: "none", appearance: "none" as const, WebkitAppearance: "none" as const,
-  boxSizing: "border-box" as const,
-};
-const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: 12, fontWeight: 700, color: "#475569",
-  marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: "0.05em",
-};
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function AlanEtiketi({ label, ipucu }: { label: string; ipucu?: string }) {
   return (
-    <p style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.09em", margin: 0 }}>
-      {children}
-    </p>
+    <label style={labelStyle}>
+      {label}
+      {ipucu ? <InfoTip metin={ipucu} /> : null}
+    </label>
   );
 }
 
-function SectionDivider() {
-  return <div style={{ height: 1, background: "#e2e8f0", margin: "4px 0" }} />;
-}
-
-function SectionHelp({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{ fontSize: 11, color: "#64748b", lineHeight: 1.45, margin: "0 0 10px", background: "#f8fafc", borderRadius: 8, padding: "8px 10px" }}>
-      {children}
-    </p>
-  );
-}
-
-function FieldHint({ aciklama }: { aciklama: string }) {
-  return <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0", lineHeight: 1.35 }}>{aciklama}</p>;
-}
+const stepEase = [0.22, 1, 0.36, 1] as const;
 
 /* ─── Mini SVG Thumbnail per Template ─── */
 function SablonMiniThumbnail({ id, renk }: { id: SablonTuru; renk: string }) {
@@ -277,32 +260,57 @@ function SablonMiniThumbnail({ id, renk }: { id: SablonTuru; renk: string }) {
 /* ─── Adım Göstergesi ─── */
 function AdimGostergesi({ adim, setAdim }: { adim: 1 | 2; setAdim: (a: 1 | 2) => void }) {
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, position: "relative" }}>
       {([1, 2] as const).map((n) => {
         const aktif = adim === n;
         const tamamlandi = adim > n;
         return (
-          <button key={n} onClick={() => setAdim(n)}
+          <button
+            key={n}
+            type="button"
+            onClick={() => setAdim(n)}
             style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "10px 12px", borderRadius: 12, cursor: "pointer", border: "none",
-              background: aktif ? "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)"
-                : tamamlandi ? "#dbeafe" : "#f1f5f9",
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              padding: "11px 10px",
+              borderRadius: 14,
+              cursor: "pointer",
+              border: "none",
+              background: aktif ? "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)" : tamamlandi ? "#dbeafe" : "#f1f5f9",
               color: aktif ? "#ffffff" : tamamlandi ? "#1d4ed8" : "#94a3b8",
-              fontWeight: 700, fontSize: 13, transition: "all 0.15s",
-            }}>
-            <div style={{
-              width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
-              background: aktif ? "rgba(255,255,255,0.25)" : tamamlandi ? "#1d4ed8" : "#e2e8f0",
-              color: aktif ? "#fff" : tamamlandi ? "#fff" : "#94a3b8",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800,
-            }}>
+              fontWeight: 700,
+              fontSize: 12,
+              boxShadow: aktif ? "0 6px 16px rgba(37,99,235,0.28)" : "none",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                flexShrink: 0,
+                background: aktif ? "rgba(255,255,255,0.25)" : tamamlandi ? "#1d4ed8" : "#e2e8f0",
+                color: aktif ? "#fff" : tamamlandi ? "#fff" : "#94a3b8",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+            >
               {tamamlandi ? "✓" : n}
             </div>
-            {n === 1 ? "Bilgiler" : "Şablon & Görseller"}
+            {n === 1 ? "Bilgiler" : "Tasarım"}
           </button>
         );
       })}
+      <p style={{ position: "absolute", bottom: -18, left: 0, right: 0, textAlign: "center", fontSize: 10, color: "#94a3b8", margin: 0 }}>
+        Kaydırarak adımlar arasında geçebilirsiniz
+      </p>
     </div>
   );
 }
@@ -310,12 +318,32 @@ function AdimGostergesi({ adim, setAdim }: { adim: 1 | 2; setAdim: (a: 1 | 2) =>
 export default function FormAlani({
   form, setForm, seciliSablon, setSeciliSablon,
   onMetinYenile, setMetinDuzenlendi, kullaniciId, adim2Ref,
+  mobilMod = false,
+  onTasarimaGec,
 }: Props) {
   const [adim, setAdim] = useState<1 | 2>(1);
   const [profiller, setProfiller] = useState<KayitliProfil[]>([]);
   const [profilYukleniyor, setProfilYukleniyor] = useState(false);
   const [profillerAcik, setProfillerAcik] = useState(false);
   const [baslikAcik, setBaslikAcik] = useState(false);
+  const [dikeyGorselUyarisi, setDikeyGorselUyarisi] = useState<string | null>(null);
+  const [acikBolum, setAcikBolum] = useState<string>("kimlik");
+  const touchRef = useRef({ x: 0, y: 0 });
+
+  const adimDegistir = useCallback((yeni: 1 | 2) => {
+    setAdim(yeni);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (yeni === 2) setAcikBolum("sablon");
+    else setAcikBolum("kimlik");
+  }, []);
+
+  const bolumToggle = (id: string) => {
+    setAcikBolum((prev) => (prev === id ? "" : id));
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [adim]);
 
   useEffect(() => {
     if (!kullaniciId) return;
@@ -324,8 +352,20 @@ export default function FormAlani({
   }, [kullaniciId]);
 
   useEffect(() => {
-    if (adim2Ref) adim2Ref.current = () => setAdim(2);
-  }, [adim2Ref]);
+    if (adim2Ref) adim2Ref.current = () => adimDegistir(2);
+  }, [adim2Ref, adimDegistir]);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchRef.current.x;
+    const dy = e.changedTouches[0].clientY - touchRef.current.y;
+    if (Math.abs(dx) < 56 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+    if (dx < 0 && adim === 1) adimDegistir(2);
+    if (dx > 0 && adim === 2) adimDegistir(1);
+  };
 
   const update = (key: keyof FormData, val: string | number) => setForm({ ...form, [key]: val });
 
@@ -369,7 +409,6 @@ export default function FormAlani({
   };
 
   const maxGorsel = SABLON_GORSEL_LIMITLERI[seciliSablon] ?? 4;
-  const secilenSablonMeta = SABLON_LISTESI.find((s) => s.id === seciliSablon);
 
   const gorselEkle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -377,8 +416,23 @@ export default function FormAlani({
     const eklenecek = Math.min(files.length, maxGorsel - form.gorseller.length);
     if (eklenecek <= 0) return;
     const yeni: string[] = [];
-    for (let i = 0; i < eklenecek; i++) yeni.push(await dosyayaBase64Cevir(files[i]));
+    let dikeyBulundu = false;
+    for (let i = 0; i < eklenecek; i++) {
+      const b64 = await dosyayaBase64Cevir(files[i]);
+      yeni.push(b64);
+      const boyut = await gorselBoyutOku(b64);
+      if (boyut.dikey) dikeyBulundu = true;
+    }
     setForm({ ...form, gorseller: [...form.gorseller, ...yeni] });
+    if (dikeyBulundu) {
+      const oneri = dikeyGorselSablonOner(seciliSablon);
+      setDikeyGorselUyarisi(
+        oneri
+          ? "Dikey görsel algılandı. Bu şablonda yatay görseller daha iyi görünür. Sizin için uygun düzen önerildi."
+          : "Dikey görsel algılandı. Yatay veya kare fotoğraflar afişte daha dengeli görünür.",
+      );
+      if (oneri) setSeciliSablon(oneri);
+    }
     e.target.value = "";
   };
 
@@ -402,7 +456,7 @@ export default function FormAlani({
 
   /* ─── ADIM 1 ─── */
   const adim1 = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
       <button
         type="button"
@@ -413,12 +467,12 @@ export default function FormAlani({
         }}
         style={{
           width: "100%",
-          padding: "12px",
-          borderRadius: 12,
-          border: "1.5px solid #fbbf24",
+          padding: "10px",
+          borderRadius: 14,
+          border: "1px solid #fde68a",
           background: "#fffbeb",
           color: "#92400e",
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: 700,
           cursor: "pointer",
         }}
@@ -426,92 +480,54 @@ export default function FormAlani({
         ⚡ Hızlı örnek doldur
       </button>
 
-      <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f0f4ff 100%)", border: "1px solid #c7d2fe", borderRadius: 14, padding: "14px 16px" }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#1e40af", margin: "0 0 8px" }}>
-          Bugünkü çalışmayı yazın; sistem veliye uygun afiş ve paylaşım metni hazırlasın.
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {["Kimlik ve kurum bilgileri", "Bugün yapılan çalışma", "Şablon, görsel ve metin", "Önizleme ve indirme"].map((s, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <div style={{ width: 20, height: 20, borderRadius: "50%", background: "#c7d2fe", color: "#3730a3", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
-              <span style={{ fontSize: 12, color: "#3730a3", fontWeight: 600 }}>{s}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Kayıtlı Profiller */}
-      <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <SectionHeader>Kayıtlı Profiller</SectionHeader>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={profilKaydet}
-              title="Sadece profil bilgilerinizi kaydeder, afişi kaydetmez"
-              style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1.5px solid #cbd5e1", background: "#f8fafc", color: "#475569", cursor: "pointer" }}>
-              <svg width={11} height={11} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-              Profili kaydet
+      <FormAkordeon id="profil" baslik="Kayıtlı profil (isteğe bağlı)" acik={acikBolum === "profil"} onToggle={bolumToggle}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" onClick={profilKaydet}
+            style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", cursor: "pointer" }}>
+            Profili kaydet
+          </button>
+          {profiller.length > 0 && (
+            <button type="button" onClick={() => setProfillerAcik(!profillerAcik)}
+              style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, border: "1px solid #e2e8f0", background: "#eff6ff", color: "#1d4ed8", cursor: "pointer" }}>
+              Kayıtlıları {profillerAcik ? "gizle" : "göster"}
             </button>
-            {profiller.length > 0 && (
-              <button onClick={() => setProfillerAcik(!profillerAcik)}
-                style={{ padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1.5px solid #cbd5e1", background: "#f8fafc", color: "#1d4ed8", cursor: "pointer" }}>
-                Yükle {profillerAcik ? "▲" : "▼"}
-              </button>
-            )}
-          </div>
+          )}
         </div>
         {profilYukleniyor && <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Yükleniyor...</p>}
-        {!profilYukleniyor && profiller.length === 0 && (
-          <p style={{ fontSize: 12, color: "#64748b", background: "#f8fafc", borderRadius: 8, padding: "10px 12px", margin: 0, lineHeight: 1.45 }}>
-            Henüz kayıtlı profil yok. Ad, görev ve kurum bilgilerinizi bir kez kaydedin; sonraki afişlerde tek tıkla kullanın.
-            <br />
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>Bu işlem sadece profil bilgilerinizi kaydeder, afişi kaydetmez.</span>
-          </p>
-        )}
         {profillerAcik && profiller.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {profiller.map((p) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: "#f8fafc", border: "1.5px solid #e2e8f0" }}>
-                <button onClick={() => profilYukle(p)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+                <button type="button" onClick={() => profilYukle(p)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer" }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{p.isim || "—"}</div>
                   <div style={{ fontSize: 11, color: "#64748b" }}>{[p.kurumAdi, p.rol].filter(Boolean).join(" · ")}</div>
                 </button>
-                <button onClick={() => profilSil(p.id)} style={{ width: 22, height: 22, borderRadius: "50%", background: "#fee2e2", color: "#dc2626", border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                <button type="button" onClick={() => profilSil(p.id)} style={{ width: 24, height: 24, borderRadius: "50%", background: "#fee2e2", color: "#dc2626", border: "none", fontSize: 14, cursor: "pointer" }}>×</button>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </FormAkordeon>
 
-      <SectionDivider />
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <SectionHeader>1. Kimlik ve Kurum Bilgileri</SectionHeader>
-        <SectionHelp>{BOLUM_YARDIM.kimlik}</SectionHelp>
+      <FormAkordeon id="kimlik" baslik="Kimlik Bilgileri" acik={acikBolum === "kimlik"} onToggle={bolumToggle} zorunlu>
         <div>
-          <label style={labelStyle}>{ALAN_YARDIM.isim.label}</label>
+          <AlanEtiketi label={ALAN_YARDIM.isim.label} ipucu={ALAN_YARDIM.isim.aciklama} />
           <input type="text" value={form.isim} onChange={(e) => update("isim", e.target.value)}
             placeholder={ALAN_YARDIM.isim.placeholder} style={inputStyle} />
-          <FieldHint aciklama={ALAN_YARDIM.isim.aciklama} />
         </div>
         <div>
-          <label style={labelStyle}>{ALAN_YARDIM.kurumAdi.label}</label>
+          <AlanEtiketi label={ALAN_YARDIM.kurumAdi.label} ipucu={ALAN_YARDIM.kurumAdi.aciklama} />
           <input type="text" value={form.kurumAdi} onChange={(e) => update("kurumAdi", e.target.value)}
             placeholder={ALAN_YARDIM.kurumAdi.placeholder} style={inputStyle} />
-          <FieldHint aciklama={ALAN_YARDIM.kurumAdi.aciklama} />
         </div>
         <div>
-          <label style={labelStyle}>{ALAN_YARDIM.rol.label}</label>
+          <AlanEtiketi label={ALAN_YARDIM.rol.label} ipucu={ALAN_YARDIM.rol.aciklama} />
           <input type="text" value={form.rol} onChange={(e) => update("rol", e.target.value)}
             placeholder={ALAN_YARDIM.rol.placeholder} style={inputStyle} />
-          <FieldHint aciklama={ALAN_YARDIM.rol.aciklama} />
         </div>
-      </div>
+      </FormAkordeon>
 
-      <SectionDivider />
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <SectionHeader>2. Bugün Yapılan Çalışma</SectionHeader>
-        <SectionHelp>{BOLUM_YARDIM.calisma}</SectionHelp>
+      <FormAkordeon id="calisma" baslik="Çalışma Bilgileri" acik={acikBolum === "calisma"} onToggle={bolumToggle}>
 
         {Array.from({ length: form.faaliyetSayisi }).map((_, idx) => {
           const f = form.faaliyetler[idx] ?? { tur: "", alan: "", ozelNot: "" };
@@ -529,8 +545,7 @@ export default function FormAlani({
                 )}
               </div>
               <div>
-                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.faaliyetTuru.label}</label>
-                <FieldHint aciklama={ALAN_YARDIM.faaliyetTuru.aciklama} />
+                <AlanEtiketi label={ALAN_YARDIM.faaliyetTuru.label} ipucu={ALAN_YARDIM.faaliyetTuru.aciklama} />
                 <div style={{ position: "relative" }}>
                   <select value={f.tur} onChange={(e) => updateFaaliyet(idx, "tur", e.target.value)}
                     style={{ ...inputStyle, paddingRight: 36, cursor: "pointer" }}>
@@ -545,16 +560,14 @@ export default function FormAlani({
                 </div>
               </div>
               <div>
-                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.alan.label}</label>
+                <AlanEtiketi label={ALAN_YARDIM.alan.label} ipucu={ALAN_YARDIM.alan.aciklama} />
                 <input type="text" value={f.alan} onChange={(e) => updateFaaliyet(idx, "alan", e.target.value)}
                   placeholder={ALAN_YARDIM.alan.placeholder} style={inputStyle} />
-                <FieldHint aciklama={ALAN_YARDIM.alan.aciklama} />
               </div>
               <div>
-                <label style={{ ...labelStyle, textTransform: "none", letterSpacing: 0, fontSize: 12 }}>{ALAN_YARDIM.ozelNot.label}</label>
+                <AlanEtiketi label={ALAN_YARDIM.ozelNot.label} ipucu={ALAN_YARDIM.ozelNot.aciklama} />
                 <input type="text" value={f.ozelNot} onChange={(e) => updateFaaliyet(idx, "ozelNot", e.target.value)}
                   placeholder={ALAN_YARDIM.ozelNot.placeholder} style={inputStyle} />
-                <FieldHint aciklama={ALAN_YARDIM.ozelNot.aciklama} />
               </div>
             </div>
           );
@@ -568,12 +581,13 @@ export default function FormAlani({
           </button>
         )}
 
-        {/* Otomatik Başlık */}
-        <div style={{ background: "#f0f4ff", border: "1.5px solid #c7d2fe", borderRadius: 12, padding: "12px 14px" }}>
+        <div style={{ background: "#f0f4ff", border: "1px solid #c7d2fe", borderRadius: 14, padding: "12px 14px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{ALAN_YARDIM.baslik.label}</div>
-              <FieldHint aciklama={ALAN_YARDIM.baslik.aciklama} />
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#6366f1" }}>{ALAN_YARDIM.baslik.label}</span>
+                <InfoTip metin={ALAN_YARDIM.baslik.aciklama} />
+              </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1b4b", lineHeight: 1.4 }}>{basliklar[form.seciliBaslikIdx ?? 0]}</div>
             </div>
             <button onClick={() => setBaslikAcik(!baslikAcik)}
@@ -598,83 +612,75 @@ export default function FormAlani({
             </div>
           )}
         </div>
-      </div>
+      </FormAkordeon>
 
-      {/* İleri Butonu */}
-      <button onClick={() => setAdim(2)}
-        style={{ width: "100%", padding: "14px", borderRadius: 14, fontSize: 15, fontWeight: 700, border: "none", background: "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        Şablon ve Görseller
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.98 }}
+        onClick={() => adimDegistir(2)}
+        style={primaryBtn}
+      >
+        Tasarıma Geç
         <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
-      </button>
+      </motion.button>
     </div>
   );
 
   /* ─── ADIM 2 ─── */
   const adim2 = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      <div>
-        <SectionHeader>3. Şablon ve Görseller</SectionHeader>
-        <SectionHelp>{BOLUM_YARDIM.sablon}</SectionHelp>
-        <p style={{ fontSize: 11, fontWeight: 700, color: "#64748b", margin: "12px 0 8px" }}>Şablon seçin</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
+      <FormAkordeon id="sablon" baslik="Şablon Seçimi" acik={acikBolum === "sablon"} onToggle={bolumToggle}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
           {SABLON_LISTESI.map((s) => {
             const secili = seciliSablon === s.id;
             return (
-              <button key={s.id} onClick={() => setSeciliSablon(s.id)}
+              <motion.button
+                key={s.id}
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                onClick={() => { setSeciliSablon(s.id); setDikeyGorselUyarisi(null); }}
                 style={{
-                  position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                  padding: "8px 4px 10px", borderRadius: 12, cursor: "pointer",
-                  border: secili ? `2.5px solid ${s.chipRenk}` : "2px solid #e2e8f0",
-                  background: secili ? `${s.chipRenk}12` : "#ffffff",
-                  transition: "all 0.12s",
-                }}>
-                {s.yeni && (
-                  <div style={{ position: "absolute", top: 4, right: 4, background: "#22c55e", color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 6, letterSpacing: "0.04em" }}>YENİ</div>
-                )}
-                {secili && (
-                  <div style={{ position: "absolute", top: 4, left: 4, width: 16, height: 16, borderRadius: "50%", background: s.chipRenk, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width={9} height={9} fill="none" stroke="#fff" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                  </div>
-                )}
-                <SablonMiniThumbnail id={s.id} renk={s.chipRenk} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: secili ? s.chipRenk : "#475569", textAlign: "center", lineHeight: 1.2, padding: "0 2px" }}>
-                  {s.ad.split(" ").slice(0, 2).join(" ")}
-                </span>
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                  <span style={{ fontSize: 8, background: secili ? `${s.chipRenk}18` : "#f1f5f9", color: secili ? s.chipRenk : "#64748b", padding: "2px 5px", borderRadius: 4, fontWeight: 700 }}>
-                    {s.etiket}
-                  </span>
-                  <span style={{ fontSize: 8, background: "#f1f5f9", color: "#64748b", padding: "2px 5px", borderRadius: 4, fontWeight: 600 }}>
-                    {s.maxGorsel}g
-                  </span>
+                  position: "relative",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: 6,
+                  padding: "10px 8px",
+                  borderRadius: 16,
+                  cursor: "pointer",
+                  border: secili ? `2px solid ${s.chipRenk}` : "1px solid #e8edf2",
+                  background: secili ? `${s.chipRenk}10` : "#ffffff",
+                  boxShadow: secili ? `0 6px 20px ${s.chipRenk}22` : "0 2px 8px rgba(15,23,42,0.04)",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <SablonMiniThumbnail id={s.id} renk={s.chipRenk} />
                 </div>
-              </button>
+                <span style={{ fontSize: 11, fontWeight: 800, color: secili ? s.chipRenk : "#334155", lineHeight: 1.2 }}>
+                  {s.ad}
+                </span>
+                <span style={{ fontSize: 10, color: "#64748b", lineHeight: 1.35 }}>
+                  {s.kullanim || `${s.maxGorsel} görsel · ${s.etiket}`}
+                </span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, background: "#f1f5f9", color: "#64748b", padding: "2px 6px", borderRadius: 6 }}>
+                    {s.maxGorsel} görsel
+                  </span>
+                  {(s.etiketler ?? [s.etiket]).slice(0, 2).map((t) => (
+                    <span key={t} style={{ fontSize: 9, fontWeight: 700, background: `${s.chipRenk}14`, color: s.chipRenk, padding: "2px 6px", borderRadius: 6 }}>{t}</span>
+                  ))}
+                </div>
+              </motion.button>
             );
           })}
         </div>
+      </FormAkordeon>
 
-        {/* Seçili şablon info */}
-        <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: "#f0f4ff", border: "1px solid #c7d2fe" }}>
-          <p style={{ fontSize: 12, color: "#3730a3", fontWeight: 600, margin: 0, lineHeight: 1.5 }}>
-            📐 <strong>{secilenSablonMeta?.ad}</strong> — en fazla <strong>{maxGorsel} görsel</strong> destekler.
-            {secilenSablonMeta?.kullanim ? <> {secilenSablonMeta.kullanim}</> : null}
-          </p>
-          {secilenSablonMeta?.etiketler?.length ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-              {secilenSablonMeta.etiketler.map((t) => (
-                <span key={t} style={{ fontSize: 9, fontWeight: 700, background: "#e0e7ff", color: "#4338ca", padding: "2px 6px", borderRadius: 4 }}>{t}</span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <SectionDivider />
-
-      <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase" }}>Görseller</span>
+      <FormAkordeon id="gorseller" baslik="Görseller" acik={acikBolum === "gorseller"} onToggle={bolumToggle}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>Yüklenen</span>
           <span style={{
             fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 8,
             background: gorselAsimiVar ? "#fee2e2" : form.gorseller.length === maxGorsel ? "#dcfce7" : "#f1f5f9",
@@ -728,8 +734,14 @@ export default function FormAlani({
           </label>
         )}
 
+        {dikeyGorselUyarisi && (
+          <div style={{ padding: "10px 12px", borderRadius: 12, background: "#eff6ff", border: "1px solid #bfdbfe", marginBottom: 8 }}>
+            <p style={{ fontSize: 11, color: "#1e40af", fontWeight: 600, margin: 0, lineHeight: 1.45 }}>{dikeyGorselUyarisi}</p>
+          </div>
+        )}
+
         {form.gorseller.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             {form.gorseller.map((g, i) => {
               const kullanilacak = i < maxGorsel;
               return (
@@ -739,7 +751,7 @@ export default function FormAlani({
                   border: `1.5px solid ${kullanilacak ? "#e2e8f0" : "#fecaca"}`,
                   opacity: kullanilacak ? 1 : 0.7,
                 }}>
-                  <img src={g} alt={`Görsel ${i + 1}`} style={{ width: 50, height: 50, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                  <img src={g} alt={`Görsel ${i + 1}`} style={{ width: 50, height: 50, objectFit: "cover", objectPosition: "center", borderRadius: 8, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: kullanilacak ? "#475569" : "#dc2626" }}>
                       {i === 0 ? "🖼️ Kapak" : kullanilacak ? `Fotoğraf ${i + 1}` : `Fotoğraf ${i + 1} — Kullanılmayacak`}
@@ -764,13 +776,9 @@ export default function FormAlani({
             })}
           </div>
         )}
-      </div>
+      </FormAkordeon>
 
-      <SectionDivider />
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <SectionHeader>4. Metin Ayarları</SectionHeader>
-        <SectionHelp>{BOLUM_YARDIM.metin}</SectionHelp>
+      <FormAkordeon id="metin" baslik="Metin Ayarları" acik={acikBolum === "metin"} onToggle={bolumToggle}>
         <div>
           <label style={labelStyle}>Metin Uzunluğu</label>
           <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 10, padding: 3 }}>
@@ -795,25 +803,21 @@ export default function FormAlani({
               { id: "kurumsal", label: "🏛 Kurumsal", aciklama: METIN_TON_ACIKLAMA.kurumsal },
               { id: "sicak", label: "☀️ Sıcak", aciklama: METIN_TON_ACIKLAMA.sicak },
               { id: "aciklayici", label: "📖 Açıklayıcı", aciklama: METIN_TON_ACIKLAMA.aciklayici },
-            ] as const).map(({ id, label, aciklama }) => {
+            ] as const).map(({ id, label }) => {
               const secili = (form.metinTonu ?? "kurumsal") === id;
               return (
-                <button key={id} onClick={() => { setMetinDuzenlendi(false); update("metinTonu", id); }}
-                  style={{ padding: "8px 4px", borderRadius: 10, fontSize: 11, fontWeight: 700, border: secili ? "2px solid #1d4ed8" : "1.5px solid #e2e8f0", background: secili ? "#eff6ff" : "#fff", color: secili ? "#1d4ed8" : "#64748b", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span>{label}</span>
-                  <span style={{ fontSize: 9, fontWeight: 500, color: secili ? "#3b82f6" : "#94a3b8" }}>{aciklama}</span>
+                <button key={id} type="button" onClick={() => { setMetinDuzenlendi(false); update("metinTonu", id); }}
+                  style={{ padding: "10px 4px", borderRadius: 12, fontSize: 11, fontWeight: 700, border: secili ? "2px solid #1d4ed8" : "1px solid #e2e8f0", background: secili ? "#eff6ff" : "#fff", color: secili ? "#1d4ed8" : "#64748b", cursor: "pointer", textAlign: "center" }}>
+                  {label}
                 </button>
               );
             })}
           </div>
         </div>
-      </div>
 
-      <SectionDivider />
-
-      <div>
+        <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>{ALAN_YARDIM.posterMetni.label}</label>
+          <AlanEtiketi label={ALAN_YARDIM.posterMetni.label} ipucu={ALAN_YARDIM.posterMetni.aciklama} />
           <button onClick={() => { setMetinDuzenlendi(false); onMetinYenile(); }}
             style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1.5px solid #cbd5e1", background: "#f1f5f9", color: "#475569", cursor: "pointer" }}>
             <svg width={12} height={12} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -822,24 +826,46 @@ export default function FormAlani({
             Yenile
           </button>
         </div>
-        <FieldHint aciklama={ALAN_YARDIM.posterMetni.aciklama} />
         <textarea value={form.posterMetni}
           onChange={(e) => { setMetinDuzenlendi(true); update("posterMetni", e.target.value); }}
           rows={5} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.7, fontFamily: "inherit" }} />
-      </div>
+        </div>
+      </FormAkordeon>
 
-      <button onClick={() => setAdim(1)}
-        style={{ width: "100%", padding: "12px 16px", borderRadius: 12, fontSize: 13, fontWeight: 700, border: "1.5px solid #cbd5e1", background: "#fff", color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+      {onTasarimaGec ? (
+        <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={onTasarimaGec} style={primaryBtn}>
+          Afişe Geç
+        </motion.button>
+      ) : null}
+
+      <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={() => adimDegistir(1)} style={secondaryBtn}>
         <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
-        Geri
-      </button>
+        Bilgilere Dön
+      </motion.button>
     </div>
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      <AdimGostergesi adim={adim} setAdim={setAdim} />
-      {adim === 1 ? adim1 : adim2}
+    <div
+      style={{ display: "flex", flexDirection: "column", paddingBottom: mobilMod ? 8 : 0 }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      <AdimGostergesi adim={adim} setAdim={adimDegistir} />
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={adim}
+          initial={{ opacity: 0, x: adim === 2 ? 48 : -48 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: adim === 2 ? -48 : 48 }}
+          transition={{ duration: 0.22, ease: stepEase }}
+        >
+          {adim === 1 ? adim1 : adim2}
+        </motion.div>
+      </AnimatePresence>
+      {mobilMod && (
+        <VeliCanliOnizleme form={form} sablon={seciliSablon} onTasarimaGec={onTasarimaGec} />
+      )}
     </div>
   );
 }
