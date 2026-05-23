@@ -345,6 +345,9 @@ importers:
       dom-to-image-more:
         specifier: ^3.7.2
         version: 3.7.2
+      framer-motion:
+        specifier: 'catalog:'
+        version: 12.38.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
@@ -499,9 +502,6 @@ importers:
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@19.1.0)
-      framer-motion:
-        specifier: 'catalog:'
-        version: 12.38.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       input-otp:
         specifier: ^1.4.2
         version: 1.4.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
