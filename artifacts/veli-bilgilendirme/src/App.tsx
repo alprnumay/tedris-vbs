@@ -15,6 +15,7 @@ import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
+import { AppBrand } from "./components/AppBrand";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
 import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
@@ -483,7 +484,7 @@ function MainApp() {
       <Toaster position="top-center" richColors />
 
       <header
-        className="flex-shrink-0 flex items-center justify-between px-4"
+        className="tedris-app-header flex-shrink-0 flex items-center justify-between px-4"
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)",
           minHeight: 60,
@@ -507,46 +508,7 @@ function MainApp() {
             <span className="hidden min-[380px]:inline">Ana sayfaya dön</span>
             <span className="min-[380px]:hidden">Ana</span>
           </button>
-          <div
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: 10,
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              overflow: "hidden",
-              flexShrink: 0,
-            }}
-          >
-            <img
-              src="/icon-192.png"
-              alt=""
-              style={{ width: 38, height: 38, objectFit: "cover" }}
-              onError={(e) => {
-                (e.currentTarget.parentElement as HTMLElement).innerHTML = '<span style="font-size:20px">📚</span>';
-              }}
-            />
-          </div>
-          <div>
-            <h1
-              style={{
-                fontSize: 16,
-                fontWeight: 800,
-                color: "#fff",
-                lineHeight: 1.1,
-                margin: 0,
-                letterSpacing: "-0.01em",
-              }}
-            >
-              Tedris Vbs
-            </h1>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "2px 0 0", letterSpacing: "0.02em" }}>
-              {kullanici.name}
-            </p>
-          </div>
+          <AppBrand kullaniciAdi={kullanici.name} />
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -626,7 +588,7 @@ function MainApp() {
 
       <div className="veli-desktop-workspace hidden lg:flex flex-1 min-h-0">
         {aktifSekme === "yonetim" && kullanici?.isAdmin ? (
-          <div className="veli-desktop-inner w-full">
+          <div className="veli-desktop-inner veli-admin-desktop-inner w-full">
             <AdminSayfasi />
           </div>
         ) : (

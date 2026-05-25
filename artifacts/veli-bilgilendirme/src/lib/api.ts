@@ -145,6 +145,7 @@ export interface AdminKullanici {
   isActive: boolean;
   isAdmin: boolean;
   lastLoginAt: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   activityStatus?: AktiviteDurum;
   daysSinceLogin?: number | null;
@@ -316,6 +317,12 @@ export const api = {
       generate: opts?.generate ?? !opts?.password,
     }),
 
+  adminKullaniciSil: (id: string) =>
+    istek<{ ok: boolean; user: AdminKullanici }>("POST", `/admin/users/${id}/delete`),
+
+  adminTopluKurumImport: (data: AdminImportCommitRequest) =>
+    istek<AdminImportCommitResponse>("POST", "/admin/users/bulk-import", data),
+
   adminBugunGirisler: (params: Record<string, string | undefined> = {}) =>
     istek<{ count: number; logins: AdminKullanici[] }>("GET", `/admin/today-logins${qs(params)}`),
 
@@ -383,6 +390,9 @@ export const api = {
     }>("GET", `/admin/yurt-tracking${qs(params)}`),
 
   adminVeriSagligi: () => istek<AdminVeriSagligi>("GET", "/admin/data-health"),
+
+  adminVeriSagligiAksiyon: (data: AdminVeriSagligiAksiyonRequest) =>
+    istek<{ ok: boolean; affected: number }>("POST", "/admin/data-health/actions", data),
 
   adminAktivite: (params: Record<string, string | undefined> = {}) =>
     istek<AdminAktiviteResponse>("GET", `/admin/activity-logs${qs(params)}`),
@@ -487,10 +497,48 @@ export interface AdminDashboard {
 }
 
 export interface AdminDataHealthIssue {
+  id: string;
   type: string;
+  targetKind?: "user" | "institution" | "activity" | "registry";
+  targetId?: string | null;
   record: string;
   description: string;
   suggestion: string;
+}
+
+export interface AdminImportCommitRequest {
+  rows: {
+    rowNumber?: number;
+    district: string;
+    institutionName: string;
+    institutionCode?: string;
+    email?: string;
+    name?: string;
+    province?: string;
+  }[];
+  createUsers?: boolean;
+  defaultPassword?: string;
+}
+
+export interface AdminImportCommitResponse {
+  ok: boolean;
+  readRows: number;
+  addedInstitutions: number;
+  existingInstitutions: number;
+  skippedRows: number;
+  createdUsers: number;
+  existingUsers: number;
+  byDistrict: Record<string, number>;
+  errors: { rowNumber?: number; district?: string; institutionName?: string; reason: string }[];
+}
+
+export interface AdminVeriSagligiAksiyonRequest {
+  action: "match" | "deactivate" | "ignore";
+  userIds?: string[];
+  issueIds?: string[];
+  district?: string;
+  institutionName?: string;
+  institutionCode?: string;
 }
 
 export interface AdminVeriSagligi {

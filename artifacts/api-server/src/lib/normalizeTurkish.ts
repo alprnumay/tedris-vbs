@@ -16,6 +16,28 @@ export function normalizeTurkish(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function isBoundary(ch: string | undefined): boolean {
+  return !ch || /[^A-Za-zÇĞİÖŞÜçğıöşü0-9]/.test(ch);
+}
+
+export function removeDistrictPrefixFromInstitutionName(districtName: string, institutionName: string): string {
+  const districtNorm = normalizeTurkish(districtName);
+  const original = institutionName.trim();
+  if (!districtNorm || !original) return original;
+
+  let consumedNorm = "";
+  for (let i = 0; i < original.length; i += 1) {
+    consumedNorm = normalizeTurkish(original.slice(0, i + 1));
+    if (consumedNorm === districtNorm && isBoundary(original[i + 1])) {
+      const cleaned = original.slice(i + 1).trim();
+      return cleaned || original;
+    }
+    if (consumedNorm.length > districtNorm.length) break;
+  }
+
+  return original;
+}
+
 export function slugifyKurum(...parts: string[]): string {
   const birlesik = parts
     .map((p) => {

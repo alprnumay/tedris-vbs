@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, institutionsTable } from "@workspace/db";
+import { db, institutionsTable, localUsersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middlewares/requireAdmin";
 import { TRACKED_DISTRICTS } from "../lib/trackedDistricts";
@@ -12,7 +12,7 @@ import {
 } from "../lib/adminMetrics";
 import { kurumKoduOner } from "../lib/institutionSlug";
 import { normalizeDistrictName } from "../lib/trackedDistricts";
-import { reconcileUsersWithInstitutions } from "../lib/institutionRegistry";
+import { reconcileUsersWithInstitutions, resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
@@ -115,9 +115,9 @@ router.get("/admin/dashboard", async (req, res) => {
       mintikaSummary: ctx.mintikalar,
       attentionYurts: attention,
       dataQualityWarning:
-        ctx.unmatchedUsers.length > 3
-          ? "Bu raporda veri eksikliği olabilir. Veri Sağlığı ekranını kontrol edin."
-          : undefined,
+        dataIssues > 0
+          ? `Bu raporda ${dataIssues} veri sorunu tespit edildi. Sonuçların tam doğru olması için Veri Sağlığı ekranını kontrol edin.`
+          : "Veriler sağlıklı görünüyor.",
     });
   } catch (err) {
     console.error("[admin dashboard]", err);
@@ -209,6 +209,54 @@ router.get("/admin/data-health", async (_req, res) => {
     console.error("[admin data-health]", err);
     res.status(500).json({ error: "Veri sağlığı yüklenemedi" });
   }
+});
+
+router.post("/admin/data-health/actions", async (req, res) => {
+  const action = String(req.body?.action || "");
+  const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
+  const issueIds = Array.isArray(req.body?.issueIds) ? req.body.issueIds.map(String) : [];
+  const district = typeof req.body?.district === "string" ? req.body.district : "";
+  const institutionName = typeof req.body?.institutionName === "string" ? req.body.institutionName : "";
+  const institutionCode = typeof req.body?.institutionCode === "string" ? req.body.institutionCode : "";
+
+  if (!["match", "deactivate", "ignore"].includes(action)) {
+    res.status(400).json({ error: "Geçersiz işlem." });
+    return;
+  }
+
+  let affected = 0;
+  if (action === "match") {
+    if (!district || !institutionName) {
+      res.status(400).json({ error: "Eşleştirme için mıntıka ve kurum zorunludur." });
+      return;
+    }
+    const inst = await resolveInstitution({ district, institutionName, institutionCode });
+    if (!inst) {
+      res.status(400).json({ error: "Kurum eşleştirilemedi." });
+      return;
+    }
+    for (const userId of userIds) {
+      await linkUserToInstitution(userId, inst);
+      affected += 1;
+    }
+  }
+
+  if (action === "deactivate") {
+    for (const userId of userIds) {
+      await db
+        .update(localUsersTable)
+        .set({ isActive: false, deletedAt: new Date() })
+        .where(eq(localUsersTable.id, userId));
+      affected += 1;
+    }
+  }
+
+  if (action === "ignore") {
+    // Kalıcı yoksayma için ayrı tablo yok; UI seçimi temizleyebilmek için başarılı yanıt döner.
+    affected = issueIds.length || userIds.length;
+  }
+
+  res.json({ ok: true, affected });
 });
 
 router.get("/admin/activity-logs", async (req, res) => {

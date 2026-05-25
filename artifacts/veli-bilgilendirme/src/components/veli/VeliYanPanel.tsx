@@ -29,6 +29,8 @@ export function VeliYanPanel({
   const oneriler = veliSistemOnerileri(form, seciliSablon);
   const sablonOner = onerilenSablon(form, seciliSablon);
   const waMetin = veliWhatsappMesajiOlustur(form);
+  const gorunenMaddeler = studio ? kalite.maddeler.slice(0, 3) : kalite.maddeler;
+  const gorunenOneriler = studio ? oneriler.slice(0, 2) : oneriler;
   const st = DURUM_STIL[kalite.durum];
 
   const kopyala = async () => {
@@ -50,7 +52,7 @@ export function VeliYanPanel({
           Afiş kalitesi: {st.label}
         </p>
         <ul className="mt-2 space-y-1">
-          {kalite.maddeler.map((m, i) => (
+          {gorunenMaddeler.map((m, i) => (
             <li key={i} className="text-[11px] font-medium text-slate-700">
               {m.ok ? "✓" : "!"} {m.metin}
             </li>
@@ -58,11 +60,11 @@ export function VeliYanPanel({
         </ul>
       </div>
 
-      {oneriler.length > 0 && (
+      {gorunenOneriler.length > 0 && (
         <div className={studio ? "veli-studio-info-card border-indigo-100 bg-indigo-50/80" : "rounded-xl border border-indigo-100 bg-indigo-50/80 p-3"}>
           <p className="text-xs font-extrabold text-indigo-900">Sistem önerisi</p>
           <ul className="mt-1.5 space-y-1">
-            {oneriler.map((o, i) => (
+            {gorunenOneriler.map((o, i) => (
               <li key={i} className="text-[11px] leading-snug text-indigo-800">
                 • {o}
               </li>
@@ -88,7 +90,9 @@ export function VeliYanPanel({
 
       <div className={studio ? "veli-studio-info-card" : "rounded-xl border border-slate-200 bg-white p-3"}>
         <p className="text-xs font-extrabold text-slate-800">WhatsApp mesaj önerisi</p>
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-600">{waMetin}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-600">
+          {studio && waMetin.length > 180 ? `${waMetin.slice(0, 180)}...` : waMetin}
+        </p>
         <button
           type="button"
           onClick={kopyala}

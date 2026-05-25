@@ -1,4 +1,4 @@
-import { normalizeTurkish, slugifyKurum } from "./normalizeTurkish";
+import { normalizeTurkish, removeDistrictPrefixFromInstitutionName, slugifyKurum } from "./normalizeTurkish";
 import { TRACKED_DISTRICTS } from "./trackedDistricts";
 
 export const MINTIKA_IL: Record<string, string> = {
@@ -44,17 +44,19 @@ export function ilTahminEt(mintika: string): string {
 }
 
 export function epostaUret(mintika: string, kurumAdi: string): string {
-  const local = normalizeTurkish(mintika) + normalizeTurkish(kurumAdi);
+  const temizKurum = removeDistrictPrefixFromInstitutionName(mintika, kurumAdi);
+  const local = normalizeTurkish(mintika) + normalizeTurkish(temizKurum);
   return local ? `${local}@gmail.com` : "";
 }
 
 export function epostaAlternatif(mintika: string, kurumAdi: string, suffix: number): string {
-  const local = normalizeTurkish(mintika) + normalizeTurkish(kurumAdi);
+  const temizKurum = removeDistrictPrefixFromInstitutionName(mintika, kurumAdi);
+  const local = normalizeTurkish(mintika) + normalizeTurkish(temizKurum);
   return local ? `${local}${suffix}@gmail.com` : "";
 }
 
 export function kurumKoduUret(mintika: string, kurumAdi: string): string {
-  return slugifyKurum(mintika, kurumAdi);
+  return slugifyKurum(mintika, removeDistrictPrefixFromInstitutionName(mintika, kurumAdi));
 }
 
 export function sifreUret(mintika: string): { sifre: string; uyar?: string } {

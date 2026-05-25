@@ -34,4 +34,5 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 
 ALTER TABLE local_users ADD COLUMN IF NOT EXISTS institution_id varchar;
+ALTER TABLE local_users ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS institution_id varchar;

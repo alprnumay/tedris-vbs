@@ -20,6 +20,7 @@ export const localUsersTable = pgTable("local_users", {
   institutionCode: varchar("institution_code"),
   role: varchar("role").notNull().default("hoca"),
   isActive: boolean("is_active").notNull().default(true),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

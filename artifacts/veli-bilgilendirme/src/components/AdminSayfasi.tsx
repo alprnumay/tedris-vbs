@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   api,
   type AdminKullanici,
@@ -8,11 +8,15 @@ import {
   type AdminYurtMetrik,
   type AdminVeriSagligi,
   type AdminAktiviteResponse,
+  type AdminImportCommitResponse,
+  type AdminYurtKayit,
 } from "../lib/api";
 import { TRACKED_DISTRICTS } from "../lib/admin/trackedDistricts";
 import { hatirlatmaMesaji, yurtHatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
 import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
 import { indirAdminExcel } from "../lib/admin/adminExcel";
+import { excelKurumImportOku, type KurumImportSatiri } from "../lib/admin/adminExcelImport";
+import { AppBrand } from "./AppBrand";
 import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
 import {
   StatKart,
@@ -73,6 +77,7 @@ export default function AdminSayfasi() {
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [mintikalar, setMintikalar] = useState<AdminMintikaMetrik[]>([]);
   const [yurts, setYurts] = useState<AdminYurtMetrik[]>([]);
+  const [kurumKayitlari, setKurumKayitlari] = useState<AdminYurtKayit[]>([]);
   const [veriSagligi, setVeriSagligi] = useState<AdminVeriSagligi | null>(null);
   const [aktivite, setAktivite] = useState<AdminAktiviteResponse | null>(null);
   const [bugunGirisler, setBugunGirisler] = useState<AdminKullanici[]>([]);
@@ -88,6 +93,16 @@ export default function AdminSayfasi() {
   const [donemBitis, setDonemBitis] = useState("");
   const [sezonBaslangic, setSezonBaslangic] = useState("");
   const [sezonBitis, setSezonBitis] = useState("");
+  const [silinecekKullanici, setSilinecekKullanici] = useState<AdminKullanici | null>(null);
+  const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
+  const [importYukleniyor, setImportYukleniyor] = useState(false);
+  const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(false);
+  const [importSifre, setImportSifre] = useState("tedris2026");
+  const [importSonuc, setImportSonuc] = useState<AdminImportCommitResponse | null>(null);
+  const [seciliIssueIds, setSeciliIssueIds] = useState<string[]>([]);
+  const [eslemeModal, setEslemeModal] = useState<{ userIds: string[] } | null>(null);
+  const [eslemeMintika, setEslemeMintika] = useState("");
+  const [eslemeKurum, setEslemeKurum] = useState("");
 
   const filtreParams = useCallback(
     () => ({
@@ -114,6 +129,7 @@ export default function AdminSayfasi() {
       const jobs: Promise<void>[] = [
         api.adminDashboard(fp).then(setDashboard),
         api.adminBugunGirisler(fp).then((r) => setBugunGirisler(r.logins)),
+        api.adminYurtKayitlari().then((r) => setKurumKayitlari(r.institutions)),
         api.adminKullanicilar({
           district: fp.district,
           institutionCode: fp.institutionCode,
@@ -185,7 +201,27 @@ export default function AdminSayfasi() {
     setAktifSekme("kullanicilar");
   };
 
-  const kurumSecenekleri = [...new Map(yurts.map((y) => [y.institutionCode, y])).values()];
+  const kurumSecenekleriTum = useMemo(
+    () => {
+      if (kurumKayitlari.length > 0) {
+        return kurumKayitlari.map((k) => ({
+          institutionCode: k.institutionCode,
+          institutionName: k.institutionName,
+          districtName: k.districtName,
+        }));
+      }
+      return [...new Map(yurts.map((y) => [y.institutionCode, y])).values()];
+    },
+    [kurumKayitlari, yurts],
+  );
+  const kurumSecenekleri = useMemo(
+    () => (mintika ? kurumSecenekleriTum.filter((y) => y.districtName === mintika) : kurumSecenekleriTum),
+    [kurumSecenekleriTum, mintika],
+  );
+
+  useEffect(() => {
+    if (kurum && !kurumSecenekleri.some((y) => y.institutionCode === kurum)) setKurum("");
+  }, [kurum, kurumSecenekleri]);
 
   const filtreliDestek = destekler.filter((d) => {
     if (destekFiltre && d.status !== destekFiltre) return false;
@@ -194,10 +230,16 @@ export default function AdminSayfasi() {
     return true;
   });
 
-  const excelIndir = async (tip: "genel" | "mintika" | "yurt" | "veri") => {
+  const excelIndir = async (tip: "genel" | "mintika" | "yurt" | "kullanici" | "aktivite" | "veri") => {
     const ozet = dashboard?.summary ?? {};
+    const raporAdi =
+      tip === "genel" ? "Genel Bakış" :
+      tip === "mintika" ? "Mıntıka Raporu" :
+      tip === "yurt" ? "Yurt Takibi Raporu" :
+      tip === "kullanici" ? "Kullanıcı Raporu" :
+      tip === "aktivite" ? "Aktivite Raporu" : "Veri Sağlığı Raporu";
     await indirAdminExcel({
-      raporAdi: tip === "genel" ? "Genel Bakış" : tip === "mintika" ? "Mıntıka Panosu" : tip === "yurt" ? "Yurt Takibi" : "Veri Sağlığı",
+      raporAdi,
       rangeLabel: dashboard?.range.label ?? tarihAralik,
       filtreler: filtreMetni(),
       ozet: {
@@ -209,27 +251,127 @@ export default function AdminSayfasi() {
       },
       mintikalar: tip !== "yurt" ? mintikalar : undefined,
       yurts: tip !== "mintika" ? yurts : undefined,
+      users: tip === "kullanici" ? kullanicilar : undefined,
+      activityLogs: tip === "aktivite" ? aktivite?.logs : undefined,
       issues: tip === "veri" ? veriSagligi?.issues : undefined,
     });
   };
 
   const mevcutEpostalar = kullanicilar.map((u) => u.email.toLowerCase());
 
+  const excelImportSec = async (file?: File) => {
+    if (!file) return;
+    setImportYukleniyor(true);
+    setImportSonuc(null);
+    try {
+      const rows = await excelKurumImportOku(
+        file,
+        kurumSecenekleriTum.map((k) => k.institutionCode),
+        mevcutEpostalar,
+      );
+      setImportRows(rows);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Excel okunamadı.");
+    } finally {
+      setImportYukleniyor(false);
+    }
+  };
+
+  const importBaslat = async () => {
+    const aktarilacak = importRows.filter((r) => r.durum === "yeni" || r.durum === "email_cakisiyor");
+    setImportYukleniyor(true);
+    try {
+      const sonuc = await api.adminTopluKurumImport({
+        rows: aktarilacak.map((r) => ({
+          rowNumber: r.rowNumber,
+          district: r.district,
+          institutionName: r.institutionName,
+          institutionCode: r.institutionCode,
+          email: r.email,
+          province: r.province,
+        })),
+        createUsers: importKullaniciOlustur,
+        defaultPassword: importSifre,
+      });
+      setImportSonuc(sonuc);
+      await veriYukle();
+    } finally {
+      setImportYukleniyor(false);
+    }
+  };
+
+  const hataliSatirlariKopyala = () => {
+    const text = importRows
+      .filter((r) => r.durum !== "yeni")
+      .map((r) => `${r.rowNumber}\t${r.district}\t${r.institutionName}\t${r.durumMetni}`)
+      .join("\n");
+    void navigator.clipboard.writeText(text || "Hatalı satır yok.");
+  };
+
+  const kullaniciSil = async () => {
+    if (!silinecekKullanici) return;
+    await api.adminKullaniciSil(silinecekKullanici.id);
+    setSilinecekKullanici(null);
+    await veriYukle();
+  };
+
+  const seciliIssueUserIds = () =>
+    (veriSagligi?.issues ?? [])
+      .filter((i) => seciliIssueIds.includes(i.id) && i.targetKind === "user" && i.targetId)
+      .map((i) => String(i.targetId));
+
+  const veriSagligiAksiyon = async (action: "deactivate" | "ignore") => {
+    const userIds = seciliIssueUserIds();
+    await api.adminVeriSagligiAksiyon({ action, issueIds: seciliIssueIds, userIds });
+    setSeciliIssueIds([]);
+    await veriYukle();
+  };
+
+  const eslestir = async () => {
+    if (!eslemeModal || !eslemeMintika || !eslemeKurum) return;
+    const y = kurumSecenekleriTum.find((k) => k.institutionCode === eslemeKurum);
+    await api.adminVeriSagligiAksiyon({
+      action: "match",
+      userIds: eslemeModal.userIds,
+      district: eslemeMintika,
+      institutionName: y?.institutionName ?? eslemeKurum,
+      institutionCode: y?.institutionCode,
+    });
+    setEslemeModal(null);
+    setEslemeMintika("");
+    setEslemeKurum("");
+    setSeciliIssueIds([]);
+    await veriYukle();
+  };
+
+  const aktiviteEtiket = (action: string) =>
+    ({
+      login: "Giriş yaptı",
+      export_png: "PNG indirdi",
+      export_pdf: "PDF aldı",
+      share_whatsapp: "WhatsApp paylaştı",
+      open_veli_module: "Veli Bilgilendirme açtı",
+      support_created: "Destek talebi oluşturdu",
+    })[action] ?? action;
+
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
-      <header style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)", padding: "16px 20px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🛡️</div>
-          <div style={{ flex: 1 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 800, color: "#fff", margin: 0 }}>Yönetim Paneli</h1>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "2px 0 0" }}>Mıntıka / yurt takip merkezi</p>
-          </div>
-          <a href="/" style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)", textDecoration: "none", padding: "7px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)" }}>← Uygulama</a>
+    <div className="admin-app-shell">
+      <header className="admin-app-topbar">
+        <AppBrand kompakt />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", margin: 0 }}>Yönetim Paneli</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.58)", marginTop: 2 }}>Mıntıka / yurt takip merkezi</div>
         </div>
+        <a href="/" className="admin-topbar-link">Uygulama</a>
       </header>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "16px" }}>
-        <FiltreSatir>
+      <div className="admin-app-content">
+        <div className="admin-filter-card">
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>Rapor filtreleri</div>
+            <div style={{ fontSize: 11, color: "#64748b" }}>Mıntıka, kurum ve tarih aralığını seçin.</div>
+          </div>
+          <FiltreSatir>
           <FiltreAlan label="Mıntıka">
             <select value={mintika} onChange={(e) => { setMintika(e.target.value); setKurum(""); }} style={selectStyle}>
               <option value="">Tümü</option>
@@ -262,7 +404,8 @@ export default function AdminSayfasi() {
           <button type="button" onClick={veriYukle} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", alignSelf: "flex-end" }}>
             Uygula
           </button>
-        </FiltreSatir>
+          </FiltreSatir>
+        </div>
 
         {(dashboard?.range.warning || dashboard?.activityWarning) && (
           <div style={{ padding: 12, borderRadius: 10, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: 12, marginBottom: 12 }}>
@@ -270,12 +413,13 @@ export default function AdminSayfasi() {
           </div>
         )}
         {dashboard?.dataQualityWarning && (
-          <div style={{ padding: 12, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: 12, marginBottom: 12 }}>
+          <div style={{ padding: 12, borderRadius: 10, background: dashboard.summary.dataIssueCount > 0 ? "#fef2f2" : "#ecfdf5", border: `1px solid ${dashboard.summary.dataIssueCount > 0 ? "#fecaca" : "#bbf7d0"}`, color: dashboard.summary.dataIssueCount > 0 ? "#991b1b" : "#166534", fontSize: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
             {dashboard.dataQualityWarning}
+            {dashboard.summary.dataIssueCount > 0 && <button type="button" onClick={() => setAktifSekme("veri")} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: "#991b1b", color: "#fff", fontSize: 11, fontWeight: 800 }}>Veri Sağlığına Git</button>}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", background: "#fff", borderRadius: 12, padding: 4, border: "1.5px solid #e2e8f0", marginBottom: 16 }}>
+        <div className="admin-tabbar">
           {SEKMELER.map((s) => (
             <button key={s.id} type="button" onClick={() => setAktifSekme(s.id)}
               style={{ flex: "1 1 auto", minWidth: 100, padding: "8px 8px", borderRadius: 9, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer",
@@ -286,7 +430,8 @@ export default function AdminSayfasi() {
           ))}
         </div>
 
-        {hata && <div style={{ padding: 14, borderRadius: 12, background: "#fee2e2", color: "#991b1b", marginBottom: 12, fontWeight: 600 }}>{hata}</div>}
+        <div className="admin-scroll-area">
+        {hata && <div style={{ padding: 14, borderRadius: 12, background: "#fee2e2", color: "#991b1b", marginBottom: 12, fontWeight: 600 }}>Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.</div>}
         {yukleniyor && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Yükleniyor...</div>}
 
         {!yukleniyor && aktifSekme === "genel" && dashboard && (
@@ -450,6 +595,48 @@ export default function AdminSayfasi() {
         {!yukleniyor && aktifSekme === "kullanicilar" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>Gelişmiş işlemler</div>
+                  <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 12 }}>Güncel Talebe sayfasındaki B sütunundan mıntıka, C sütunundan kurum okunur. Önizleme onaylanmadan veri yazılmaz.</p>
+                </div>
+                <label style={{ padding: "9px 14px", borderRadius: 10, background: "#1e3a5f", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                  Excel ile Kurum Ekle
+                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => void excelImportSec(e.target.files?.[0])} />
+                </label>
+              </div>
+              {importRows.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
+                      <input type="checkbox" checked={importKullaniciOlustur} onChange={(e) => setImportKullaniciOlustur(e.target.checked)} /> Her kurum için kullanıcı hesabı oluştur
+                    </label>
+                    <input style={{ ...inputStyle, maxWidth: 160 }} value={importSifre} onChange={(e) => setImportSifre(e.target.value)} placeholder="Ortak şifre" />
+                    <button type="button" onClick={importBaslat} disabled={importYukleniyor} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                      {importYukleniyor ? "İşleniyor..." : "İçe aktarmayı başlat"}
+                    </button>
+                    <button type="button" onClick={() => setImportRows([])} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 700 }}>İptal</button>
+                    <button type="button" onClick={hataliSatirlariKopyala} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>Hatalı satırları kopyala</button>
+                  </div>
+                  <div style={{ overflow: "auto", maxHeight: 280, border: "1px solid #e2e8f0", borderRadius: 12 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead><tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}><th style={{ padding: 8 }}>Sıra</th><th>Mıntıka</th><th>Excel’deki Kurum Adı</th><th>Temizlenmiş Kurum Adı</th><th>Kurum Kodu</th><th>Oluşacak E-posta</th><th>Durum</th></tr></thead>
+                      <tbody>
+                        {importRows.map((r) => (
+                          <tr key={r.rowNumber} style={{ borderTop: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: 8 }}>{r.sira || r.rowNumber}</td><td>{r.district || "—"}</td><td>{r.institutionName || "—"}</td><td>{r.cleanInstitutionName || "—"}</td><td>{r.institutionCode || "—"}</td><td>{r.email || "—"}</td><td>{r.durumMetni}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {importSonuc && <p style={{ fontSize: 12, color: "#166534", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, marginTop: 10 }}>
+                    {importSonuc.readRows} satır okundu. {importSonuc.addedInstitutions} kurum eklendi. {importSonuc.existingInstitutions} kurum zaten vardı. {importSonuc.skippedRows} satır atlandı. {importSonuc.createdUsers} kullanıcı oluşturuldu.
+                  </p>}
+                </div>
+              )}
+            </div>
             <FiltreSatir>
               <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta" /></FiltreAlan>
               <FiltreAlan label="Rol">
@@ -459,17 +646,29 @@ export default function AdminSayfasi() {
               </FiltreAlan>
               <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
-            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} showActions showRol />
+            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onSil={setSilinecekKullanici} showActions showRol />
           </div>
         )}
 
         {!yukleniyor && aktifSekme === "aktivite" && (
           <div>
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>Aktivite Takibi</div>
+              <p style={{ fontSize: 12, color: "#64748b", margin: "4px 0 0", lineHeight: 1.5 }}>
+                Kullanıcıların sisteme giriş, afiş indirme, PDF alma ve WhatsApp paylaşma hareketlerini tarih aralığına göre gösterir.
+                {!aktivite?.hasActivityLogs ? " Şu anda sadece giriş tarihleriyle sınırlı veri olabilir; PNG/PDF/WhatsApp için aktivite kaydı bulunmuyorsa 0 gösterilir." : ""}
+              </p>
+            </div>
             <FiltreSatir>
               <FiltreAlan label="İşlem">
                 <select style={selectStyle} value={aktiviteAction} onChange={(e) => setAktiviteAction(e.target.value)}>
                   <option value="">Tümü</option>
-                  <option value="login">login</option>
+                  <option value="login">Giriş yaptı</option>
+                  <option value="export_png">PNG indirdi</option>
+                  <option value="export_pdf">PDF aldı</option>
+                  <option value="share_whatsapp">WhatsApp paylaştı</option>
+                  <option value="open_veli_module">Veli Bilgilendirme açtı</option>
+                  <option value="support_created">Destek talebi oluşturdu</option>
                 </select>
               </FiltreAlan>
             </FiltreSatir>
@@ -477,21 +676,25 @@ export default function AdminSayfasi() {
             {aktivite && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
                 <StatKart baslik="Giriş" deger={aktivite.summary.loginCount} renk="#2563eb" simge="🔑" />
+                <StatKart baslik="Aktif kullanıcı" deger={aktivite.summary.activeUsers} renk="#0d9488" simge="👤" />
                 <StatKart baslik="Aktif yurt" deger={aktivite.summary.activeYurts} renk="#16a34a" simge="🏫" />
-                <StatKart baslik="PNG" deger={aktivite.hasActivityLogs ? aktivite.summary.exportPng : "—"} renk="#64748b" simge="🖼️" altMetin={!aktivite.hasActivityLogs ? "Kayıt yok" : undefined} />
+                <StatKart baslik="PNG indirme" deger={aktivite.summary.exportPng} renk="#64748b" simge="🖼️" altMetin={aktivite.summary.exportPng === 0 ? "Bu hareket için kayıt bulunmuyor." : undefined} />
+                <StatKart baslik="PDF alma" deger={aktivite.summary.exportPdf} renk="#dc2626" simge="📄" altMetin={aktivite.summary.exportPdf === 0 ? "Bu hareket için kayıt bulunmuyor." : undefined} />
+                <StatKart baslik="WhatsApp" deger={aktivite.summary.shareWhatsapp} renk="#16a34a" simge="💬" altMetin={aktivite.summary.shareWhatsapp === 0 ? "Bu hareket için kayıt bulunmuyor." : undefined} />
               </div>
             )}
             <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tarih</th><th>Kullanıcı</th><th>Yurt</th><th>Mıntıka</th><th>İşlem</th></tr></thead>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tarih / Saat</th><th>Kullanıcı</th><th>Mıntıka</th><th>Yurt / Kurum</th><th>İşlem</th><th>Detay</th></tr></thead>
                 <tbody>
                   {(aktivite?.logs ?? []).map((l) => (
                     <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: 8 }}>{formatTarih(l.createdAt)}</td>
                       <td>{l.userName || "—"}</td>
-                      <td>{l.institutionName || l.institutionCode || "—"}</td>
                       <td>{l.district || "—"}</td>
-                      <td>{l.action}</td>
+                      <td>{l.institutionName || l.institutionCode || "—"}</td>
+                      <td>{aktiviteEtiket(l.action)}</td>
+                      <td>{l.metadata ? JSON.stringify(l.metadata).slice(0, 80) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -526,16 +729,29 @@ export default function AdminSayfasi() {
               </p>
             </div>
             <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
+            {seciliIssueIds.length > 0 && (
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <strong style={{ fontSize: 12, color: "#9a3412" }}>{seciliIssueIds.length} kayıt seçildi</strong>
+                <button type="button" onClick={() => setEslemeModal({ userIds: seciliIssueUserIds() })} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri eşleştir</button>
+                <button type="button" onClick={() => { if (confirm("Seçili kayıtlar silinecek veya pasifleştirilecek. Bu işlem raporları etkileyebilir. Devam etmek istiyor musunuz?")) void veriSagligiAksiyon("deactivate"); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri pasifleştir</button>
+                <button type="button" onClick={() => void veriSagligiAksiyon("ignore")} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri yoksay</button>
+              </div>
+            )}
             <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", marginTop: 12, overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tür</th><th>Kayıt</th><th>Açıklama</th><th>Öneri</th></tr></thead>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}><input type="checkbox" checked={seciliIssueIds.length > 0 && seciliIssueIds.length === veriSagligi.issues.length} onChange={(e) => setSeciliIssueIds(e.target.checked ? veriSagligi.issues.map((i) => i.id) : [])} /></th><th>Tür</th><th>Kayıt</th><th>Açıklama</th><th>Öneri</th><th>İşlem</th></tr></thead>
                 <tbody>
-                  {veriSagligi.issues.map((i, idx) => (
-                    <tr key={idx} style={{ borderTop: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: 8 }}>{i.type}</td>
+                  {veriSagligi.issues.map((i) => (
+                    <tr key={i.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: 8 }}><input type="checkbox" checked={seciliIssueIds.includes(i.id)} onChange={(e) => setSeciliIssueIds((prev) => e.target.checked ? [...prev, i.id] : prev.filter((x) => x !== i.id))} /></td>
+                      <td>{i.type}</td>
                       <td>{i.record}</td>
                       <td>{i.description}</td>
                       <td>{i.suggestion}</td>
+                      <td style={{ padding: 8 }}>
+                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => setEslemeModal({ userIds: [String(i.targetId)] })} style={{ fontSize: 10, marginRight: 4 }}>Eşleştir</button>}
+                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => { if (confirm("Bu kayıt pasifleştirilecek. Devam etmek istiyor musunuz?")) void api.adminVeriSagligiAksiyon({ action: "deactivate", userIds: [String(i.targetId)], issueIds: [i.id] }).then(veriYukle); }} style={{ fontSize: 10, color: "#dc2626" }}>Sil / Pasifleştir</button>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -588,15 +804,53 @@ export default function AdminSayfasi() {
               </FiltreSatir>
             </div>
             <p style={{ fontSize: 13, color: "#64748b" }}>Renkli .xlsx raporları — gerçek kayıtlara dayanır.</p>
-            {(["genel", "mintika", "yurt", "veri"] as const).map((t) => (
+            {(["genel", "mintika", "yurt", "kullanici", "aktivite", "veri"] as const).map((t) => (
               <button key={t} type="button" onClick={() => excelIndir(t)}
                 style={{ padding: 12, borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "left" }}>
-                📥 {t === "genel" ? "Genel Bakış" : t === "mintika" ? "Mıntıka Panosu" : t === "yurt" ? "Yurt Takibi" : "Veri Sağlığı"} Excel indir
+                📥 {t === "genel" ? "Genel Bakış Raporu" : t === "mintika" ? "Mıntıka Raporu" : t === "yurt" ? "Yurt Takibi Raporu" : t === "kullanici" ? "Kullanıcı Raporu" : t === "aktivite" ? "Aktivite Raporu" : "Veri Sağlığı Raporu"} indir
               </button>
             ))}
           </div>
         )}
+        </div>
       </div>
+      {silinecekKullanici && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#991b1b" }}>Kullanıcıyı sil / pasifleştir</div>
+            <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.55 }}>
+              Bu kullanıcı silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
+              Activity log kayıtları korunur; kullanıcı raporlarda aktif kullanıcı gibi sayılmaz.
+            </p>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{silinecekKullanici.name} · {silinecekKullanici.email}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setSilinecekKullanici(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
+              <button type="button" onClick={kullaniciSil} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800 }}>Evet, sil</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {eslemeModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 460, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>Kullanıcıyı kuruma eşleştir</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              <select style={selectStyle} value={eslemeMintika} onChange={(e) => { setEslemeMintika(e.target.value); setEslemeKurum(""); }}>
+                <option value="">Mıntıka seç</option>
+                {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select style={selectStyle} value={eslemeKurum} onChange={(e) => setEslemeKurum(e.target.value)}>
+                <option value="">Kurum seç</option>
+                {kurumSecenekleriTum.filter((k) => !eslemeMintika || k.districtName === eslemeMintika).map((k) => <option key={k.institutionCode} value={k.institutionCode}>{k.institutionName}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+              <button type="button" onClick={() => setEslemeModal(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>İptal</button>
+              <button type="button" onClick={eslestir} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 800 }}>Eşleştir</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -605,12 +859,14 @@ function RaporTablo({
   kullanicilar,
   onPasif,
   onSifre,
+  onSil,
   showActions,
   showRol,
 }: {
   kullanicilar: AdminKullanici[];
   onPasif?: (u: AdminKullanici) => void;
   onSifre?: (u: AdminKullanici) => void;
+  onSil?: (u: AdminKullanici) => void;
   showActions?: boolean;
   showRol?: boolean;
 }) {
@@ -641,8 +897,10 @@ function RaporTablo({
               {showActions && (
                 <td style={{ padding: 8 }}>
                   {onPasif && <button type="button" onClick={() => onPasif(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>{u.isActive ? "Pasif" : "Aktif"}</button>}
+                  <button type="button" onClick={() => navigator.clipboard.writeText(`Tedris VBS giriş bilgisi\nE-posta: ${u.email}\nKurum: ${u.institutionName || "—"}\nMıntıka: ${u.district || "—"}\nRol: ${ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}`)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>Giriş bilgisi kopyala</button>
                   {onSifre && <button type="button" onClick={() => onSifre(u)} style={{ fontSize: 10, cursor: "pointer" }}>Şifre sıfırla</button>}
                   <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u))} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer" }}>Hatırlatma</button>
+                  {onSil && <button type="button" onClick={() => onSil(u)} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer", color: "#dc2626" }}>Sil</button>}
                 </td>
               )}
             </tr>

@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import type { AdminYurtMetrik, AdminMintikaMetrik, AdminDataHealthIssue } from "../api";
+import type { AdminYurtMetrik, AdminMintikaMetrik, AdminDataHealthIssue, AdminKullanici, AdminAktiviteLog } from "../api";
 
 const HEADER_FILL: ExcelJS.Fill = {
   type: "pattern",
@@ -51,6 +51,8 @@ export async function indirAdminExcel(opts: {
   ozet: Record<string, number | string>;
   mintikalar?: AdminMintikaMetrik[];
   yurts?: AdminYurtMetrik[];
+  users?: AdminKullanici[];
+  activityLogs?: AdminAktiviteLog[];
   issues?: AdminDataHealthIssue[];
 }) {
   const wb = new ExcelJS.Workbook();
@@ -159,6 +161,40 @@ export async function indirAdminExcel(opts: {
     styleHeaderRow(hdr);
     for (const i of opts.issues) {
       sh.addRow([i.type, i.record, i.description, i.suggestion]);
+    }
+    autoWidth(sh);
+  }
+
+  if (opts.users?.length) {
+    const sh = wb.addWorksheet("Kullanıcılar");
+    const hdr = sh.addRow(["Ad Soyad", "E-posta", "Mıntıka", "Yurt / Kurum", "Rol", "Son giriş", "Durum"]);
+    styleHeaderRow(hdr);
+    for (const u of opts.users) {
+      sh.addRow([
+        u.name,
+        u.email,
+        u.district ?? "—",
+        u.institutionName ?? "—",
+        u.role,
+        u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("tr-TR") : "—",
+        u.isActive ? "Aktif" : "Pasif",
+      ]);
+    }
+    autoWidth(sh);
+  }
+
+  if (opts.activityLogs?.length) {
+    const sh = wb.addWorksheet("Aktivite");
+    const hdr = sh.addRow(["Tarih", "Kullanıcı", "Mıntıka", "Yurt / Kurum", "İşlem"]);
+    styleHeaderRow(hdr);
+    for (const l of opts.activityLogs) {
+      sh.addRow([
+        new Date(l.createdAt).toLocaleString("tr-TR"),
+        l.userName ?? "—",
+        l.district ?? "—",
+        l.institutionName ?? l.institutionCode ?? "—",
+        l.action,
+      ]);
     }
     autoWidth(sh);
   }

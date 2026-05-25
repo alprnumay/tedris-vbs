@@ -51,6 +51,11 @@ export async function ensureDbSchema(): Promise<void> {
     `);
 
     await db.execute(sql`
+      ALTER TABLE local_users
+      ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+    `);
+
+    await db.execute(sql`
       ALTER TABLE activity_logs
       ADD COLUMN IF NOT EXISTS institution_id varchar
     `);
@@ -75,7 +80,7 @@ export async function ensureDbSchema(): Promise<void> {
       END $$
     `);
 
-    logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, institution_id)");
+    logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, institution_id, deleted_at)");
   } catch (err) {
     logger.error({ err }, "Veritabanı şema senkronizasyonu başarısız — admin raporları çalışmayabilir");
   }

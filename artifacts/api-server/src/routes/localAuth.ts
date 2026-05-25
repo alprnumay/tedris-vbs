@@ -99,7 +99,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       return;
     }
 
-    if (user.isActive === false) {
+    if (user.deletedAt || user.isActive === false) {
       res.status(403).json({ error: "Hesabınız pasif durumda. Yöneticinizle iletişime geçin." });
       return;
     }

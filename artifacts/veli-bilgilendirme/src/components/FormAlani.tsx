@@ -342,6 +342,7 @@ export default function FormAlani({
   const [baslikAcik, setBaslikAcik] = useState(false);
   const [dikeyGorselUyarisi, setDikeyGorselUyarisi] = useState<string | null>(null);
   const [acikBolum, setAcikBolum] = useState<string>("kimlik");
+  const [sablonFiltre, setSablonFiltre] = useState("Tümü");
   const touchRef = useRef({ x: 0, y: 0 });
 
   const adimDegistir = useCallback((yeni: 1 | 2) => {
@@ -354,6 +355,11 @@ export default function FormAlani({
   const bolumToggle = (id: string) => {
     setAcikBolum((prev) => (prev === id ? "" : id));
   };
+
+  useEffect(() => {
+    if (!desktopMod) return;
+    onAdimChange?.(["sablon", "gorseller", "metin"].includes(acikBolum) ? 2 : 1);
+  }, [acikBolum, desktopMod, onAdimChange]);
 
   useEffect(() => {
     if (!desktopMod) window.scrollTo({ top: 0, behavior: "smooth" });
@@ -427,6 +433,13 @@ export default function FormAlani({
   };
 
   const maxGorsel = SABLON_GORSEL_LIMITLERI[seciliSablon] ?? 4;
+  const sablonFiltreleri = ["Tümü", "Kurumsal", "Minimal", "Fotoğraflı", "Temalı"];
+  const filtreliSablonlar = SABLON_LISTESI.filter((s) => {
+    if (sablonFiltre === "Tümü") return true;
+    const etiketler = [s.etiket, ...(s.etiketler ?? []), s.kullanim ?? ""].join(" ").toLocaleLowerCase("tr-TR");
+    if (sablonFiltre === "Fotoğraflı") return etiketler.includes("foto") || s.maxGorsel >= 3;
+    return etiketler.includes(sablonFiltre.toLocaleLowerCase("tr-TR"));
+  });
 
   const gorselEkle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -498,7 +511,7 @@ export default function FormAlani({
         ⚡ Hızlı örnek doldur
       </button>
 
-      <FormAkordeon id="profil" baslik="Kayıtlı profil (isteğe bağlı)" acik={acikBolum === "profil"} onToggle={bolumToggle}>
+      <FormAkordeon id="profil" baslik="Hızlı Başlangıç" aciklama="Kayıtlı profil veya örnek veriyle hızlı başlayın." acik={acikBolum === "profil"} onToggle={bolumToggle}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" onClick={profilKaydet}
             style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", cursor: "pointer" }}>
@@ -527,7 +540,7 @@ export default function FormAlani({
         )}
       </FormAkordeon>
 
-      <FormAkordeon id="kimlik" baslik="Kimlik Bilgileri" acik={acikBolum === "kimlik"} onToggle={bolumToggle} zorunlu>
+      <FormAkordeon id="kimlik" baslik="Kimlik Bilgileri" aciklama="Öğrenci, kurum ve görev bilgilerini girin." acik={acikBolum === "kimlik"} onToggle={bolumToggle} zorunlu>
         <div>
           <AlanEtiketi label={ALAN_YARDIM.isim.label} ipucu={ALAN_YARDIM.isim.aciklama} />
           <input type="text" value={form.isim} onChange={(e) => update("isim", e.target.value)}
@@ -545,7 +558,7 @@ export default function FormAlani({
         </div>
       </FormAkordeon>
 
-      <FormAkordeon id="calisma" baslik="Çalışma Bilgileri" acik={acikBolum === "calisma"} onToggle={bolumToggle}>
+      <FormAkordeon id="calisma" baslik="Çalışma Bilgileri" aciklama="Ders, etüt ve özel notları düzenleyin." acik={acikBolum === "calisma"} onToggle={bolumToggle}>
 
         {Array.from({ length: form.faaliyetSayisi }).map((_, idx) => {
           const f = form.faaliyetler[idx] ?? { tur: "", alan: "", ozelNot: "" };
@@ -632,15 +645,17 @@ export default function FormAlani({
         </div>
       </FormAkordeon>
 
-      <motion.button
-        type="button"
-        whileTap={{ scale: 0.98 }}
-        onClick={() => adimDegistir(2)}
-        style={primaryBtn}
-      >
-        Tasarıma Geç
-        <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
-      </motion.button>
+      {!desktopMod && (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.98 }}
+          onClick={() => adimDegistir(2)}
+          style={primaryBtn}
+        >
+          Tasarıma Geç
+          <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+        </motion.button>
+      )}
     </div>
   );
 
@@ -648,9 +663,21 @@ export default function FormAlani({
   const adim2 = (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      <FormAkordeon id="sablon" baslik="Şablon Seçimi" aciklama="Afişin genel görünümünü belirleyin." acik={acikBolum === "sablon"} onToggle={bolumToggle}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-          {SABLON_LISTESI.map((s) => {
+      <FormAkordeon id="sablon" baslik="Tasarım" aciklama="Şablonu seçin, görselleri ve metin tonunu ayarlayın." acik={acikBolum === "sablon"} onToggle={bolumToggle}>
+        <div className="veli-template-filter-row">
+          {sablonFiltreleri.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={sablonFiltre === t ? "is-active" : ""}
+              onClick={() => setSablonFiltre(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="veli-template-grid">
+          {filtreliSablonlar.map((s) => {
             const secili = seciliSablon === s.id;
             return (
               <motion.button
@@ -856,12 +883,27 @@ export default function FormAlani({
         </motion.button>
       ) : null}
 
-      <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={() => adimDegistir(1)} style={secondaryBtn}>
-        <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
-        Bilgilere Dön
-      </motion.button>
+      {!desktopMod && (
+        <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={() => adimDegistir(1)} style={secondaryBtn}>
+          <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          Bilgilere Dön
+        </motion.button>
+      )}
     </div>
   );
+
+  if (desktopMod) {
+    return (
+      <div className="veli-form-desktop-stack">
+        <div className="veli-form-desktop-head">
+          <span>Form akışı</span>
+          <strong>{acikBolum === "sablon" || acikBolum === "gorseller" || acikBolum === "metin" ? "Tasarım" : "Bilgiler"}</strong>
+        </div>
+        {adim1}
+        {adim2}
+      </div>
+    );
+  }
 
   return (
     <div

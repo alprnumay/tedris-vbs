@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import {
   db,
+  institutionsTable,
   localUsersTable,
   supportRequestsTable,
   type LocalUser,
@@ -13,6 +14,7 @@ import { normalizeRole } from "../lib/roleUtils";
 import { sifreFromMintika } from "../lib/mintikaSifre";
 import { resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
 import { normalizeDistrictName } from "../lib/trackedDistricts";
+import { normalizeTurkish, removeDistrictPrefixFromInstitutionName } from "../lib/normalizeTurkish";
 
 const router: IRouter = Router();
 router.use(requireAdmin);
@@ -49,8 +51,39 @@ function mapUser(u: LocalUser) {
     isActive: u.isActive,
     isAdmin: role === "admin",
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
+    deletedAt: u.deletedAt ? u.deletedAt.toISOString() : null,
     createdAt: u.createdAt.toISOString(),
   };
+}
+
+function provinceForDistrict(district: string): string | null {
+  const d = normalizeDistrictName(district) ?? district.trim();
+  if (["Alanya"].includes(d)) return "Antalya";
+  if (["Burdur"].includes(d)) return "Burdur";
+  if (["Isparta"].includes(d)) return "Isparta";
+  if (["Lefkoşa"].includes(d)) return "Lefkoşa";
+  return null;
+}
+
+function makeEmail(district: string, institutionName: string): string {
+  const temizKurum = removeDistrictPrefixFromInstitutionName(district, institutionName);
+  return `${normalizeTurkish(`${district}${temizKurum}`)}@gmail.com`;
+}
+
+async function uniqueEmail(baseEmail: string): Promise<string> {
+  const [local, domain = "gmail.com"] = baseEmail.toLowerCase().split("@");
+  let candidate = `${local}@${domain}`;
+  let suffix = 2;
+  while (true) {
+    const existing = await db
+      .select({ id: localUsersTable.id })
+      .from(localUsersTable)
+      .where(eq(localUsersTable.email, candidate))
+      .limit(1);
+    if (existing.length === 0) return candidate;
+    candidate = `${local}${suffix}@${domain}`;
+    suffix += 1;
+  }
 }
 
 function activityStatus(lastLoginAt: Date | null): "today" | "week" | "inactive" | "never" {
@@ -67,22 +100,24 @@ router.get("/admin/overview", async (_req: Request, res: Response) => {
   try {
     const overview = await db.execute(sql`
       SELECT
-        (SELECT COUNT(*)::int FROM local_users) AS total_users,
+        (SELECT COUNT(*)::int FROM local_users WHERE deleted_at IS NULL) AS total_users,
         (SELECT COUNT(*)::int FROM local_users
-          WHERE last_login_at IS NOT NULL
+          WHERE deleted_at IS NULL
+            AND last_login_at IS NOT NULL
             AND (last_login_at AT TIME ZONE 'Europe/Istanbul')::date = (NOW() AT TIME ZONE 'Europe/Istanbul')::date
         ) AS today_logins,
         (SELECT COUNT(*)::int FROM local_users
-          WHERE last_login_at >= NOW() - INTERVAL '7 days'
+          WHERE deleted_at IS NULL
+            AND last_login_at >= NOW() - INTERVAL '7 days'
         ) AS active_users_7d,
         (SELECT COUNT(*)::int FROM support_requests) AS total_support,
         (SELECT COUNT(DISTINCT institution_code)::int FROM local_users
-          WHERE institution_code IS NOT NULL AND institution_code != ''
+          WHERE deleted_at IS NULL AND institution_code IS NOT NULL AND institution_code != ''
             AND last_login_at >= NOW() - INTERVAL '7 days'
         ) AS active_institutions,
         (SELECT COUNT(*)::int FROM (
           SELECT institution_code FROM local_users
-          WHERE institution_code IS NOT NULL AND institution_code != ''
+          WHERE deleted_at IS NULL AND institution_code IS NOT NULL AND institution_code != ''
           GROUP BY institution_code
           HAVING MAX(last_login_at) IS NULL OR MAX(last_login_at) < NOW() - INTERVAL '7 days'
         ) t) AS passive_institutions
@@ -92,7 +127,7 @@ router.get("/admin/overview", async (_req: Request, res: Response) => {
       SELECT TO_CHAR((last_login_at AT TIME ZONE 'Europe/Istanbul')::date, 'YYYY-MM-DD') AS day,
              COUNT(*)::int AS count
       FROM local_users
-      WHERE last_login_at >= NOW() - INTERVAL '7 days'
+      WHERE deleted_at IS NULL AND last_login_at >= NOW() - INTERVAL '7 days'
       GROUP BY (last_login_at AT TIME ZONE 'Europe/Istanbul')::date
       ORDER BY day
     `);
@@ -101,6 +136,7 @@ router.get("/admin/overview", async (_req: Request, res: Response) => {
       SELECT district, province, COUNT(*)::int AS today_count
       FROM local_users
       WHERE district IS NOT NULL AND district != ''
+        AND deleted_at IS NULL
         AND last_login_at IS NOT NULL
         AND (last_login_at AT TIME ZONE 'Europe/Istanbul')::date = (NOW() AT TIME ZONE 'Europe/Istanbul')::date
       GROUP BY district, province
@@ -112,7 +148,7 @@ router.get("/admin/overview", async (_req: Request, res: Response) => {
       SELECT id, name, email, institution_name, district, province, role,
              TO_CHAR(last_login_at AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY HH24:MI') AS last_login_at
       FROM local_users
-      WHERE last_login_at IS NOT NULL
+      WHERE deleted_at IS NULL AND last_login_at IS NOT NULL
       ORDER BY last_login_at DESC
       LIMIT 8
     `);
@@ -157,6 +193,7 @@ router.get(
   } = req.query;
 
   const conditions = [];
+  conditions.push(isNull(localUsersTable.deletedAt));
 
   if (typeof province === "string" && province) {
     conditions.push(eq(localUsersTable.province, province));
@@ -292,6 +329,127 @@ router.post("/admin/users", async (req: Request, res: Response) => {
   res.json({ user: mapUser(user) });
 });
 
+router.post("/admin/users/:id/delete", async (req: Request, res: Response) => {
+  const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+  const [existing] = await db
+    .select()
+    .from(localUsersTable)
+    .where(eq(localUsersTable.id, id))
+    .limit(1);
+
+  if (!existing) {
+    res.status(404).json({ error: "Kullanıcı bulunamadı." });
+    return;
+  }
+
+  const [user] = await db
+    .update(localUsersTable)
+    .set({ isActive: false, deletedAt: new Date() })
+    .where(eq(localUsersTable.id, id))
+    .returning();
+
+  res.json({ ok: true, user: mapUser(user) });
+});
+
+router.post("/admin/users/bulk-import", async (req: Request, res: Response) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  const createUsers = Boolean(req.body?.createUsers);
+  const defaultPassword = String(req.body?.defaultPassword || "tedris2026");
+
+  if (createUsers && defaultPassword.length < 6) {
+    res.status(400).json({ error: "Ortak şifre en az 6 karakter olmalıdır." });
+    return;
+  }
+
+  let addedInstitutions = 0;
+  let existingInstitutions = 0;
+  let skippedRows = 0;
+  let createdUsers = 0;
+  let existingUsers = 0;
+  const byDistrict: Record<string, number> = {};
+  const errors: { rowNumber?: number; district?: string; institutionName?: string; reason: string }[] = [];
+
+  for (const raw of rows) {
+    const rowNumber = Number(raw?.rowNumber || raw?.sira || 0) || undefined;
+    const districtInput = String(raw?.district || raw?.mintika || "").trim();
+    const institutionInput = String(raw?.institutionName || raw?.kurum || "").trim();
+    if (!districtInput || !institutionInput) {
+      skippedRows += 1;
+      errors.push({ rowNumber, district: districtInput, institutionName: institutionInput, reason: "Mıntıka veya kurum eksik" });
+      continue;
+    }
+
+    const district = normalizeDistrictName(districtInput) ?? districtInput;
+    const province = String(raw?.province || "").trim() || provinceForDistrict(district);
+    const code = kurumKoduOner(district, institutionInput);
+    const before = await db
+      .select({ id: institutionsTable.id })
+      .from(institutionsTable)
+      .where(sql`lower(${institutionsTable.institutionCode}) = ${code}`)
+      .limit(1);
+
+    const inst = await resolveInstitution({
+      district,
+      institutionName: institutionInput,
+      institutionCode: code,
+      province,
+    });
+
+    if (!inst) {
+      skippedRows += 1;
+      errors.push({ rowNumber, district, institutionName: institutionInput, reason: "Kurum oluşturulamadı" });
+      continue;
+    }
+
+    if (before.length > 0) existingInstitutions += 1;
+    else {
+      addedInstitutions += 1;
+      byDistrict[district] = (byDistrict[district] ?? 0) + 1;
+    }
+
+    if (!createUsers) continue;
+
+    const baseEmail = String(raw?.email || "").trim() || makeEmail(district, institutionInput);
+    const email = await uniqueEmail(baseEmail);
+    if (email !== baseEmail.toLowerCase()) {
+      const baseExisting = await db
+        .select({ id: localUsersTable.id })
+        .from(localUsersTable)
+        .where(eq(localUsersTable.email, baseEmail.toLowerCase()))
+        .limit(1);
+      if (baseExisting.length > 0) existingUsers += 1;
+    }
+
+    const passwordHash = await bcrypt.hash(defaultPassword, 12);
+    await db.insert(localUsersTable).values({
+      email,
+      passwordHash,
+      name: String(raw?.name || `${inst.institutionName} Kullanıcı`).trim(),
+      province: inst.province,
+      district: inst.districtName,
+      institutionName: inst.institutionName,
+      institutionCode: inst.institutionCode,
+      institutionId: inst.id,
+      role: "user",
+      isActive: true,
+      isAdmin: false,
+    });
+    createdUsers += 1;
+  }
+
+  res.json({
+    ok: true,
+    readRows: rows.length,
+    addedInstitutions,
+    existingInstitutions,
+    skippedRows,
+    createdUsers,
+    existingUsers,
+    byDistrict,
+    errors,
+  });
+});
+
 router.patch("/admin/users/:id", async (req: Request, res: Response) => {
   const id = String(
     Array.isArray(req.params.id) ? req.params.id[0] : req.params.id,
@@ -399,6 +557,7 @@ router.get(
     async (req: Request, res: Response) => {
   const { province, district, institutionCode } = req.query;
   const conditions = [
+    isNull(localUsersTable.deletedAt),
     isNotNull(localUsersTable.lastLoginAt),
     sql`(${localUsersTable.lastLoginAt} AT TIME ZONE 'Europe/Istanbul')::date = (NOW() AT TIME ZONE 'Europe/Istanbul')::date`,
   ];
@@ -443,7 +602,7 @@ router.get(
     "institutions",
     async (req: Request, res: Response) => {
   const { province, district } = req.query;
-  const users = await db.select().from(localUsersTable);
+  const users = await db.select().from(localUsersTable).where(isNull(localUsersTable.deletedAt));
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

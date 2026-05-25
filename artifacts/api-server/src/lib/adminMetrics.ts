@@ -6,7 +6,7 @@ import {
   type LocalUser,
   type Institution,
 } from "@workspace/db";
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, isNull } from "drizzle-orm";
 import { TRACKED_DISTRICTS, normalizeDistrictName } from "./trackedDistricts";
 import { normalizeInstitutionCode } from "./institutionRegistry";
 import { TZ, type ResolvedRange } from "./adminDateRange";
@@ -119,7 +119,7 @@ type UserAgg = {
 export async function loadAdminMetricsContext(range: ResolvedRange) {
   const [registry, users, supportRows, activityCountRow] = await Promise.all([
     db.select().from(institutionsTable),
-    db.select().from(localUsersTable),
+    db.select().from(localUsersTable).where(isNull(localUsersTable.deletedAt)),
     db.execute(sql`
       SELECT institution_code, COUNT(*)::int AS cnt
       FROM support_requests sr
@@ -460,7 +460,10 @@ export async function loadActivityLogs(params: {
 
 export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMetricsContext>>) {
   const issues: {
+    id: string;
     type: string;
+    targetKind: "user" | "institution" | "activity" | "registry";
+    targetId?: string | null;
     record: string;
     description: string;
     suggestion: string;
@@ -469,7 +472,10 @@ export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMe
   for (const y of ctx.yurts) {
     if (y.inRegistry && y.userCount === 0) {
       issues.push({
+        id: `institution:${y.id ?? y.institutionCode}:no-user`,
         type: "yurt_kullanicisiz",
+        targetKind: "institution",
+        targetId: y.id,
         record: y.institutionName,
         description: "Yurt kaydı var ancak bağlı kullanıcı yok.",
         suggestion: "Kullanıcı oluşturun veya kaydı pasife alın.",
@@ -477,7 +483,10 @@ export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMe
     }
     if (!y.inRegistry && y.userCount > 0) {
       issues.push({
+        id: `registry:${y.institutionCode}:missing`,
         type: "eslesmemis_kurum",
+        targetKind: "registry",
+        targetId: y.id,
         record: `${y.institutionName} (${y.institutionCode})`,
         description: "Kullanıcılar var ancak yurt envanterinde kayıt yok.",
         suggestion: "Yurt Kayıt Defterine ekleyin.",
@@ -488,21 +497,30 @@ export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMe
   for (const u of ctx.allUsers) {
     if (!u.institutionCode || !u.institutionName) {
       issues.push({
+        id: `user:${u.id}:kurum_eksik`,
         type: "kurum_eksik",
+        targetKind: "user",
+        targetId: u.id,
         record: u.name,
         description: "Kurum kodu veya adı eksik.",
         suggestion: "Kullanıcı kaydını düzeltin.",
       });
     } else if (!u.institutionId) {
       issues.push({
+        id: `user:${u.id}:kurum_id_eksik`,
         type: "kurum_id_eksik",
+        targetKind: "user",
+        targetId: u.id,
         record: u.name,
         description: "Kullanıcı kurum kaydına (institutionId) bağlı değil.",
         suggestion: "Veri Sağlığı → Eşleştirmeyi çalıştırın.",
       });
     } else if (!normalizeDistrictName(u.district)) {
       issues.push({
+        id: `user:${u.id}:mintika_eksik`,
         type: "mintika_eksik",
+        targetKind: "user",
+        targetId: u.id,
         record: u.name,
         description: `Mıntıka tanınmıyor: ${u.district ?? "—"}`,
         suggestion: "Mıntıkayı listeden seçin.",
@@ -510,7 +528,10 @@ export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMe
     }
     if (!u.lastLoginAt) {
       issues.push({
+        id: `user:${u.id}:hic_giris`,
         type: "hic_giris",
+        targetKind: "user",
+        targetId: u.id,
         record: u.name,
         description: "Hiç giriş kaydı yok.",
         suggestion: "Hatırlatma gönderin.",
@@ -528,7 +549,10 @@ export function buildDataHealthIssues(ctx: Awaited<ReturnType<typeof loadAdminMe
   for (const [key, codes] of codeGroups) {
     if (codes.length > 1) {
       issues.push({
+        id: `registry:${key}:mukerrer`,
         type: "mukerrer",
+        targetKind: "registry",
+        targetId: null,
         record: key,
         description: `Benzer kurum için birden fazla kod: ${codes.join(", ")}`,
         suggestion: "Kayıtları birleştirin.",
