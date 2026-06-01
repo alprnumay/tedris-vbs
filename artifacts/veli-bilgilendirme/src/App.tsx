@@ -487,9 +487,9 @@ function MainApp() {
         className="tedris-app-header flex-shrink-0 flex items-center justify-between px-4"
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)",
-          minHeight: 60,
-          paddingTop: 10,
-          paddingBottom: 10,
+          minHeight: aktifSekme === "yonetim" ? 60 : 54,
+          paddingTop: aktifSekme === "yonetim" ? 10 : 7,
+          paddingBottom: aktifSekme === "yonetim" ? 10 : 7,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -586,7 +586,7 @@ function MainApp() {
         </div>
       </header>
 
-      <div className="veli-desktop-workspace hidden lg:flex flex-1 min-h-0">
+      <div className={`veli-desktop-workspace ${aktifSekme === "yonetim" ? "" : "veli-desktop-workspace--veli"} hidden lg:flex flex-1 min-h-0`}>
         {aktifSekme === "yonetim" && kullanici?.isAdmin ? (
           <div className="veli-desktop-inner veli-admin-desktop-inner w-full">
             <AdminSayfasi />

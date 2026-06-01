@@ -218,8 +218,8 @@
 @layer components {
   .veli-form-accordion {
     background: #ffffff;
-    border-radius: 20px;
-    padding: 14px;
+    border-radius: 16px;
+    padding: 12px;
     border: 1px solid #e8edf2;
     box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
     transition:
@@ -284,9 +284,204 @@
     padding-right: 3px;
   }
 
+  .veli-template-current-card {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid #dbeafe;
+    background: linear-gradient(135deg, #eff6ff, #ffffff);
+  }
+
+  .veli-template-current-card__preview {
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    padding: 5px;
+  }
+
+  .veli-template-current-card__body {
+    min-width: 0;
+  }
+
+  .veli-template-current-card__body span {
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .veli-template-current-card__body strong {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: #0f172a;
+  }
+
+  .veli-template-current-card__body p {
+    margin: 3px 0 0;
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: #64748b;
+  }
+
+  .veli-template-current-card > button {
+    border: none;
+    border-radius: 10px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+
+  .veli-template-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.68);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .veli-template-modal__panel {
+    width: min(1040px, 100%);
+    max-height: min(760px, calc(100dvh - 36px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-radius: 24px;
+    background: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+    padding: 16px;
+  }
+
+  .veli-template-modal__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .veli-template-modal__head h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 900;
+    color: #0f172a;
+  }
+
+  .veli-template-modal__head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .veli-template-modal__head button {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .veli-template-filter-row--modal {
+    margin-bottom: 0;
+  }
+
+  .veli-template-gallery-grid {
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px;
+    padding-right: 3px;
+  }
+
+  .veli-template-gallery-card {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 124px;
+    padding: 10px;
+    border-radius: 18px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  .veli-template-gallery-card.is-selected {
+    border-color: var(--template-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--template-accent), transparent 76%);
+  }
+
+  .veli-template-gallery-card__thumb {
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+  }
+
+  .veli-template-gallery-card__content strong {
+    display: block;
+    font-size: 12px;
+    color: #0f172a;
+  }
+
+  .veli-template-gallery-card__content p {
+    margin: 4px 0 8px;
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: #64748b;
+  }
+
+  .veli-template-gallery-card__content div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .veli-template-gallery-card__content span {
+    border-radius: 999px;
+    padding: 2px 6px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+  }
+
   .veli-form-accordion--open {
     border-color: #93c5fd;
     box-shadow: 0 4px 28px rgba(59, 130, 246, 0.12);
+  }
+
+  .veli-form-accordion--tamam {
+    border-color: #bbf7d0;
+  }
+
+  .veli-form-accordion--dikkat {
+    border-color: #fde68a;
+  }
+
+  .veli-form-accordion--eksik {
+    border-color: #fecaca;
   }
 
   .veli-form-accordion__trigger {
@@ -320,6 +515,45 @@
     font-weight: 500;
     color: #64748b;
     line-height: 1.35;
+  }
+
+  .veli-form-accordion__status {
+    flex-shrink: 0;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .veli-form-accordion__status--tamam {
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+  }
+
+  .veli-form-accordion__status--dikkat {
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+  }
+
+  .veli-form-accordion__status--eksik {
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+  }
+
+  .veli-section-next-btn {
+    width: 100%;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    color: #ffffff;
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
   }
 
   .veli-form-accordion--open .veli-form-accordion__title {
@@ -357,16 +591,26 @@
       max-width: min(1560px, calc(100vw - 2rem));
       margin-left: auto;
       margin-right: auto;
-      padding: 0.9rem 1.25rem 1.1rem;
+      padding: 0.65rem 1rem 0.85rem;
       box-sizing: border-box;
       height: 100%;
       min-height: 0;
     }
 
+    .veli-desktop-workspace--veli {
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .veli-desktop-workspace--veli .veli-desktop-inner {
+      min-height: 100%;
+      height: auto;
+    }
+
     .veli-studio-shell {
       width: 100%;
-      height: 100%;
-      min-height: 0;
+      min-height: calc(100dvh - 78px);
+      height: auto;
       display: flex;
       flex-direction: column;
       padding: 1rem 1.25rem 1.25rem;
@@ -385,9 +629,9 @@
       flex-wrap: wrap;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 1rem 1.5rem;
-      padding-bottom: 0.85rem;
-      margin-bottom: 1rem;
+      gap: 0.65rem 1rem;
+      padding-bottom: 0.65rem;
+      margin-bottom: 0.75rem;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }
 
@@ -398,15 +642,15 @@
 
     .veli-studio-toolbar__title {
       margin: 0;
-      font-size: 1.3rem;
+      font-size: 1.08rem;
       font-weight: 800;
       letter-spacing: -0.02em;
       color: #f8fafc;
     }
 
     .veli-studio-toolbar__desc {
-      margin: 6px 0 0;
-      font-size: 0.8125rem;
+      margin: 3px 0 0;
+      font-size: 0.75rem;
       color: rgba(248, 250, 252, 0.62);
       line-height: 1.45;
     }
@@ -436,14 +680,14 @@
       display: inline-flex;
       flex-direction: column;
       gap: 2px;
-      padding: 8px 12px;
+      padding: 6px 10px;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.08);
       border: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 700;
       color: #f1f5f9;
-      min-width: 88px;
+      min-width: 78px;
     }
 
     .veli-desktop-pill__label {
@@ -477,13 +721,15 @@
       width: 100%;
       min-height: 0;
       flex: 1;
-      gap: 1rem;
-      align-items: start;
-      grid-template-columns: minmax(320px, 370px) minmax(0, 1fr);
+      gap: 0.85rem;
+      align-items: stretch;
+      grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
     }
 
     .veli-desktop-form-col {
       min-width: 0;
+      min-height: 0;
+      display: flex;
     }
 
     .veli-desktop-form-shell {
@@ -491,18 +737,18 @@
       border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.35);
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-      padding: 1rem;
+      padding: 0.82rem;
       width: 100%;
-      max-height: 100%;
+      max-height: calc(100dvh - 158px);
       overflow-y: auto;
     }
 
     .veli-desktop-preview-col {
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: 0.65rem;
       min-width: 0;
-      max-height: 100%;
+      max-height: calc(100dvh - 158px);
       overflow-y: auto;
       padding-right: 2px;
     }
@@ -530,7 +776,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-bottom: 1px solid #e8edf2;
       background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
     }
@@ -589,8 +835,8 @@
 
     .veli-studio-sahne {
       min-height: 0;
-      height: clamp(420px, calc(100vh - 250px), 610px);
-      padding: 1rem;
+      height: clamp(380px, calc(100vh - 222px), 640px);
+      padding: 0.75rem;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -607,7 +853,7 @@
 
     .veli-studio-hint {
       margin: 0;
-      padding: 10px 16px 12px;
+      padding: 7px 14px 9px;
       font-size: 0.6875rem;
       color: #64748b;
       text-align: center;
@@ -620,7 +866,7 @@
       position: sticky;
       bottom: 0;
       z-index: 4;
-      padding: 10px 0 2px;
+      padding: 7px 0 0;
       background: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.18) 34%, rgba(15, 23, 42, 0.28));
     }
 
@@ -644,12 +890,12 @@
 
   @media (min-width: 1280px) {
     .veli-studio-workspace {
-      grid-template-columns: minmax(320px, 380px) minmax(560px, 1fr) minmax(280px, 320px);
-      gap: 1.1rem;
+      grid-template-columns: minmax(315px, 360px) minmax(560px, 1fr) minmax(280px, 320px);
+      gap: 0.9rem;
     }
 
     .veli-studio-sahne {
-      padding: 1.1rem;
+      padding: 0.85rem;
     }
 
     .veli-desktop-aside-col {
@@ -667,7 +913,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.875rem;
-      max-height: 100%;
+      max-height: calc(100dvh - 158px);
       overflow-y: auto;
     }
 
@@ -678,13 +924,37 @@
 
   @media (min-width: 1536px) {
     .veli-studio-workspace {
-      grid-template-columns: minmax(340px, 390px) minmax(640px, 1fr) minmax(300px, 330px);
-      gap: 1.25rem;
+      grid-template-columns: minmax(330px, 375px) minmax(640px, 1fr) minmax(295px, 330px);
+      gap: 1rem;
     }
 
     .veli-studio-shell {
-      padding: 1.1rem 1.35rem 1.35rem;
+      padding: 0.9rem 1.15rem 1rem;
     }
+  }
+}
+
+@media (max-width: 640px) {
+  .veli-template-modal {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .veli-template-modal__panel {
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .veli-template-gallery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .veli-template-current-card {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .veli-template-current-card > button {
+    grid-column: 1 / -1;
   }
 }
 

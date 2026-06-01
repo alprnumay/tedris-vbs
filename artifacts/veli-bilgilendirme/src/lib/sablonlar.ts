@@ -16,6 +16,26 @@ export const SABLON_GORSEL_LIMITLERI: Record<SablonTuru, number> = {
   "kurumsal-resmi": 4,
   "hikaye": 4,
   "fotograf-odakli": 3,
+  "kurumsal-kart": 4,
+  "pro-minimal": 2,
+  "hero-gorselli": 4,
+  "split-layout": 3,
+  "egitim-panosu": 4,
+  "bento-kart": 4,
+  "akademik-cizgi": 2,
+  "veli-notu": 2,
+  "etkinlik-rozetli": 4,
+  "dergi-stili": 3,
+  "sicak-album": 4,
+  "kartli-bilgi-pro": 4,
+  "zaman-akisi": 2,
+  "cerceveli-klasik": 2,
+  "modern-grid": 4,
+  "poster-duyuru": 2,
+  "foto-kolaj-premium": 4,
+  "kurumsal-lacivert": 3,
+  "soft-paper": 2,
+  "imza-tasarim": 3,
 };
 
 export type TemaliLayout = "klasik" | "sidebar" | "karti";
@@ -41,6 +61,29 @@ export interface SablonMeta {
   kullanim?: string;
   etiketler?: string[];
 }
+
+const PRO_SABLONLAR: SablonMeta[] = [
+  { id: "kurumsal-kart", ad: "Kurumsal Kart", chipRenk: "#1d4ed8", etiket: "Kurumsal", maxGorsel: 4, yeni: true, kullanim: "Kurum, hoca ve faaliyet bilgisini net kartlarla verir.", etiketler: ["Kurumsal", "Etüt / Ders", "Fotoğraflı"] },
+  { id: "pro-minimal", ad: "Premium Minimal", chipRenk: "#475569", etiket: "Premium", maxGorsel: 2, yeni: true, kullanim: "Az metinli, zarif ve görselsiz kullanıma uygun.", etiketler: ["Minimal", "Premium", "Fotoğrafsız"] },
+  { id: "hero-gorselli", ad: "Hero Görselli", chipRenk: "#0ea5e9", etiket: "Fotoğraflı", maxGorsel: 4, yeni: true, kullanim: "Tek güçlü kapak fotoğrafıyla dikkat çeker.", etiketler: ["Fotoğraflı", "Modern", "Premium"] },
+  { id: "split-layout", ad: "Split Layout", chipRenk: "#4f46e5", etiket: "Modern", maxGorsel: 3, yeni: true, kullanim: "Sol görsel, sağ bilgi bloklarıyla dengeli iki sütun.", etiketler: ["Modern", "Fotoğraflı"] },
+  { id: "egitim-panosu", ad: "Eğitim Panosu", chipRenk: "#2563eb", etiket: "Etüt / Ders", maxGorsel: 4, yeni: true, kullanim: "Ders, alan ve özel notları pano düzeninde gösterir.", etiketler: ["Etüt / Ders", "Kurumsal"] },
+  { id: "bento-kart", ad: "Bento Kart", chipRenk: "#7c3aed", etiket: "Modern", maxGorsel: 4, yeni: true, kullanim: "Farklı boy kartlarla modern dashboard hissi verir.", etiketler: ["Modern", "Premium", "Fotoğraflı"] },
+  { id: "akademik-cizgi", ad: "Akademik Çizgi", chipRenk: "#0f172a", etiket: "Kurumsal", maxGorsel: 2, yeni: true, kullanim: "Ciddi, çizgisel ve disiplinli okul/etüt dili.", etiketler: ["Kurumsal", "Etüt / Ders"] },
+  { id: "veli-notu", ad: "Veli Notu Odaklı", chipRenk: "#92400e", etiket: "Sıcak", maxGorsel: 2, yeni: true, kullanim: "Güven veren metni öne çıkaran sade düzen.", etiketler: ["Sıcak / Samimi", "Fotoğrafsız"] },
+  { id: "etkinlik-rozetli", ad: "Etkinlik Rozetli", chipRenk: "#15803d", etiket: "Etkinlik", maxGorsel: 4, yeni: true, kullanim: "Faaliyet türlerini rozetlerle vurgular.", etiketler: ["Etkinlik / Sosyal", "Fotoğraflı"] },
+  { id: "dergi-stili", ad: "Dergi Stili", chipRenk: "#be123c", etiket: "Premium", maxGorsel: 3, yeni: true, kullanim: "Editoryal, premium ve dikkat çekici görünüm.", etiketler: ["Premium", "Modern"] },
+  { id: "sicak-album", ad: "Sıcak Albüm", chipRenk: "#c2410c", etiket: "Sıcak", maxGorsel: 4, yeni: true, kullanim: "Fotoğraflı, yumuşak ve veliye samimi gelen yapı.", etiketler: ["Sıcak / Samimi", "Fotoğraflı"] },
+  { id: "kartli-bilgi-pro", ad: "Kartlı Bilgi Gelişmiş", chipRenk: "#0d9488", etiket: "Etüt / Ders", maxGorsel: 4, yeni: true, kullanim: "Ders, özet, sorumlu ve kurum bilgisini ayrı kartlar.", etiketler: ["Etüt / Ders", "Modern"] },
+  { id: "zaman-akisi", ad: "Zaman Akışı", chipRenk: "#4338ca", etiket: "Etüt / Ders", maxGorsel: 2, yeni: true, kullanim: "Faaliyetleri timeline mantığıyla anlatır.", etiketler: ["Etüt / Ders", "Kurumsal"] },
+  { id: "cerceveli-klasik", ad: "Çerçeveli Klasik", chipRenk: "#78350f", etiket: "Klasik", maxGorsel: 2, yeni: true, kullanim: "Düzenli, geleneksel ve resmi duyurular için.", etiketler: ["Kurumsal", "Fotoğrafsız"] },
+  { id: "modern-grid", ad: "Modern Grid", chipRenk: "#0284c7", etiket: "Modern", maxGorsel: 4, yeni: true, kullanim: "Izgara bilgi bloklarıyla net ve çağdaş.", etiketler: ["Modern", "Fotoğraflı"] },
+  { id: "poster-duyuru", ad: "Poster Duyuru", chipRenk: "#dc2626", etiket: "Etkinlik", maxGorsel: 2, yeni: true, kullanim: "Büyük başlık, güçlü çağrı ve sade alt bilgi.", etiketler: ["Etkinlik / Sosyal", "Modern"] },
+  { id: "foto-kolaj-premium", ad: "Foto Kolaj Premium", chipRenk: "#0891b2", etiket: "Fotoğraflı", maxGorsel: 4, yeni: true, kullanim: "2-4 görsel ile şık kolaj ve dengeli metin.", etiketler: ["Fotoğraflı", "Premium"] },
+  { id: "kurumsal-lacivert", ad: "Kurumsal Lacivert", chipRenk: "#172554", etiket: "Kurumsal", maxGorsel: 3, yeni: true, kullanim: "Güçlü lacivert dil, az ama etkili bloklar.", etiketler: ["Kurumsal", "Premium"] },
+  { id: "soft-paper", ad: "Soft Paper", chipRenk: "#a16207", etiket: "Sıcak", maxGorsel: 2, yeni: true, kullanim: "Kağıt hissi veren sakin ve premium görünüm.", etiketler: ["Sıcak / Samimi", "Minimal"] },
+  { id: "imza-tasarim", ad: "İmza Tasarım", chipRenk: "#334155", etiket: "Premium", maxGorsel: 3, yeni: true, kullanim: "Kurum ve sorumlu bilgisini karakterli imza alanıyla verir.", etiketler: ["Premium", "Kurumsal"] },
+];
 
 export const SABLON_LISTESI: SablonMeta[] = [
   {
@@ -135,4 +178,7 @@ export const SABLON_LISTESI: SablonMeta[] = [
     kullanim: "1–2 güçlü fotoğrafla dikkat çekici bilgilendirme için.",
     etiketler: ["Fotoğraflı", "Dikkat çekici"],
   },
+  ...PRO_SABLONLAR,
 ];
+
+export const PRO_SABLON_IDS = PRO_SABLONLAR.map((s) => s.id);

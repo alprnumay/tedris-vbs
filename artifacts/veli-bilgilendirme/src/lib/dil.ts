@@ -235,10 +235,10 @@ export function baslikAlternatifleri(form: FormData): [string, string, string] {
   if (aktif.length === 1) {
     const f = aktif[0];
     const title1 = f.tur && f.alan
-      ? `${f.alan} — ${turBaslikMap[f.tur] || f.tur}`
+      ? `${f.alan} — ${turBaslikMap[f.tur] || `${f.tur} Çalışması`}`
       : f.alan
         ? `${f.alan} Çalışması`
-        : `${f.tur} Faaliyeti`;
+        : `${turBaslikMap[f.tur] || `${f.tur} Çalışması`}`;
 
     const title2 = f.alan
       ? `${f.alan} Alanında Gelişim`

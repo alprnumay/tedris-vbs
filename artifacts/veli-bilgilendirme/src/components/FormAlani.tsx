@@ -7,7 +7,6 @@ import { SABLON_LISTESI, SABLON_GORSEL_LIMITLERI, TEMALI_LAYOUT } from "../lib/s
 import {
   ALAN_YARDIM,
   FAALIYET_TURLERI,
-  GORSEL_YERLESIM,
   METIN_TON_ACIKLAMA,
   METIN_UZUNLUK_ACIKLAMA,
   hizliOrnekForm,
@@ -17,6 +16,8 @@ import { gorselBoyutOku, dikeyGorselSablonOner } from "../lib/veli/gorselOrienta
 import { InfoTip } from "./veli/InfoTip";
 import { FormAkordeon } from "./veli/FormAkordeon";
 import { VeliCanliOnizleme } from "./veli/VeliCanliOnizleme";
+
+type BolumDurumu = { tip: "eksik" | "dikkat" | "tamam"; metin: string };
 
 interface Props {
   form: FormData;
@@ -343,6 +344,7 @@ export default function FormAlani({
   const [dikeyGorselUyarisi, setDikeyGorselUyarisi] = useState<string | null>(null);
   const [acikBolum, setAcikBolum] = useState<string>("kimlik");
   const [sablonFiltre, setSablonFiltre] = useState("Tümü");
+  const [sablonGaleriAcik, setSablonGaleriAcik] = useState(false);
   const touchRef = useRef({ x: 0, y: 0 });
 
   const adimDegistir = useCallback((yeni: 1 | 2) => {
@@ -433,11 +435,13 @@ export default function FormAlani({
   };
 
   const maxGorsel = SABLON_GORSEL_LIMITLERI[seciliSablon] ?? 4;
-  const sablonFiltreleri = ["Tümü", "Kurumsal", "Minimal", "Fotoğraflı", "Temalı"];
+  const seciliSablonMeta = SABLON_LISTESI.find((s) => s.id === seciliSablon);
+  const sablonFiltreleri = ["Tümü", "Kurumsal", "Modern", "Minimal", "Sıcak / Samimi", "Fotoğraflı", "Fotoğrafsız", "Etüt / Ders", "Etkinlik / Sosyal", "Premium"];
   const filtreliSablonlar = SABLON_LISTESI.filter((s) => {
     if (sablonFiltre === "Tümü") return true;
     const etiketler = [s.etiket, ...(s.etiketler ?? []), s.kullanim ?? ""].join(" ").toLocaleLowerCase("tr-TR");
     if (sablonFiltre === "Fotoğraflı") return etiketler.includes("foto") || s.maxGorsel >= 3;
+    if (sablonFiltre === "Fotoğrafsız") return etiketler.includes("fotoğrafsız") || etiketler.includes("görselsiz") || s.maxGorsel <= 2;
     return etiketler.includes(sablonFiltre.toLocaleLowerCase("tr-TR"));
   });
 
@@ -484,6 +488,33 @@ export default function FormAlani({
   const basliklar = baslikAlternatifleri(form);
   const gorselAsimiVar = form.gorseller.length > maxGorsel;
   const alternatifSablon = SABLON_LISTESI.find((s) => s.maxGorsel >= form.gorseller.length && s.id !== seciliSablon);
+  const aktifFaaliyetler = form.faaliyetler.slice(0, form.faaliyetSayisi);
+  const ilkFaaliyet = aktifFaaliyetler[0] ?? { tur: "", alan: "", ozelNot: "" };
+  const kimlikDurum: BolumDurumu =
+    form.kurumAdi.trim() && form.isim.trim()
+      ? { tip: "tamam", metin: "✓ Tamamlandı" }
+      : { tip: "eksik", metin: "Eksik" };
+  const calismaDurum: BolumDurumu =
+    ilkFaaliyet.tur && ilkFaaliyet.alan
+      ? { tip: "tamam", metin: "✓ Tamamlandı" }
+      : ilkFaaliyet.tur || ilkFaaliyet.alan
+        ? { tip: "dikkat", metin: "Dikkat" }
+        : { tip: "eksik", metin: "Eksik" };
+  const tasarimDurum: BolumDurumu = seciliSablon ? { tip: "tamam", metin: "✓ Tamamlandı" } : { tip: "eksik", metin: "Eksik" };
+  const gorselDurum: BolumDurumu =
+    gorselAsimiVar ? { tip: "dikkat", metin: "Dikkat" } :
+    form.gorseller.length > 0 ? { tip: "tamam", metin: "✓ Tamamlandı" } : { tip: "dikkat", metin: "Dikkat" };
+  const metinDurum: BolumDurumu =
+    !form.posterMetni.trim() ? { tip: "eksik", metin: "Eksik" } :
+    form.posterMetni.length > 700 ? { tip: "dikkat", metin: "Dikkat" } : { tip: "tamam", metin: "✓ Tamamlandı" };
+  const profilOzet = form.kurumAdi || form.isim || form.rol ? "Örnek veya profil bilgisi kullanıldı" : "Profil kullanılmadı";
+  const kimlikOzet = form.kurumAdi || form.isim ? [form.kurumAdi, form.isim].filter(Boolean).join(" · ") : "Kurum bilgisi eksik";
+  const calismaOzet = ilkFaaliyet.tur || ilkFaaliyet.alan || ilkFaaliyet.ozelNot
+    ? [ilkFaaliyet.tur, ilkFaaliyet.alan, ilkFaaliyet.ozelNot ? "Kısa açıklama var" : ""].filter(Boolean).join(" · ")
+    : "Faaliyet türü eksik";
+  const tasarimOzet = `${seciliSablonMeta?.ad ?? "Şablon seçilmedi"} · ${form.metinTonu === "sicak" ? "Sıcak ton" : form.metinTonu === "aciklayici" ? "Açıklayıcı ton" : "Kurumsal ton"}`;
+  const gorselOzet = form.gorseller.length > 0 ? `${form.gorseller.length}/${maxGorsel} görsel yüklü` : "Görsel yok";
+  const metinOzet = `${form.metinUzunlugu === "kisa" ? "Kısa" : "Detaylı"} · ${form.metinTonu === "sicak" ? "Sıcak" : form.metinTonu === "aciklayici" ? "Açıklayıcı" : "Kurumsal"}`;
 
   /* ─── ADIM 1 ─── */
   const adim1 = (
@@ -511,7 +542,7 @@ export default function FormAlani({
         ⚡ Hızlı örnek doldur
       </button>
 
-      <FormAkordeon id="profil" baslik="Hızlı Başlangıç" aciklama="Kayıtlı profil veya örnek veriyle hızlı başlayın." acik={acikBolum === "profil"} onToggle={bolumToggle}>
+      <FormAkordeon id="profil" baslik="Hızlı Başlangıç" aciklama="Kayıtlı profil veya örnek veriyle hızlı başlayın." ozet={profilOzet} durum={{ tip: "dikkat", metin: "Opsiyonel" }} acik={acikBolum === "profil"} onToggle={bolumToggle}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <button type="button" onClick={profilKaydet}
             style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", cursor: "pointer" }}>
@@ -540,7 +571,7 @@ export default function FormAlani({
         )}
       </FormAkordeon>
 
-      <FormAkordeon id="kimlik" baslik="Kimlik Bilgileri" aciklama="Öğrenci, kurum ve görev bilgilerini girin." acik={acikBolum === "kimlik"} onToggle={bolumToggle} zorunlu>
+      <FormAkordeon id="kimlik" baslik="Kimlik Bilgileri" aciklama="Kurum ve sorumlu bilgilerini girin." ozet={kimlikOzet} durum={kimlikDurum} acik={acikBolum === "kimlik"} onToggle={bolumToggle} zorunlu>
         <div>
           <AlanEtiketi label={ALAN_YARDIM.isim.label} ipucu={ALAN_YARDIM.isim.aciklama} />
           <input type="text" value={form.isim} onChange={(e) => update("isim", e.target.value)}
@@ -556,9 +587,10 @@ export default function FormAlani({
           <input type="text" value={form.rol} onChange={(e) => update("rol", e.target.value)}
             placeholder={ALAN_YARDIM.rol.placeholder} style={inputStyle} />
         </div>
+        {kimlikDurum.tip === "tamam" && <button type="button" className="veli-section-next-btn" onClick={() => setAcikBolum("calisma")}>Çalışma Bilgilerine Geç</button>}
       </FormAkordeon>
 
-      <FormAkordeon id="calisma" baslik="Çalışma Bilgileri" aciklama="Ders, etüt ve özel notları düzenleyin." acik={acikBolum === "calisma"} onToggle={bolumToggle}>
+      <FormAkordeon id="calisma" baslik="Çalışma Bilgileri" aciklama="Ders, etüt ve özel notları düzenleyin." ozet={calismaOzet} durum={calismaDurum} acik={acikBolum === "calisma"} onToggle={bolumToggle}>
 
         {Array.from({ length: form.faaliyetSayisi }).map((_, idx) => {
           const f = form.faaliyetler[idx] ?? { tur: "", alan: "", ozelNot: "" };
@@ -643,6 +675,7 @@ export default function FormAlani({
             </div>
           )}
         </div>
+        {calismaDurum.tip === "tamam" && <button type="button" className="veli-section-next-btn" onClick={() => setAcikBolum("sablon")}>Tasarıma Geç</button>}
       </FormAkordeon>
 
       {!desktopMod && (
@@ -663,67 +696,70 @@ export default function FormAlani({
   const adim2 = (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      <FormAkordeon id="sablon" baslik="Tasarım" aciklama="Şablonu seçin, görselleri ve metin tonunu ayarlayın." acik={acikBolum === "sablon"} onToggle={bolumToggle}>
-        <div className="veli-template-filter-row">
-          {sablonFiltreleri.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={sablonFiltre === t ? "is-active" : ""}
-              onClick={() => setSablonFiltre(t)}
-            >
-              {t}
-            </button>
-          ))}
+      <FormAkordeon id="sablon" baslik="Tasarım" aciklama="Şablonu seçin." ozet={tasarimOzet} durum={tasarimDurum} acik={acikBolum === "sablon"} onToggle={bolumToggle}>
+        <div className="veli-template-current-card">
+          <div className="veli-template-current-card__preview">
+            <SablonMiniThumbnail id={seciliSablon} renk={seciliSablonMeta?.chipRenk ?? "#2563eb"} />
+          </div>
+          <div className="veli-template-current-card__body">
+            <span>Seçili şablon</span>
+            <strong>{seciliSablonMeta?.ad ?? seciliSablon}</strong>
+            <p>{seciliSablonMeta?.kullanim ?? "Afiş görünümünü belirler."}</p>
+          </div>
+          <button type="button" onClick={() => setSablonGaleriAcik(true)}>Şablon seç</button>
         </div>
-        <div className="veli-template-grid">
-          {filtreliSablonlar.map((s) => {
-            const secili = seciliSablon === s.id;
-            return (
-              <motion.button
-                key={s.id}
-                type="button"
-                whileTap={{ scale: 0.97 }}
-                onClick={() => { setSeciliSablon(s.id); setDikeyGorselUyarisi(null); }}
-                style={{
-                  position: "relative",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "stretch",
-                  gap: 6,
-                  padding: "10px 8px",
-                  borderRadius: 16,
-                  cursor: "pointer",
-                  border: secili ? `2px solid ${s.chipRenk}` : "1px solid #e8edf2",
-                  background: secili ? `${s.chipRenk}10` : "#ffffff",
-                  boxShadow: secili ? `0 6px 20px ${s.chipRenk}22` : "0 2px 8px rgba(15,23,42,0.04)",
-                  textAlign: "left",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <SablonMiniThumbnail id={s.id} renk={s.chipRenk} />
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 800, color: secili ? s.chipRenk : "#334155", lineHeight: 1.2 }}>
-                  {s.ad}
-                </span>
-                <span style={{ fontSize: 10, color: "#64748b", lineHeight: 1.35 }}>
-                  {s.kullanim || `${s.maxGorsel} görsel · ${s.etiket}`}
-                </span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, background: "#f1f5f9", color: "#64748b", padding: "2px 6px", borderRadius: 6 }}>
-                    {s.maxGorsel} görsel
-                  </span>
-                  {(s.etiketler ?? [s.etiket]).slice(0, 2).map((t) => (
-                    <span key={t} style={{ fontSize: 9, fontWeight: 700, background: `${s.chipRenk}14`, color: s.chipRenk, padding: "2px 6px", borderRadius: 6 }}>{t}</span>
-                  ))}
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
+        <button type="button" className="veli-section-next-btn" onClick={() => setAcikBolum("gorseller")}>Görsel Eklemeye Geç</button>
       </FormAkordeon>
 
-      <FormAkordeon id="gorseller" baslik="Görseller" aciklama="1–4 fotoğraf ekleyebilirsiniz." acik={acikBolum === "gorseller"} onToggle={bolumToggle}>
+      {sablonGaleriAcik && (
+        <div className="veli-template-modal" role="dialog" aria-modal="true">
+          <div className="veli-template-modal__panel">
+            <div className="veli-template-modal__head">
+              <div>
+                <h3>Şablon Galerisi</h3>
+                <p>20 yeni profesyonel şablon ve mevcut tasarımlar. Seçim anında önizlemeye uygulanır.</p>
+              </div>
+              <button type="button" onClick={() => setSablonGaleriAcik(false)}>Kapat</button>
+            </div>
+            <div className="veli-template-filter-row veli-template-filter-row--modal">
+              {sablonFiltreleri.map((t) => (
+                <button key={t} type="button" className={sablonFiltre === t ? "is-active" : ""} onClick={() => setSablonFiltre(t)}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div className="veli-template-gallery-grid">
+              {filtreliSablonlar.map((s) => {
+                const secili = seciliSablon === s.id;
+                return (
+                  <motion.button
+                    key={s.id}
+                    type="button"
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => { setSeciliSablon(s.id); setDikeyGorselUyarisi(null); }}
+                    className={`veli-template-gallery-card${secili ? " is-selected" : ""}`}
+                    style={{ ["--template-accent" as string]: s.chipRenk }}
+                  >
+                    <div className="veli-template-gallery-card__thumb">
+                      <SablonMiniThumbnail id={s.id} renk={s.chipRenk} />
+                    </div>
+                    <div className="veli-template-gallery-card__content">
+                      <strong>{s.ad}</strong>
+                      <p>{s.kullanim || `${s.maxGorsel} görsel · ${s.etiket}`}</p>
+                      <div>
+                        <span>{s.maxGorsel} görsel</span>
+                        {(s.etiketler ?? [s.etiket]).slice(0, 3).map((t) => <span key={t}>{t}</span>)}
+                      </div>
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <FormAkordeon id="gorseller" baslik="Görsel Ekle" aciklama="En iyi görünüm için yatay fotoğraf yükleyin." ozet={gorselOzet} durum={gorselDurum} acik={acikBolum === "gorseller"} onToggle={bolumToggle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>Yüklenen</span>
           <span style={{
@@ -735,18 +771,15 @@ export default function FormAlani({
           </span>
         </div>
 
-        <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "#475569", margin: "0 0 6px" }}>Fotoğraf yerleşimi</p>
-          <ul style={{ margin: 0, paddingLeft: 16, fontSize: 10, color: "#64748b", lineHeight: 1.45 }}>
-            {GORSEL_YERLESIM.map((satir) => (
-              <li key={satir}>{satir}</li>
-            ))}
-          </ul>
+        <div style={{ marginBottom: 10, padding: "9px 11px", borderRadius: 10, background: "#fffbeb", border: "1px solid #fde68a" }}>
+          <p style={{ fontSize: 11, fontWeight: 750, color: "#92400e", margin: 0, lineHeight: 1.45 }}>
+            En iyi görünüm için yatay fotoğraf yükleyin. Dikey görseller yerleşimde bozulma oluşturabilir.
+          </p>
         </div>
 
         {form.gorseller.length === 0 && (
-          <p style={{ fontSize: 11, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-            Fotoğraf eklenmedi. Görselsiz şablonlar daha uygun olabilir.
+          <p style={{ fontSize: 11, color: "#64748b", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+            Görsel eklemek isteğe bağlıdır.
           </p>
         )}
 
@@ -821,9 +854,10 @@ export default function FormAlani({
             })}
           </div>
         )}
+        <button type="button" className="veli-section-next-btn" onClick={() => setAcikBolum("metin")}>Metin Ayarlarına Geç</button>
       </FormAkordeon>
 
-      <FormAkordeon id="metin" baslik="Metin Ayarları" aciklama="Metnin uzunluğunu ve üslubunu ayarlayın." acik={acikBolum === "metin"} onToggle={bolumToggle}>
+      <FormAkordeon id="metin" baslik="Metin Ayarları" aciklama="Metnin uzunluğunu ve üslubunu ayarlayın." ozet={metinOzet} durum={metinDurum} acik={acikBolum === "metin"} onToggle={bolumToggle}>
         <div>
           <label style={labelStyle}>Metin Uzunluğu</label>
           <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 10, padding: 3 }}>

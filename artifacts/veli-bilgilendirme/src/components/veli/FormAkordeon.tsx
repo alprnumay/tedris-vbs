@@ -9,6 +9,8 @@ export function FormAkordeon({
   onToggle,
   children,
   zorunlu,
+  ozet,
+  durum,
 }: {
   id: string;
   baslik: string;
@@ -17,9 +19,11 @@ export function FormAkordeon({
   onToggle: (id: string) => void;
   children: React.ReactNode;
   zorunlu?: boolean;
+  ozet?: string;
+  durum?: { tip: "eksik" | "dikkat" | "tamam"; metin: string };
 }) {
   return (
-    <div className={`veli-form-accordion${acik ? " veli-form-accordion--open" : ""}`}>
+    <div className={`veli-form-accordion${acik ? " veli-form-accordion--open" : ""}${durum ? ` veli-form-accordion--${durum.tip}` : ""}`}>
       <button
         type="button"
         onClick={() => onToggle(id)}
@@ -29,13 +33,15 @@ export function FormAkordeon({
           <span className="veli-form-accordion__title">
             {acik ? "▼" : "▶"} {baslik}
           </span>
-          {aciklama ? <span className="veli-form-accordion__desc">{aciklama}</span> : null}
+          {acik ? (
+            aciklama ? <span className="veli-form-accordion__desc">{aciklama}</span> : null
+          ) : (
+            <span className="veli-form-accordion__desc">{ozet || aciklama || "Düzenlemek için açın."}</span>
+          )}
         </span>
-        {zorunlu && !acik && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#b45309", background: "#fffbeb", padding: "2px 8px", borderRadius: 8 }}>
-            Devam edin
-          </span>
-        )}
+        <span className={`veli-form-accordion__status veli-form-accordion__status--${durum?.tip ?? "dikkat"}`}>
+          {durum?.metin ?? (zorunlu && !acik ? "Devam edin" : "Düzenle")}
+        </span>
       </button>
       <AnimatePresence initial={false}>
         {acik && (
