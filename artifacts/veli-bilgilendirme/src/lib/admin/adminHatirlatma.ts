@@ -1,4 +1,4 @@
-export function hatirlatmaMesaji(u: {
+﻿export function hatirlatmaMesaji(u: {
   name?: string;
   email?: string;
   institutionName?: string;
@@ -7,7 +7,7 @@ export function hatirlatmaMesaji(u: {
   const hitap = u.name?.trim() ? u.name.trim().split(" ")[0] : "Hocam";
   return [
     `Hocam selamünaleyküm ${hitap}.`,
-    "Tedris VBS hesabınız aktif görünüyor ancak son günlerde giriş yapılmamış. Veli bilgilendirme afişlerinizi sistem üzerinden kolayca hazırlayabilirsiniz.",
+    "Nehari Veli Bilgilendirme hesabınız aktif görünüyor ancak son günlerde giriş yapılmamış. Veli bilgilendirme afişlerinizi sistem üzerinden kolayca hazırlayabilirsiniz.",
     "",
     u.email ? `Giriş e-postanız: ${u.email}` : "",
     u.institutionName || u.district
@@ -25,5 +25,6 @@ export function yurtHatirlatmaMesaji(yurt: {
   gun?: number;
 }): string {
   const gun = yurt.gun ?? 7;
-  return `Hocam selamünaleyküm. Tedris VBS kullanım raporunda ${yurt.institutionName} için son ${gun} gündür giriş görünmüyor. Veli bilgilendirme afişlerini sistem üzerinden kolayca hazırlayabilirsiniz. Bir sorun varsa bize ulaşabilirsiniz.`;
+  return `Hocam selamünaleyküm. Nehari Veli Bilgilendirme kullanım raporunda ${yurt.institutionName} için son ${gun} gündür giriş görünmüyor. Veli bilgilendirme afişlerini sistem üzerinden kolayca hazırlayabilirsiniz. Bir sorun varsa bize ulaşabilirsiniz.`;
 }
+

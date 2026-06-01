@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
+﻿import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Toaster, toast } from "sonner";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
 import { api, type KullaniciBilgisi } from "./lib/api";
+import { backendApi, type PosterDraftData } from "./lib/backendApi";
 import FormAlani from "./components/FormAlani";
 import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
 import { VeliYanPanel } from "./components/veli/VeliYanPanel";
@@ -45,6 +46,11 @@ const baslangicForm: FormData = {
   seciliBaslikIdx: 0,
 };
 
+function isPosterDraftData(data: unknown): data is PosterDraftData {
+  const d = data as Partial<PosterDraftData> | null;
+  return Boolean(d && typeof d === "object" && d.form && typeof d.seciliSablon === "string");
+}
+
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
   /** Giriş sonrası: kategori seçimi, Veli Bilgilendirme üretimi veya Deneme sınavı modülü. */
@@ -57,6 +63,8 @@ function MainApp() {
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
   const [formAdim, setFormAdim] = useState<1 | 2>(1);
+  const [taslakIslem, setTaslakIslem] = useState<"kaydet" | "yukle" | "sil" | null>(null);
+  const [sonTaslakId, setSonTaslakId] = useState<string | number | null>(null);
 
   const downloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -170,18 +178,95 @@ function MainApp() {
     void api.activityLog(action).catch(() => {});
   };
 
+  const backendEvent = useCallback((eventType: string, metadata?: Record<string, unknown>) => {
+    void backendApi.usageEvent(eventType, {
+      source: "veli_bilgilendirme",
+      template: seciliSablon,
+      ...metadata,
+    }).catch(() => {});
+  }, [seciliSablon]);
+
+  const taslakVerisi = useCallback((): PosterDraftData => ({
+    source: "veli_bilgilendirme",
+    app: "nehari_veli_bilgilendirme",
+    form,
+    seciliSablon,
+    metinDuzenlendi,
+    savedAt: new Date().toISOString(),
+  }), [form, metinDuzenlendi, seciliSablon]);
+
+  const taslakHatasi = (err: unknown) => {
+    const mesaj = err instanceof Error && err.message
+      ? err.message
+      : "Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.";
+    toast.error(mesaj);
+  };
+
+  const taslakKaydet = async () => {
+    setTaslakIslem("kaydet");
+    try {
+      const record = await backendApi.savePosterDraft(taslakVerisi(), sonTaslakId);
+      setSonTaslakId(record.id);
+      backendEvent("poster_saved");
+      toast.success("Taslak kaydedildi.");
+    } catch (err) {
+      taslakHatasi(err);
+    } finally {
+      setTaslakIslem(null);
+    }
+  };
+
+  const sonTaslagiYukle = async () => {
+    setTaslakIslem("yukle");
+    try {
+      const record = await backendApi.latestPosterDraft();
+      if (!record || !isPosterDraftData(record.data)) {
+        toast.info("Kayıtlı taslak bulunamadı.");
+        return;
+      }
+      setForm(record.data.form);
+      setSeciliSablon(record.data.seciliSablon);
+      setMetinDuzenlendi(record.data.metinDuzenlendi);
+      setSonTaslakId(record.id);
+      toast.success("Son taslak yüklendi.");
+    } catch (err) {
+      taslakHatasi(err);
+    } finally {
+      setTaslakIslem(null);
+    }
+  };
+
+  const taslakSil = async () => {
+    setTaslakIslem("sil");
+    try {
+      const recordId = sonTaslakId || (await backendApi.latestPosterDraft())?.id;
+      if (!recordId) {
+        toast.info("Silinecek taslak bulunamadı.");
+        return;
+      }
+      await backendApi.deleteRecord(recordId);
+      setSonTaslakId(null);
+      toast.success("Taslak silindi.");
+    } catch (err) {
+      taslakHatasi(err);
+    } finally {
+      setTaslakIslem(null);
+    }
+  };
+
   const afisiIndir = async () => {
     setIndiriliyor(true);
     try {
       const dataUrl = await posterPngYakala();
       if (!dataUrl) return;
       aktiviteKaydet("export_png");
+      backendEvent("poster_downloaded", { format: "png" });
 
       if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
         window.open(dataUrl, "_blank");
       } else {
         const link = document.createElement("a");
-        link.download = `tedris-vbs-${seciliSablon}.png`;
+        link.download = `nehari-veli-bilgilendirme-${seciliSablon}.png`;
         link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
@@ -208,8 +293,9 @@ function MainApp() {
       const y = (pdfH - finalH) / 2;
 
       pdf.addImage(dataUrl, "PNG", margin, y, imgW, finalH);
-      pdf.save(`tedris-vbs-${seciliSablon}.pdf`);
+      pdf.save(`nehari-veli-bilgilendirme-${seciliSablon}.pdf`);
       aktiviteKaydet("export_pdf");
+      backendEvent("poster_downloaded", { format: "pdf" });
     } finally {
       setPdfYukleniyor(false);
     }
@@ -233,7 +319,7 @@ function MainApp() {
           if (navigator.canShare({ files: [file] })) {
             await navigator.share({
               files: [file],
-              title: "Tedris Vbs - Veli Bilgilendirme Afişi",
+              title: "Nehari Veli Bilgilendirme - Veli Bilgilendirme Afişi",
               text: metin,
             });
             aktiviteKaydet("share_whatsapp");
@@ -396,8 +482,21 @@ function MainApp() {
     transition: "transform 0.12s ease, opacity 0.15s",
   });
 
+  const draftBtnStil = (aktif: boolean): React.CSSProperties => ({
+    flex: 1,
+    padding: "8px 9px",
+    borderRadius: 12,
+    border: "1px solid #cbd5e1",
+    background: aktif ? "#e0e7ff" : "#ffffff",
+    color: aktif ? "#1d4ed8" : "#475569",
+    fontSize: 11,
+    fontWeight: 800,
+    cursor: aktif ? "wait" : "pointer",
+  });
+
   const PaylasBtnlari = () => (
-    <div style={{ display: "flex", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8 }}>
       <button
         onClick={afisiIndir}
         disabled={indiriliyor}
@@ -470,6 +569,18 @@ function MainApp() {
         </svg>
         WA
       </button>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" onClick={taslakKaydet} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "kaydet")}>
+          {taslakIslem === "kaydet" ? "Kaydediliyor..." : "Taslağı Kaydet"}
+        </button>
+        <button type="button" onClick={sonTaslagiYukle} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "yukle")}>
+          {taslakIslem === "yukle" ? "Yükleniyor..." : "Son Taslağı Yükle"}
+        </button>
+        <button type="button" onClick={taslakSil} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "sil")}>
+          {taslakIslem === "sil" ? "Siliniyor..." : "Taslağı Sil"}
+        </button>
+      </div>
     </div>
   );
 
@@ -632,6 +743,7 @@ function MainApp() {
                       adim2Ref={adim2Ref}
                       desktopMod
                       onAdimChange={setFormAdim}
+                      onGorselYuklendi={(adet) => backendEvent("image_uploaded", { count: adet })}
                     />
                   </div>
                 </div>
@@ -702,6 +814,7 @@ function MainApp() {
                 kullaniciId={kullanici.id}
                 adim2Ref={adim2Ref}
                 mobilMod
+                onGorselYuklendi={(adet) => backendEvent("image_uploaded", { count: adet })}
                 onTasarimaGec={() => {
                   adim2Ref.current?.();
                   setAktifSekme("onizleme");

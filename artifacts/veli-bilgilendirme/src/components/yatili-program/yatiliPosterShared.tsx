@@ -10,6 +10,7 @@ export type YatiliTemplateProps = {
   data: YatiliProgramFormData;
   tema: YatiliPosterTema;
   layout: YatiliLayoutPlan;
+  dark?: boolean;
 };
 
 const boyut = yatiliAfishBoyutlari();

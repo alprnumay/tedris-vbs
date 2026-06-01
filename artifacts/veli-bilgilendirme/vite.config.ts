@@ -10,6 +10,7 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  envDir: path.resolve(import.meta.dirname, "../.."),
   /** Windows’ta `node_modules/.vite` silinirken EPERM (kilit) hatalarını azaltmak için önbellek proje içi ayrı dizinde. */
   cacheDir: path.resolve(import.meta.dirname, ".vite-cache"),
   plugins: [
@@ -36,7 +37,7 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
-    /** Yerel frontend → Railway API: tarayıcıda CORS yok, istek aynı origin `/api`. */
+    /** Yerel frontend → yerel API: tarayıcıda CORS yok, istek aynı origin `/api`. */
     proxy: {
       "/api": {
         target:

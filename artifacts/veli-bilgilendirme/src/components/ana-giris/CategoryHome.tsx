@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import {
   Moon,
   Menu,
@@ -75,7 +75,7 @@ export function CategoryHome({
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-3 md:px-8 md:py-3.5">
           <div className="flex min-w-0 flex-col gap-0.5">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-900/90 md:text-[11px] md:tracking-[0.22em]">
-              Tedris VBS
+              Nehari Veli Bilgilendirme
             </p>
             <p className="hidden text-xs text-slate-500 md:block">Akıllı afiş ve veli bilgilendirme</p>
           </div>
@@ -298,3 +298,4 @@ export function CategoryHome({
     </div>
   );
 }
+

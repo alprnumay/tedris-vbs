@@ -1,7 +1,7 @@
-{
+﻿{
   "id": "/",
-  "name": "Tedris Vbs",
-  "short_name": "Tedris Vbs",
+  "name": "Nehari Veli Bilgilendirme",
+  "short_name": "Nehari Veli Bilgilendirme",
   "description": "Öğretmenler ve yurt hocaları için profesyonel veli bilgilendirme afişi oluşturucu",
   "start_url": "/",
   "scope": "/",
@@ -46,7 +46,8 @@
       "sizes": "1200x630",
       "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "Tedris Vbs - Afiş Oluşturucu"
+      "label": "Nehari Veli Bilgilendirme - Afiş Oluşturucu"
     }
   ]
 }
+

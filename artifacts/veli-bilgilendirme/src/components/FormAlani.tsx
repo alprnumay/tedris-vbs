@@ -32,6 +32,7 @@ interface Props {
   desktopMod?: boolean;
   onTasarimaGec?: () => void;
   onAdimChange?: (adim: 1 | 2) => void;
+  onGorselYuklendi?: (adet: number) => void;
 }
 
 function dosyayaBase64Cevir(file: File): Promise<string> {
@@ -335,6 +336,7 @@ export default function FormAlani({
   desktopMod = false,
   onTasarimaGec,
   onAdimChange,
+  onGorselYuklendi,
 }: Props) {
   const [adim, setAdim] = useState<1 | 2>(1);
   const [profiller, setProfiller] = useState<KayitliProfil[]>([]);
@@ -459,6 +461,7 @@ export default function FormAlani({
       if (boyut.dikey) dikeyBulundu = true;
     }
     setForm({ ...form, gorseller: [...form.gorseller, ...yeni] });
+    onGorselYuklendi?.(yeni.length);
     if (dikeyBulundu) {
       const oneri = dikeyGorselSablonOner(seciliSablon);
       setDikeyGorselUyarisi(

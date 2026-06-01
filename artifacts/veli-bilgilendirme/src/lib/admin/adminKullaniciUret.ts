@@ -1,4 +1,4 @@
-import { normalizeTurkish, removeDistrictPrefixFromInstitutionName, slugifyKurum } from "./normalizeTurkish";
+﻿import { normalizeTurkish, removeDistrictPrefixFromInstitutionName, slugifyKurum } from "./normalizeTurkish";
 import { TRACKED_DISTRICTS } from "./trackedDistricts";
 
 export const MINTIKA_IL: Record<string, string> = {
@@ -81,7 +81,7 @@ export function girisBilgisiMetni(p: {
   rol: string;
 }): string {
   return [
-    "Tedris VBS giriş bilgileriniz:",
+    "Nehari Veli Bilgilendirme giriş bilgileriniz:",
     `E-posta: ${p.email}`,
     `Geçici şifre: ${p.password}`,
     `Kurum: ${p.kurum}`,
@@ -93,3 +93,4 @@ export function girisBilgisiMetni(p: {
     .filter(Boolean)
     .join("\n");
 }
+

@@ -1,4 +1,4 @@
-const CACHE_NAME = "tedris-vbs-v3";
+const CACHE_NAME = "nehari-veli-bilgilendirme-v1";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",

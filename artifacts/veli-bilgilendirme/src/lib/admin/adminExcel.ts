@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+﻿import ExcelJS from "exceljs";
 import type { AdminYurtMetrik, AdminMintikaMetrik, AdminDataHealthIssue, AdminKullanici, AdminAktiviteLog } from "../api";
 
 const HEADER_FILL: ExcelJS.Fill = {
@@ -17,7 +17,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const DISCLAIMER =
-  "Bu rapor Tedris VBS kayıtlarındaki gerçek giriş ve kurum verilerine göre oluşturulmuştur. Eksik veya eşleşmemiş kayıtlar Veri Sağlığı sayfasında listelenmiştir.";
+  "Bu rapor Nehari Veli Bilgilendirme kayıtlarındaki gerçek giriş ve kurum verilerine göre oluşturulmuştur. Eksik veya eşleşmemiş kayıtlar Veri Sağlığı sayfasında listelenmiştir.";
 
 function styleHeaderRow(row: ExcelJS.Row) {
   row.eachCell((cell) => {
@@ -56,11 +56,11 @@ export async function indirAdminExcel(opts: {
   issues?: AdminDataHealthIssue[];
 }) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Tedris VBS";
+  wb.creator = "Nehari Veli Bilgilendirme";
   wb.created = new Date();
 
   const kapak = wb.addWorksheet("Özet", { views: [{ state: "frozen", ySplit: 1 }] });
-  kapak.addRow(["Tedris VBS — " + opts.raporAdi]);
+  kapak.addRow(["Nehari Veli Bilgilendirme — " + opts.raporAdi]);
   kapak.addRow(["Tarih aralığı", opts.rangeLabel]);
   kapak.addRow(["Filtreler", opts.filtreler]);
   kapak.addRow(["Oluşturulma", new Date().toLocaleString("tr-TR")]);
@@ -206,7 +206,8 @@ export async function indirAdminExcel(opts: {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `tedris-vbs-${opts.raporAdi.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.download = `nehari-veli-bilgilendirme-${opts.raporAdi.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
+

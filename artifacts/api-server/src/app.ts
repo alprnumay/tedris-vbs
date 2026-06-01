@@ -1,4 +1,4 @@
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+﻿import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { corsMiddleware } from "./lib/corsOrigins";
 import { useCrossSiteSessionCookie } from "./lib/sessionCookie";
@@ -46,7 +46,7 @@ app.get("/", (_req: Request, res: Response) => {
     (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
   res.status(200).json({
     ok: true,
-    message: "Tedris VBS API sunucusu. Arayüz bu adreste değil.",
+    message: "Nehari Veli Bilgilendirme API sunucusu. Arayüz bu adreste değil.",
     hint: frontend
       ? `Uygulamayı tarayıcıda açın: ${frontend}`
       : "Frontend adresi için FRONTEND_URL ortam değişkenini ayarlayın.",
@@ -96,7 +96,7 @@ app.use((req: Request, res: Response) => {
       ? {}
       : {
           hint:
-            "Bu port yalnızca API içindir. Tedris VBS arayüzü için geliştirmede http://localhost:3000 adresini kullanın (npm run dev).",
+            "Bu port yalnızca API içindir. Nehari Veli Bilgilendirme arayüzü için geliştirmede http://localhost:3000 adresini kullanın (npm run dev).",
         }),
   });
 });

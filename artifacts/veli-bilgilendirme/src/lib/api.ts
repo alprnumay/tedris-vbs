@@ -1,9 +1,6 @@
-const PROD_API_BASE = "https://workspaceapi-server-production-c211.up.railway.app/api";
-
-/** Geliştirmede Vite proxy (`/api` → Railway); canlıda tam URL. */
-const BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? "/api" : PROD_API_BASE);
+import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
+import { kurumKoduOner } from "./kurumSlug";
+import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 
@@ -21,17 +18,6 @@ function getStoredSessionToken(): string | null {
   }
 }
 
-function setStoredSessionToken(token: string) {
-  const trimmed = token.trim();
-  if (!trimmed) return;
-  memorySessionToken = trimmed;
-  try {
-    localStorage.setItem(SESSION_TOKEN_KEY, trimmed);
-  } catch {
-    /* private mode / storage disabled — memory fallback yeterli */
-  }
-}
-
 function clearStoredSessionToken() {
   memorySessionToken = null;
   try {
@@ -39,54 +25,6 @@ function clearStoredSessionToken() {
   } catch {
     /* ignore */
   }
-}
-
-function extractSessionToken(data: {
-  sessionToken?: string;
-  session_token?: string;
-}): string | undefined {
-  const raw = data.sessionToken ?? data.session_token;
-  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
-}
-
-function requestHeaders(): Headers {
-  const headers = new Headers();
-  headers.set("Content-Type", "application/json");
-  const token = getStoredSessionToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  return headers;
-}
-
-async function istek<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: requestHeaders(),
-    credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
-  const text = await res.text();
-
-  let data: unknown = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { message: text || "Geçersiz sunucu cevabı." };
-  }
-
-  if (!res.ok) {
-    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/register")) {
-      clearStoredSessionToken();
-    }
-    const err = data as { error?: string; message?: string };
-    throw new Error(err.error || err.message || "Bir hata oluştu.");
-  }
-
-  return data as T;
 }
 
 export interface KullaniciBilgisi {
@@ -103,6 +41,93 @@ export interface KayitliProfil {
   rol: string;
 }
 
+interface UserProfileRecordData {
+  isim?: string;
+  kurumAdi?: string;
+  rol?: string;
+  userId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface InstitutionRecordData {
+  institutionName?: string;
+  institutionCode?: string;
+  districtName?: string;
+  province?: string | null;
+  expectedUserCount?: number | null;
+  status?: string;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+type ReportPermission = "overview" | "district" | "institution" | "users" | "activity" | "excel";
+
+interface AppUserRecordData {
+  id?: string;
+  authUserId?: string;
+  email?: string;
+  name?: string;
+  role?: string;
+  isAdmin?: boolean;
+  isActive?: boolean;
+  district?: string | null;
+  province?: string | null;
+  institutionName?: string | null;
+  institutionCode?: string | null;
+  institutionId?: string | null;
+  allowedDistricts?: string[];
+  allowedCities?: string[];
+  allowedInstitutions?: string[];
+  reportPermissions?: ReportPermission[];
+  lastLoginAt?: string | null;
+  deletedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  passwordResetAt?: string | null;
+}
+
+interface ActivityLogRecordData {
+  id?: string;
+  userId?: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
+  action?: string;
+  createdAt?: string;
+  institutionId?: string | null;
+  institutionName?: string | null;
+  institutionCode?: string | null;
+  district?: string | null;
+  province?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface SupportRequestRecordData {
+  userId?: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
+  message?: string;
+  imageBase64?: string;
+  status?: string;
+  adminNote?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  province?: string | null;
+  district?: string | null;
+  institutionName?: string | null;
+  institutionCode?: string | null;
+}
+
+interface AdminSettingRecordData {
+  key?: "default";
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  seasonStart?: string | null;
+  seasonEnd?: string | null;
+  updatedAt?: string;
+}
+
 export interface KayitliAfis {
   id: number;
   title: string;
@@ -113,7 +138,7 @@ export interface KayitliAfis {
 }
 
 export interface DestekMesaji {
-  id: number;
+  id: string | number;
   userId: string | null;
   userEmail: string | null;
   userName: string | null;
@@ -151,6 +176,11 @@ export interface AdminKullanici {
   daysSinceLogin?: number | null;
   login_time?: string | null;
   activeInRange?: boolean;
+  institutionId?: string | null;
+  allowedDistricts?: string[];
+  allowedCities?: string[];
+  allowedInstitutions?: string[];
+  reportPermissions?: ReportPermission[];
 }
 
 export interface AdminOverview {
@@ -216,86 +246,792 @@ function qs(params: Record<string, string | undefined>): string {
   return s ? `?${s}` : "";
 }
 
+function kullaniciFromBackend(user?: BackendUser | null): KullaniciBilgisi | null {
+  if (!user) return null;
+  const role = typeof user.role === "string" ? user.role : "";
+  return {
+    id: String(user.id ?? user.email ?? ""),
+    email: String(user.email ?? ""),
+    name: String(user.name ?? user.email ?? "Kullanıcı"),
+    isAdmin: Boolean(user.isAdmin) || role === "admin",
+  };
+}
+
+function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullanici | null): KullaniciBilgisi {
+  if (!appUser) return user;
+  return {
+    ...user,
+    id: appUser.id || user.id,
+    name: appUser.name || user.name,
+    isAdmin: appUser.isAdmin || user.isAdmin,
+  };
+}
+
+function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
+  const data = record.data ?? {};
+  const role = data.role ?? (data.isAdmin ? "admin" : "user");
+  const isActive = data.isActive ?? !data.deletedAt;
+  const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
+  return {
+    id: String(record.id),
+    email: String(data.email ?? ""),
+    name: String(data.name ?? data.email ?? "Kullanıcı"),
+    province: data.province ?? null,
+    district: data.district ?? null,
+    institutionName: data.institutionName ?? null,
+    institutionCode: data.institutionCode ?? null,
+    institutionId: data.institutionId ?? null,
+    role,
+    isActive,
+    isAdmin: Boolean(data.isAdmin) || role === "admin" || role === "super_admin",
+    lastLoginAt: data.lastLoginAt ?? null,
+    deletedAt: data.deletedAt ?? null,
+    createdAt,
+    activityStatus: data.lastLoginAt ? "week" : "never",
+    daysSinceLogin: data.lastLoginAt ? Math.max(0, Math.floor((Date.now() - Date.parse(data.lastLoginAt)) / 86_400_000)) : null,
+    allowedDistricts: data.allowedDistricts ?? [],
+    allowedCities: data.allowedCities ?? [],
+    allowedInstitutions: data.allowedInstitutions ?? [],
+    reportPermissions: data.reportPermissions ?? [],
+  };
+}
+
+function filterAppUsers(users: AdminKullanici[], params: Record<string, string | undefined>): AdminKullanici[] {
+  const search = params.search?.trim().toLocaleLowerCase("tr-TR");
+  return users.filter((user) => {
+    if (user.deletedAt) return false;
+    if (params.district && user.district !== params.district) return false;
+    if (params.institutionCode && user.institutionCode !== params.institutionCode) return false;
+    if (params.role && user.role !== params.role) return false;
+    if (params.active === "active" && !user.isActive) return false;
+    if (params.active === "inactive" && user.isActive) return false;
+    if (search) {
+      const haystack = [user.name, user.email, user.institutionName, user.district, user.institutionCode]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("tr-TR");
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+async function appUserRecords(params: Record<string, string | undefined> = {}) {
+  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
+  const users = records
+    .map(appUserFromRecord)
+    .sort((a, b) => a.name.localeCompare(b.name, "tr") || a.email.localeCompare(b.email, "tr"));
+  return filterAppUsers(users, params);
+}
+
+async function appUserByEmail(email: string): Promise<AdminKullanici | null> {
+  const normalized = email.trim().toLocaleLowerCase("tr-TR");
+  if (!normalized) return null;
+  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
+  return records
+    .map(appUserFromRecord)
+    .find((user) => user.email.toLocaleLowerCase("tr-TR") === normalized) ?? null;
+}
+
+async function kurumIdBul(institutionCode?: string | null): Promise<string | null> {
+  if (!institutionCode) return null;
+  const institutions = await institutionRecords({ institutionCode });
+  return institutions[0]?.id ?? null;
+}
+
+function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecordData, "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions"> {
+  if (isAdmin || role === "admin" || role === "super_admin") {
+    return {
+      allowedCities: [],
+      allowedDistricts: [],
+      allowedInstitutions: [],
+      reportPermissions: ["overview", "district", "institution", "users", "activity", "excel"],
+    };
+  }
+  return {
+    allowedCities: [],
+    allowedDistricts: [],
+    allowedInstitutions: [],
+    reportPermissions: [],
+  };
+}
+
+async function registerAuthUserSafely(data: { email: string; password: string; name: string }) {
+  const currentToken = getBackendToken();
+  try {
+    return await backendApi.register(data);
+  } catch {
+    return null;
+  } finally {
+    if (currentToken) setBackendToken(currentToken);
+    else clearBackendToken();
+  }
+}
+
+function tarihAraligi(params: Record<string, string | undefined> = {}): AdminRange {
+  const now = new Date();
+  const end = new Date(now);
+  const range = params.range || "7d";
+  let start = new Date(now);
+  let label = "Son 7 gün";
+
+  if (range === "today") {
+    start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    label = "Bugün";
+  } else if (range === "yesterday") {
+    start = new Date(now);
+    start.setDate(start.getDate() - 1);
+    start.setHours(0, 0, 0, 0);
+    end.setTime(start.getTime());
+    end.setHours(23, 59, 59, 999);
+    label = "Dün";
+  } else if (range === "30d") {
+    start.setDate(start.getDate() - 30);
+    label = "Son 30 gün";
+  } else if (range === "this_month" || range === "period" || range === "season") {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    label = range === "this_month" ? "Bu ay" : range === "period" ? "Bu dönem" : "Bu sezon";
+  } else if (range === "last_month") {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    end.setTime(new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime());
+    label = "Geçen ay";
+  } else if (range === "custom") {
+    start = params.from ? new Date(`${params.from}T00:00:00`) : start;
+    end.setTime(params.to ? new Date(`${params.to}T23:59:59`).getTime() : end.getTime());
+    label = "Özel aralık";
+  } else {
+    start.setDate(start.getDate() - 7);
+  }
+
+  return {
+    preset: range,
+    label,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+}
+
+function activityFromRecord(record: BackendRecord<ActivityLogRecordData>): AdminAktiviteLog {
+  const data = record.data ?? {};
+  const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
+  return {
+    id: String(record.id),
+    createdAt,
+    action: String(data.action ?? ""),
+    userId: data.userId ?? null,
+    userEmail: data.userEmail ?? null,
+    userName: data.userName ?? data.userEmail ?? null,
+    institutionCode: data.institutionCode ?? null,
+    institutionName: data.institutionName ?? null,
+    district: data.district ?? null,
+    province: data.province ?? null,
+    metadata: data.metadata ?? null,
+  };
+}
+
+async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
+  const me = await backendApi.me().catch(() => null);
+  const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+  if (!user?.email) return null;
+  return appUserByEmail(user.email).catch(() => null);
+}
+
+function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici | null): AdminAktiviteLog[] {
+  if (!viewer || viewer.isAdmin || viewer.role === "super_admin") return logs;
+  const cities = viewer.allowedCities ?? [];
+  const districts = viewer.allowedDistricts ?? [];
+  const institutions = viewer.allowedInstitutions ?? [];
+  return logs.filter((log) => {
+    if (cities.length && (!log.province || !cities.includes(log.province))) return false;
+    if (districts.length && (!log.district || !districts.includes(log.district))) return false;
+    if (institutions.length && (!log.institutionCode || !institutions.includes(log.institutionCode))) return false;
+    return true;
+  });
+}
+
+async function activityRecordOlustur(action: string, metadata?: Record<string, unknown>) {
+  const now = new Date().toISOString();
+  const appUser = await aktifKullaniciBaglami();
+  const me = await backendApi.me().catch(() => null);
+  const authUser = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+  const userId = appUser?.id ?? authUser?.id ?? null;
+  const institutionId = appUser?.institutionId ?? await kurumIdBul(appUser?.institutionCode);
+  await backendApi.createRecord<ActivityLogRecordData>("activity_log", {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    userId,
+    userEmail: appUser?.email ?? authUser?.email ?? null,
+    userName: appUser?.name ?? authUser?.name ?? null,
+    action,
+    createdAt: now,
+    institutionId,
+    institutionName: appUser?.institutionName ?? null,
+    institutionCode: appUser?.institutionCode ?? null,
+    district: appUser?.district ?? null,
+    province: appUser?.province ?? null,
+    metadata: metadata ?? null,
+  });
+  await backendApi.usageEvent(action, { source: "activity_log", ...metadata }).catch(() => {});
+}
+
+function tamYetkiliMi(user: AdminKullanici | null): boolean {
+  return Boolean(user?.isAdmin || user?.role === "super_admin");
+}
+
+function scopeInstitutionAllowed(institution: AdminYurtKayit, viewer: AdminKullanici | null): boolean {
+  if (!viewer || tamYetkiliMi(viewer)) return true;
+  const cities = viewer.allowedCities ?? [];
+  const districts = viewer.allowedDistricts ?? [];
+  const institutions = viewer.allowedInstitutions ?? [];
+  if (cities.length && institution.province && !cities.includes(institution.province)) return false;
+  if (districts.length && !districts.includes(institution.districtName)) return false;
+  if (institutions.length && !institutions.includes(institution.institutionCode)) return false;
+  if (!cities.length && !districts.length && !institutions.length) {
+    return Boolean(viewer.institutionCode && institution.institutionCode === viewer.institutionCode);
+  }
+  return true;
+}
+
+function scopeUserAllowed(user: AdminKullanici, viewer: AdminKullanici | null): boolean {
+  if (!viewer || tamYetkiliMi(viewer)) return true;
+  const cities = viewer.allowedCities ?? [];
+  const districts = viewer.allowedDistricts ?? [];
+  const institutions = viewer.allowedInstitutions ?? [];
+  if (cities.length && user.province && !cities.includes(user.province)) return false;
+  if (districts.length && user.district && !districts.includes(user.district)) return false;
+  if (institutions.length && user.institutionCode && !institutions.includes(user.institutionCode)) return false;
+  if (!cities.length && !districts.length && !institutions.length) {
+    return Boolean(viewer.institutionCode && user.institutionCode === viewer.institutionCode);
+  }
+  return true;
+}
+
+function logFiltrele(logs: AdminAktiviteLog[], params: Record<string, string | undefined>, range?: AdminRange) {
+  const start = range ? Date.parse(range.startIso) : Number.NEGATIVE_INFINITY;
+  const end = range ? Date.parse(range.endIso) : Number.POSITIVE_INFINITY;
+  return logs.filter((log) => {
+    const time = Date.parse(log.createdAt);
+    if (!Number.isFinite(time) || time < start || time > end) return false;
+    if (params.district && log.district !== params.district) return false;
+    if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
+    return true;
+  });
+}
+
+function yurtDurumu(lastLoginAt: string | null): string {
+  if (!lastLoginAt) return "hic_giris_yok";
+  const days = Math.floor((Date.now() - Date.parse(lastLoginAt)) / 86_400_000);
+  if (days <= 0) return "bugun_aktif";
+  if (days <= 7) return "son_7_gun_aktif";
+  if (days <= 30) return "pasif_7";
+  return "pasif_30";
+}
+
+function yurtMetrikleriUret(
+  institutions: AdminYurtKayit[],
+  users: AdminKullanici[],
+  allLogs: AdminAktiviteLog[],
+  rangeLogs: AdminAktiviteLog[],
+  params: Record<string, string | undefined> = {},
+): AdminYurtMetrik[] {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = Date.now() - 7 * 86_400_000;
+  const thirtyDaysAgo = Date.now() - 30 * 86_400_000;
+
+  const yurts = institutions.map((institution) => {
+    const institutionUsers = users.filter((user) => user.institutionCode === institution.institutionCode);
+    const logs = allLogs.filter((log) => log.institutionCode === institution.institutionCode);
+    const currentLogs = rangeLogs.filter((log) => log.institutionCode === institution.institutionCode);
+    const loginLogs = logs.filter((log) => log.action === "login");
+    const lastLoginAt = loginLogs.map((log) => log.createdAt).sort().at(-1) ?? null;
+    const lastActivityAt = logs.map((log) => log.createdAt).sort().at(-1) ?? null;
+    const todayLoginUsers = new Set(loginLogs.filter((log) => Date.parse(log.createdAt) >= todayStart.getTime()).map((log) => log.userId || log.userName)).size;
+    const logins7d = loginLogs.filter((log) => Date.parse(log.createdAt) >= sevenDaysAgo).length;
+    const logins30d = loginLogs.filter((log) => Date.parse(log.createdAt) >= thirtyDaysAgo).length;
+    return {
+      id: institution.id,
+      institutionCode: institution.institutionCode,
+      institutionName: institution.institutionName,
+      districtName: institution.districtName,
+      province: institution.province,
+      userCount: institutionUsers.length,
+      todayLoginUsers,
+      loginsInRange: currentLogs.filter((log) => log.action === "login").length,
+      logins7d,
+      logins30d,
+      lastLoginAt,
+      lastActivityAt,
+      openSupport: currentLogs.filter((log) => log.action === "support_created").length,
+      activityStatus: yurtDurumu(lastLoginAt),
+      registryStatus: institution.status,
+      inRegistry: true,
+      notes: institution.notes,
+      hasDataGap: institutionUsers.length === 0,
+      exportPng: currentLogs.filter((log) => log.action === "export_png").length,
+      exportPdf: currentLogs.filter((log) => log.action === "export_pdf").length,
+      shareWhatsapp: currentLogs.filter((log) => log.action === "share_whatsapp").length,
+    } satisfies AdminYurtMetrik;
+  });
+
+  return yurts.filter((yurt) => {
+    if (params.preset === "today_active") return yurt.todayLoginUsers > 0;
+    if (params.preset === "week_active") return yurt.logins7d > 0;
+    if (params.preset === "passive7") return yurt.activityStatus === "pasif_7" || yurt.activityStatus === "pasif_30";
+    if (params.preset === "passive30") return yurt.activityStatus === "pasif_30";
+    if (params.preset === "never") return yurt.activityStatus === "hic_giris_yok";
+    return true;
+  });
+}
+
+function mintikaMetrikleriUret(yurts: AdminYurtMetrik[], users: AdminKullanici[]): AdminMintikaMetrik[] {
+  const districts = [...new Set(yurts.map((y) => y.districtName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr"));
+  return districts.map((districtName) => {
+    const districtYurts = yurts.filter((y) => y.districtName === districtName);
+    const districtUsers = users.filter((u) => u.district === districtName);
+    const active7dYurts = districtYurts.filter((y) => y.logins7d > 0).length;
+    const usageRate = districtYurts.length ? Math.round((active7dYurts / districtYurts.length) * 100) : null;
+    const healthScore = usageRate;
+    return {
+      districtName,
+      totalYurts: districtYurts.length,
+      totalUsers: districtUsers.length,
+      todayActiveYurts: districtYurts.filter((y) => y.todayLoginUsers > 0).length,
+      todayActiveUsers: districtYurts.reduce((sum, y) => sum + y.todayLoginUsers, 0),
+      active7dYurts,
+      passive7dYurts: districtYurts.filter((y) => y.activityStatus === "pasif_7" || y.activityStatus === "pasif_30").length,
+      neverLoginYurts: districtYurts.filter((y) => y.activityStatus === "hic_giris_yok").length,
+      openSupport: districtYurts.reduce((sum, y) => sum + y.openSupport, 0),
+      lastMovementAt: districtYurts.map((y) => y.lastActivityAt).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null,
+      usageRate,
+      healthScore,
+      healthLabel: healthScore == null ? "Veri yok" : healthScore >= 80 ? "İyi" : healthScore >= 50 ? "Dikkat" : "Riskli",
+    };
+  });
+}
+
+async function raporVerisi(params: Record<string, string | undefined> = {}) {
+  const range = tarihAraligi(params);
+  const viewer = await aktifKullaniciBaglami();
+  const institutions = (await institutionRecords(params)).filter((institution) => scopeInstitutionAllowed(institution, viewer));
+  const users = (await appUserRecords(params)).filter((user) => scopeUserAllowed(user, viewer));
+  const allLogs = activityYetkiFiltresi(
+    (await backendApi.listRecords<ActivityLogRecordData>("activity_log")).map(activityFromRecord),
+    viewer,
+  ).filter((log) => {
+    if (params.district && log.district !== params.district) return false;
+    if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
+    return true;
+  });
+  const rangeLogs = logFiltrele(allLogs, params, range);
+  const yurts = yurtMetrikleriUret(institutions, users, allLogs, rangeLogs, params);
+  const mintikalar = mintikaMetrikleriUret(yurts, users);
+  return { range, institutions, users, allLogs, rangeLogs, yurts, mintikalar };
+}
+
+function destekFromRecord(record: BackendRecord<SupportRequestRecordData>): AdminDestek {
+  const data = record.data ?? {};
+  return {
+    id: record.id,
+    userId: data.userId ?? null,
+    userEmail: data.userEmail ?? null,
+    userName: data.userName ?? null,
+    message: String(data.message ?? ""),
+    createdAt: data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString(),
+    status: data.status ?? "yeni",
+    admin_note: data.adminNote ?? null,
+    province: data.province ?? null,
+    district: data.district ?? null,
+    institution_name: data.institutionName ?? null,
+    institution_code: data.institutionCode ?? null,
+  };
+}
+
+async function destekKayitlari() {
+  const records = await backendApi.listRecords<SupportRequestRecordData>("support_request");
+  return records.map(destekFromRecord).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+async function adminSettingsRecord() {
+  const records = await backendApi.listRecords<AdminSettingRecordData>("admin_setting");
+  return records.find((record) => record.data?.key === "default") ?? records[0] ?? null;
+}
+
+async function veriSagligiUret(): Promise<AdminVeriSagligi> {
+  const [users, institutions, logs] = await Promise.all([
+    appUserRecords(),
+    institutionRecords(),
+    backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
+  ]);
+  const institutionCodes = new Set(institutions.map((i) => i.institutionCode));
+  const userIds = new Set(users.map((u) => u.id));
+  const issues: AdminDataHealthIssue[] = [];
+
+  for (const user of users) {
+    if (!user.district || !user.institutionCode) {
+      issues.push({
+        id: `user-missing-${user.id}`,
+        type: "user_missing_institution",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.name} (${user.email})`,
+        description: "Kullanıcının mıntıka veya kurum eşleşmesi eksik.",
+        suggestion: "Kullanıcıyı bir mıntıka ve kuruma eşleştirin.",
+      });
+    } else if (!institutionCodes.has(user.institutionCode)) {
+      issues.push({
+        id: `user-orphan-${user.id}`,
+        type: "user_orphan_institution",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.name} (${user.institutionCode})`,
+        description: "Kullanıcının kurum kodu envanterde bulunamadı.",
+        suggestion: "Kurum kodunu düzeltin veya kurum kaydını oluşturun.",
+      });
+    }
+  }
+
+  for (const log of logs) {
+    if (log.userId && !userIds.has(log.userId)) {
+      issues.push({
+        id: `activity-user-${log.id}`,
+        type: "activity_unmatched_user",
+        targetKind: "activity",
+        targetId: log.id,
+        record: `${log.action} (${log.userName ?? log.userId})`,
+        description: "Aktivite kaydı app_user kaydıyla eşleşmiyor.",
+        suggestion: "Kullanıcı kayıtlarını kontrol edin.",
+      });
+    }
+  }
+
+  const unmatchedUsers = users
+    .filter((u) => !u.district || !u.institutionCode || !institutionCodes.has(u.institutionCode))
+    .map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      institutionCode: u.institutionCode,
+      institutionName: u.institutionName,
+      district: u.district,
+    }));
+
+  const score = issues.length === 0 ? 100 : Math.max(0, 100 - Math.min(100, issues.length * 8));
+  return {
+    score,
+    issueCount: issues.length,
+    issues,
+    unmatchedUsers,
+  };
+}
+
+async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonRequest) {
+  const userIds = data.userIds ?? [];
+  let affected = 0;
+  for (const userId of userIds) {
+    const current = await backendApi.getRecord<AppUserRecordData>(userId).catch(() => null);
+    if (!current) continue;
+    const currentData = current.data ?? {};
+    if (data.action === "match") {
+      const institutionId = await kurumIdBul(data.institutionCode);
+      await backendApi.updateRecord<AppUserRecordData>(userId, "app_user", {
+        ...currentData,
+        district: data.district ?? currentData.district ?? null,
+        institutionName: data.institutionName ?? currentData.institutionName ?? null,
+        institutionCode: data.institutionCode ?? currentData.institutionCode ?? null,
+        institutionId: institutionId ?? currentData.institutionId ?? null,
+        updatedAt: new Date().toISOString(),
+      });
+      affected += 1;
+    } else if (data.action === "deactivate") {
+      await backendApi.updateRecord<AppUserRecordData>(userId, "app_user", {
+        ...currentData,
+        isActive: false,
+        deletedAt: currentData.deletedAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      affected += 1;
+    }
+  }
+  return { ok: true, affected };
+}
+
+function profilFromRecord(record: BackendRecord<UserProfileRecordData>): KayitliProfil {
+  const data = record.data ?? {};
+  return {
+    id: String(record.id),
+    isim: String(data.isim ?? ""),
+    kurumAdi: String(data.kurumAdi ?? ""),
+    rol: String(data.rol ?? ""),
+  };
+}
+
+function institutionFromRecord(record: BackendRecord<InstitutionRecordData>): AdminYurtKayit {
+  const data = record.data ?? {};
+  const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
+  const updatedAt = data.updatedAt ?? record.updatedAt ?? record.updated_at ?? createdAt;
+  return {
+    id: String(record.id),
+    institutionName: String(data.institutionName ?? ""),
+    institutionCode: String(data.institutionCode ?? record.id),
+    districtName: String(data.districtName ?? ""),
+    province: data.province ?? null,
+    expectedUserCount: typeof data.expectedUserCount === "number" ? data.expectedUserCount : null,
+    status: String(data.status ?? "active"),
+    notes: data.notes ?? null,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function kurumFromInstitution(institution: AdminYurtKayit): AdminKurum {
+  return {
+    institution_code: institution.institutionCode,
+    institution_name: institution.institutionName,
+    province: institution.province,
+    district: institution.districtName,
+    user_count: 0,
+    today_active: 0,
+    active_7d: 0,
+    last_login_at: null,
+    status: institution.status,
+  };
+}
+
+function filterInstitutions<T extends { districtName: string; institutionCode: string; status?: string }>(
+  institutions: T[],
+  params: Record<string, string | undefined>,
+): T[] {
+  return institutions.filter((institution) => {
+    if (params.district && institution.districtName !== params.district) return false;
+    if (params.institutionCode && institution.institutionCode !== params.institutionCode) return false;
+    if (params.status && institution.status !== params.status) return false;
+    return true;
+  });
+}
+
+async function institutionRecords(params: Record<string, string | undefined> = {}) {
+  const records = await backendApi.listRecords<InstitutionRecordData>("institution");
+  const institutions = records.map(institutionFromRecord).sort((a, b) =>
+    a.districtName.localeCompare(b.districtName, "tr") || a.institutionName.localeCompare(b.institutionName, "tr"),
+  );
+  return filterInstitutions(institutions, params);
+}
+
 export const api = {
-  me: () => istek<{ user: KullaniciBilgisi | null }>("GET", "/auth/me"),
+  me: async () => {
+    const r = await backendApi.me();
+    const user = kullaniciFromBackend(r.user ?? (r as BackendUser));
+    if (!user) return { user: null };
+    const appUser = await appUserByEmail(user.email).catch(() => null);
+    return { user: mergeKullaniciWithAppUser(user, appUser) };
+  },
 
   girisYap: async (email: string, password: string) => {
     clearStoredSessionToken();
-    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string; session_token?: string }>(
-      "POST",
-      "/auth/login",
-      { email, password },
-    );
-    const token = extractSessionToken(r);
-    if (token) setStoredSessionToken(token);
-    return { user: r.user };
+    clearBackendToken();
+    const r = await backendApi.login({ email, password });
+    const user = kullaniciFromBackend(r.user);
+    if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
+    const appUser = await appUserByEmail(user.email).catch(() => null);
+    if (appUser) {
+      await backendApi.updateRecord<AppUserRecordData>(appUser.id, "app_user", {
+        email: appUser.email,
+        name: appUser.name,
+        role: appUser.role,
+        isAdmin: appUser.isAdmin,
+        isActive: appUser.isActive,
+        district: appUser.district,
+        province: appUser.province,
+        institutionName: appUser.institutionName,
+        institutionCode: appUser.institutionCode,
+        institutionId: appUser.institutionId,
+        allowedDistricts: appUser.allowedDistricts,
+        allowedCities: appUser.allowedCities,
+        allowedInstitutions: appUser.allowedInstitutions,
+        reportPermissions: appUser.reportPermissions,
+        createdAt: appUser.createdAt,
+        updatedAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+        deletedAt: appUser.deletedAt ?? null,
+      }).catch(() => null);
+    }
+    await activityRecordOlustur("login", { source: "auth_login" }).catch(() => null);
+    return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
   kayitOl: async (email: string, password: string, name: string) => {
     clearStoredSessionToken();
-    const r = await istek<{ user: KullaniciBilgisi; sessionToken?: string; session_token?: string }>(
-      "POST",
-      "/auth/register",
-      { email, password, name },
-    );
-    const token = extractSessionToken(r);
-    if (token) setStoredSessionToken(token);
-    return { user: r.user };
+    clearBackendToken();
+    const r = await backendApi.register({ email, password, name });
+    const user = kullaniciFromBackend(r.user);
+    if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
+    const existing = await appUserByEmail(user.email).catch(() => null);
+    if (!existing) {
+      const now = new Date().toISOString();
+      const permissions = permissionDefaults("user", false);
+      await backendApi.createRecord<AppUserRecordData>("app_user", {
+        id: user.id,
+        authUserId: user.id,
+        email: user.email,
+        name: user.name,
+        role: "user",
+        isAdmin: false,
+        isActive: true,
+        district: null,
+        province: null,
+        institutionName: null,
+        institutionCode: null,
+        institutionId: null,
+        ...permissions,
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+        deletedAt: null,
+      }).catch(() => null);
+    }
+    await activityRecordOlustur("login", { source: "auth_register" }).catch(() => null);
+    return { user };
   },
 
   cikisYap: async () => {
-    try {
-      return await istek<{ ok: boolean }>("POST", "/auth/logout");
-    } finally {
-      clearStoredSessionToken();
-    }
+    clearStoredSessionToken();
+    clearBackendToken();
+    return { ok: true };
   },
 
-  profilleriGetir: () => istek<{ profiles: KayitliProfil[] }>("GET", "/profiles"),
+  profilleriGetir: async () => {
+    const records = await backendApi.listRecords<UserProfileRecordData>("user_profile");
+    return { profiles: records.map(profilFromRecord) };
+  },
 
-  profilKaydet: (data: { isim: string; kurumAdi: string; rol: string }) =>
-    istek<{ profile: KayitliProfil }>("POST", "/profiles", data),
+  profilKaydet: async (data: { isim: string; kurumAdi: string; rol: string }) => {
+    const now = new Date().toISOString();
+    const me = await backendApi.me().catch(() => null);
+    const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+    const record = await backendApi.createRecord<UserProfileRecordData>("user_profile", {
+      ...data,
+      userId: user?.id,
+      updatedAt: now,
+      createdAt: now,
+    });
+    return { profile: profilFromRecord(record) };
+  },
 
-  profilSil: (id: string) => istek<{ ok: boolean }>("DELETE", `/profiles/${id}`),
-
-  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
-  afisleriGetir: () => istek<{ posters: KayitliAfis[] }>("GET", "/posters"),
-
-  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
-  afisKaydet: (title: string, sablon: string, formData: unknown) =>
-    istek<{ poster: KayitliAfis }>("POST", "/posters", {
-      title,
-      sablon,
-      formData: JSON.stringify(formData),
-    }),
-
-  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
-  afisGuncelle: (id: number, title: string, sablon: string, formData: unknown) =>
-    istek<{ poster: KayitliAfis }>("PUT", `/posters/${id}`, {
-      title,
-      sablon,
-      formData: JSON.stringify(formData),
-    }),
+  profilSil: (id: string) => backendApi.deleteRecord(id),
 
   /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
-  afisSil: (id: number) => istek<{ ok: boolean }>("DELETE", `/posters/${id}`),
+  afisleriGetir: async () => ({ posters: [] as KayitliAfis[] }),
 
-  destekGonder: (mesaj: string, imageBase64?: string) =>
-    istek<{ ok: boolean }>("POST", "/support", { message: mesaj, imageBase64 }),
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
+  afisKaydet: async () => {
+    throw new Error("Afiş kaydı devre dışı.");
+  },
+
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
+  afisGuncelle: async () => {
+    throw new Error("Afiş kaydı devre dışı.");
+  },
+
+  /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
+  afisSil: async () => ({ ok: true }),
+
+  destekGonder: async (mesaj: string, imageBase64?: string) => {
+    const appUser = await aktifKullaniciBaglami();
+    await backendApi.createRecord<SupportRequestRecordData>("support_request", {
+      userId: appUser?.id ?? null,
+      userEmail: appUser?.email ?? null,
+      userName: appUser?.name ?? null,
+      message: mesaj,
+      imageBase64,
+      status: "yeni",
+      adminNote: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      province: appUser?.province ?? null,
+      district: appUser?.district ?? null,
+      institutionName: appUser?.institutionName ?? null,
+      institutionCode: appUser?.institutionCode ?? null,
+    });
+    await activityRecordOlustur("support_created", { source: "support_request" }).catch(() => null);
+    return { ok: true };
+  },
 
   destekMesajlari: () =>
-    istek<{ requests: DestekMesaji[] }>("GET", "/support/admin"),
+    destekKayitlari().then((requests) => ({ requests })),
 
-  adminStats: () => istek<AdminStats>("GET", "/support/stats"),
+  adminStats: async () => {
+    const [users, support, logs] = await Promise.all([
+      appUserRecords(),
+      destekKayitlari(),
+      backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
+    ]);
+    return {
+      totalUsers: users.length,
+      totalPosters: logs.filter((l) => l.action === "export_png" || l.action === "export_pdf").length,
+      totalSupport: support.length,
+      dailyUsers: [],
+      dailyPosters: [],
+      recentUsers: users.slice(0, 5).map((u) => ({ id: u.id, name: u.name, email: u.email, created_at: u.createdAt })),
+    };
+  },
 
-  adminOverview: () => istek<AdminOverview>("GET", "/admin/overview"),
+  adminOverview: async () => {
+    const dashboard = await api.adminDashboard();
+    const activity = await api.adminAktivite({ range: "7d" });
+    return {
+      totalUsers: dashboard.summary.totalUsers,
+      todayLogins: dashboard.summary.todayActiveUsers,
+      activeUsers7d: activity.summary.activeUsers,
+      totalSupport: dashboard.summary.openSupport,
+      activeInstitutions: dashboard.summary.active7dYurts,
+      passiveInstitutions: dashboard.summary.passive7dYurts,
+      totalPosters: activity.summary.exportPng + activity.summary.exportPdf,
+      dailyLogins: [],
+      districtActivityToday: dashboard.mintikaSummary.map((m) => ({
+        district: m.districtName,
+        province: "",
+        today_count: m.todayActiveUsers,
+      })),
+      recentLogins: activity.logs.filter((l) => l.action === "login").slice(0, 10).map((l) => ({
+        id: l.id,
+        name: l.userName ?? "Kullanıcı",
+        email: l.userEmail ?? "",
+        institution_name: l.institutionName,
+        district: l.district,
+        province: l.province,
+        role: "user",
+        last_login_at: l.createdAt,
+      })),
+    };
+  },
 
-  adminFiltreler: () => istek<AdminFiltreler>("GET", "/admin/filters"),
+  adminFiltreler: async () => {
+    const institutions = await institutionRecords();
+    const provinces = [...new Set(institutions.map((i) => i.province).filter((p): p is string => Boolean(p)))].sort((a, b) =>
+      a.localeCompare(b, "tr"),
+    );
+    const districts = [...new Map(institutions.map((i) => [i.districtName, {
+      district: i.districtName,
+      province: i.province ?? "",
+    }])).values()].filter((d) => d.district).sort((a, b) => a.district.localeCompare(b.district, "tr"));
+    return {
+      provinces,
+      districts,
+      institutions: institutions.map((i) => ({
+        institution_code: i.institutionCode,
+        institution_name: i.institutionName,
+        district: i.districtName,
+        province: i.province,
+      })),
+    };
+  },
 
-  adminKullanicilar: (params: Record<string, string | undefined> = {}) =>
-    istek<{ users: AdminKullanici[] }>("GET", `/admin/users${qs(params)}`),
+  adminKullanicilar: async (params: Record<string, string | undefined> = {}) => ({
+    users: await appUserRecords(params),
+  }),
 
-  adminKullaniciOlustur: (data: {
+  adminKullaniciOlustur: async (data: {
     email: string;
     password: string;
     name: string;
@@ -306,101 +1042,367 @@ export const api = {
     role?: KullaniciRol;
     isActive?: boolean;
     isAdmin?: boolean;
-  }) => istek<{ user: AdminKullanici }>("POST", "/admin/users", data),
+  }) => {
+    const existing = await appUserByEmail(data.email);
+    if (existing && !existing.deletedAt) throw new Error("Bu e-posta ile kullanıcı zaten var.");
 
-  adminKullaniciGuncelle: (id: string, data: Partial<AdminKullanici>) =>
-    istek<{ user: AdminKullanici }>("PATCH", `/admin/users/${id}`, data),
+    const auth = await registerAuthUserSafely({ email: data.email, password: data.password, name: data.name });
+    const authUser = kullaniciFromBackend(auth?.user);
+    const now = new Date().toISOString();
+    const institutionId = await kurumIdBul(data.institutionCode);
+    const role = data.role ?? (data.isAdmin ? "admin" : "user");
+    const permissions = permissionDefaults(role, data.isAdmin);
+    const payload: AppUserRecordData = {
+      id: authUser?.id ?? data.email,
+      authUserId: authUser?.id,
+      email: data.email,
+      name: data.name,
+      role,
+      isAdmin: data.isAdmin ?? role === "admin",
+      isActive: data.isActive ?? true,
+      district: data.district ?? null,
+      province: data.province ?? null,
+      institutionName: data.institutionName ?? null,
+      institutionCode: data.institutionCode ?? null,
+      institutionId,
+      allowedDistricts: permissions.allowedDistricts,
+      allowedCities: permissions.allowedCities,
+      allowedInstitutions: data.institutionCode ? [data.institutionCode] : permissions.allowedInstitutions,
+      reportPermissions: permissions.reportPermissions,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: null,
+      deletedAt: null,
+    };
+    const record = existing?.deletedAt
+      ? await backendApi.updateRecord<AppUserRecordData>(existing.id, "app_user", payload)
+      : await backendApi.createRecord<AppUserRecordData>("app_user", payload);
+    return { user: appUserFromRecord(record) };
+  },
 
-  adminSifreSifirla: (id: string, opts?: { password?: string; generate?: boolean }) =>
-    istek<{ ok: boolean; password?: string }>("POST", `/admin/users/${id}/reset-password`, {
-      password: opts?.password,
-      generate: opts?.generate ?? !opts?.password,
-    }),
+  adminKullaniciGuncelle: async (id: string, data: Partial<AdminKullanici>) => {
+    const current = await backendApi.getRecord<AppUserRecordData>(id);
+    const currentData = current.data ?? {};
+    const role = data.role ?? currentData.role ?? (data.isAdmin || currentData.isAdmin ? "admin" : "user");
+    const permissions = permissionDefaults(role, data.isAdmin ?? currentData.isAdmin);
+    const institutionCode = data.institutionCode ?? currentData.institutionCode ?? null;
+    const nextData: AppUserRecordData = {
+      ...currentData,
+      email: data.email ?? currentData.email,
+      name: data.name ?? currentData.name,
+      role,
+      isAdmin: data.isAdmin ?? currentData.isAdmin ?? role === "admin",
+      isActive: data.isActive ?? currentData.isActive ?? true,
+      district: data.district ?? currentData.district ?? null,
+      province: data.province ?? currentData.province ?? null,
+      institutionName: data.institutionName ?? currentData.institutionName ?? null,
+      institutionCode,
+      institutionId: data.institutionId ?? currentData.institutionId ?? await kurumIdBul(institutionCode),
+      allowedDistricts: data.allowedDistricts ?? currentData.allowedDistricts ?? permissions.allowedDistricts,
+      allowedCities: data.allowedCities ?? currentData.allowedCities ?? permissions.allowedCities,
+      allowedInstitutions: data.allowedInstitutions ?? currentData.allowedInstitutions ?? (institutionCode ? [institutionCode] : permissions.allowedInstitutions),
+      reportPermissions: data.reportPermissions ?? currentData.reportPermissions ?? permissions.reportPermissions,
+      updatedAt: new Date().toISOString(),
+    };
+    const record = await backendApi.updateRecord<AppUserRecordData>(id, "app_user", nextData);
+    return { user: appUserFromRecord(record) };
+  },
 
-  adminKullaniciSil: (id: string) =>
-    istek<{ ok: boolean; user: AdminKullanici }>("POST", `/admin/users/${id}/delete`),
+  adminSifreSifirla: async (id: string, opts?: { password?: string; generate?: boolean }) => {
+    const current = await backendApi.getRecord<AppUserRecordData>(id);
+    const currentData = current.data ?? {};
+    const password = opts?.password || `Nehari${Math.floor(100000 + Math.random() * 900000)}`;
+    await backendApi.updateRecord<AppUserRecordData>(id, "app_user", {
+      ...currentData,
+      passwordResetAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true, password };
+  },
 
-  adminTopluKurumImport: (data: AdminImportCommitRequest) =>
-    istek<AdminImportCommitResponse>("POST", "/admin/users/bulk-import", data),
+  adminKullaniciSil: async (id: string) => {
+    const r = await api.adminKullaniciGuncelle(id, {
+      isActive: false,
+      deletedAt: new Date().toISOString(),
+    } as Partial<AdminKullanici>);
+    return { ok: true, user: r.user };
+  },
 
-  adminBugunGirisler: (params: Record<string, string | undefined> = {}) =>
-    istek<{ count: number; logins: AdminKullanici[] }>("GET", `/admin/today-logins${qs(params)}`),
+  adminTopluKurumImport: async (data: AdminImportCommitRequest) => {
+    const institutions = await institutionRecords();
+    const institutionCodes = new Set(institutions.map((i) => i.institutionCode));
+    const users = await appUserRecords();
+    const emails = new Set(users.map((u) => u.email.toLocaleLowerCase("tr-TR")));
+    const byDistrict: Record<string, number> = {};
+    const errors: AdminImportCommitResponse["errors"] = [];
+    let addedInstitutions = 0;
+    let existingInstitutions = 0;
+    let skippedRows = 0;
+    let createdUsers = 0;
+    let existingUsers = 0;
 
-  adminKurumlar: (params: Record<string, string | undefined> = {}) =>
-    istek<{ institutions: AdminKurum[] }>("GET", `/admin/institutions${qs(params)}`),
+    for (const row of data.rows) {
+      const district = row.district?.trim();
+      const institutionName = row.institutionName?.trim();
+      if (!district || !institutionName) {
+        skippedRows += 1;
+        errors.push({ rowNumber: row.rowNumber, district, institutionName, reason: "Mıntıka veya kurum adı eksik." });
+        continue;
+      }
+      const institutionCode = row.institutionCode?.trim() || kurumKoduOner(district, institutionName);
+      byDistrict[district] = (byDistrict[district] ?? 0) + 1;
+      if (institutionCodes.has(institutionCode)) {
+        existingInstitutions += 1;
+      } else {
+        await api.adminYurtKayitOlustur({
+          institutionName,
+          districtName: district,
+          province: row.province,
+          institutionCode,
+          status: "active",
+        });
+        institutionCodes.add(institutionCode);
+        addedInstitutions += 1;
+      }
 
-  adminKullanimTakibi: (type: string, params: Record<string, string | undefined> = {}) =>
-    istek<{ users: AdminKullanici[]; inactiveInstitutions: unknown[] }>(
-      "GET",
-      `/admin/usage-tracking${qs({ type, ...params })}`,
-    ),
+      if (data.createUsers && row.email) {
+        const email = row.email.toLocaleLowerCase("tr-TR");
+        if (emails.has(email)) {
+          existingUsers += 1;
+        } else {
+          await api.adminKullaniciOlustur({
+            email,
+            password: data.defaultPassword || "Nehari2026",
+            name: row.name || institutionName,
+            district,
+            province: row.province,
+            institutionName,
+            institutionCode,
+            role: "user",
+            isActive: true,
+            isAdmin: false,
+          });
+          emails.add(email);
+          createdUsers += 1;
+        }
+      }
+    }
 
-  adminBolgeRaporu: (params: Record<string, string | undefined> = {}) =>
-    istek<{
-      summary: Record<string, number>;
-      users: AdminKullanici[];
-    }>("GET", `/admin/region-report${qs(params)}`),
+    return {
+      ok: true,
+      readRows: data.rows.length,
+      addedInstitutions,
+      existingInstitutions,
+      skippedRows,
+      createdUsers,
+      existingUsers,
+      byDistrict,
+      errors,
+    };
+  },
 
-  adminDestek: () => istek<{ requests: AdminDestek[] }>("GET", "/admin/support"),
+  adminBugunGirisler: async (params: Record<string, string | undefined> = {}) => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const logs = (await backendApi.listRecords<ActivityLogRecordData>("activity_log"))
+      .map(activityFromRecord)
+      .filter((log) => {
+        if (log.action !== "login") return false;
+        if (Date.parse(log.createdAt) < todayStart.getTime()) return false;
+        if (params.district && log.district !== params.district) return false;
+        if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
+        return true;
+      })
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    const usersByEmail = new Map((await appUserRecords()).map((u) => [u.email.toLocaleLowerCase("tr-TR"), u]));
+    const logins = logs.map((log) => {
+      const user = log.userEmail ? usersByEmail.get(log.userEmail.toLocaleLowerCase("tr-TR")) : undefined;
+      return {
+        id: log.userId ?? log.id,
+        email: log.userEmail ?? user?.email ?? "",
+        name: log.userName ?? user?.name ?? "Kullanıcı",
+        province: log.province,
+        district: log.district,
+        institutionName: log.institutionName,
+        institutionCode: log.institutionCode,
+        role: user?.role ?? "user",
+        isActive: user?.isActive ?? true,
+        isAdmin: user?.isAdmin ?? false,
+        lastLoginAt: log.createdAt,
+        createdAt: user?.createdAt ?? log.createdAt,
+        login_time: log.createdAt,
+      } satisfies AdminKullanici;
+    });
+    return { count: logins.length, logins };
+  },
 
-  adminDestekGuncelle: (id: number, data: { status?: string; adminNote?: string }) =>
-    istek<{ ok: boolean }>("PATCH", `/admin/support/${id}`, data),
+  adminKurumlar: async (params: Record<string, string | undefined> = {}) => {
+    const institutions = await institutionRecords(params);
+    return { institutions: institutions.map(kurumFromInstitution) };
+  },
 
-  adminSlugOner: (district: string, institutionName: string) =>
-    istek<{ code: string }>(
-      "GET",
-      `/admin/slug-suggest?district=${encodeURIComponent(district)}&institutionName=${encodeURIComponent(institutionName)}`,
-    ),
+  adminKullanimTakibi: async (_type: string, params: Record<string, string | undefined> = {}) => ({
+    users: await appUserRecords(params),
+    inactiveInstitutions: (await api.adminYurtTakibi(params)).yurts.filter((y) => y.activityStatus !== "bugun_aktif"),
+  }),
 
-  adminTrackedDistricts: () =>
-    istek<{ districts: string[] }>("GET", "/admin/tracked-districts"),
+  adminBolgeRaporu: async (params: Record<string, string | undefined> = {}) => {
+    const dashboard = await api.adminDashboard(params);
+    return {
+      summary: dashboard.summary as unknown as Record<string, number>,
+      users: await appUserRecords(params),
+    };
+  },
 
-  adminSettings: () =>
-    istek<{
+  adminDestek: async () => ({ requests: await destekKayitlari() }),
+
+  adminDestekGuncelle: async (id: string | number, data: { status?: string; adminNote?: string }) => {
+    const current = await backendApi.getRecord<SupportRequestRecordData>(id);
+    await backendApi.updateRecord<SupportRequestRecordData>(id, "support_request", {
+      ...(current.data ?? {}),
+      status: data.status ?? current.data?.status ?? "yeni",
+      adminNote: data.adminNote ?? current.data?.adminNote ?? null,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true };
+  },
+
+  adminSlugOner: async (district: string, institutionName: string) => ({
+    code: kurumKoduOner(district, institutionName),
+  }),
+
+  adminTrackedDistricts: async () => {
+    const records = await backendApi.listRecords<InstitutionRecordData>("institution").catch(() => []);
+    const districts = new Set<string>(TRACKED_DISTRICTS);
+    for (const record of records) {
+      const district = record.data?.districtName?.trim();
+      if (district) districts.add(district);
+    }
+    return { districts: [...districts].sort((a, b) => a.localeCompare(b, "tr")) };
+  },
+
+  adminSettings: async () => {
+    const record = await adminSettingsRecord();
+    return {
       settings: {
-        periodStart?: string | null;
-        periodEnd?: string | null;
-        seasonStart?: string | null;
-        seasonEnd?: string | null;
-      };
-    }>("GET", "/admin/settings"),
+        periodStart: record?.data?.periodStart ?? null,
+        periodEnd: record?.data?.periodEnd ?? null,
+        seasonStart: record?.data?.seasonStart ?? null,
+        seasonEnd: record?.data?.seasonEnd ?? null,
+      },
+    };
+  },
 
   adminSettingsKaydet: (data: {
     periodStart?: string;
     periodEnd?: string;
     seasonStart?: string;
     seasonEnd?: string;
-  }) => istek<{ ok: boolean; settings: unknown }>("PATCH", "/admin/settings", data),
+  }) => adminSettingsRecord().then(async (record) => {
+    const payload: AdminSettingRecordData = {
+      key: "default",
+      periodStart: data.periodStart || null,
+      periodEnd: data.periodEnd || null,
+      seasonStart: data.seasonStart || null,
+      seasonEnd: data.seasonEnd || null,
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = record
+      ? await backendApi.updateRecord<AdminSettingRecordData>(record.id, "admin_setting", payload)
+      : await backendApi.createRecord<AdminSettingRecordData>("admin_setting", payload);
+    return { ok: true, settings: saved.data ?? payload };
+  }),
 
-  adminDashboard: (params: Record<string, string | undefined> = {}) =>
-    istek<AdminDashboard>("GET", `/admin/dashboard${qs(params)}`),
+  adminDashboard: async (params: Record<string, string | undefined> = {}) => {
+    const data = await raporVerisi(params);
+    const summary = {
+      totalDistricts: data.mintikalar.length,
+      totalYurts: data.institutions.length,
+      totalUsers: data.users.length,
+      todayActiveYurts: data.yurts.filter((y) => y.todayLoginUsers > 0).length,
+      todayActiveUsers: new Set(data.allLogs.filter((l) => l.action === "login" && Date.parse(l.createdAt) >= new Date().setHours(0, 0, 0, 0)).map((l) => l.userId || l.userName).filter(Boolean)).size,
+      active7dYurts: data.yurts.filter((y) => y.logins7d > 0).length,
+      passive7dYurts: data.yurts.filter((y) => y.activityStatus === "pasif_7" || y.activityStatus === "pasif_30").length,
+      neverLoginYurts: data.yurts.filter((y) => y.activityStatus === "hic_giris_yok").length,
+      openSupport: data.yurts.reduce((sum, y) => sum + y.openSupport, 0),
+      dataIssueCount: data.users.filter((u) => !u.institutionCode || !u.district).length,
+      unmatchedUsers: data.users.filter((u) => !u.institutionCode || !u.district).length,
+    };
+    return {
+      range: data.range,
+      hasActivityLogs: data.allLogs.length > 0,
+      summary,
+      mintikaSummary: data.mintikalar,
+      attentionYurts: data.yurts
+        .filter((y) => y.activityStatus === "pasif_7" || y.activityStatus === "pasif_30" || y.activityStatus === "hic_giris_yok")
+        .slice(0, 12),
+    };
+  },
 
-  adminMintikaBoard: (params: Record<string, string | undefined> = {}) =>
-    istek<{ range: AdminRange; hasActivityLogs: boolean; mintikalar: AdminMintikaMetrik[] }>(
-      "GET",
-      `/admin/mintika-board${qs(params)}`,
-    ),
+  adminMintikaBoard: async (params: Record<string, string | undefined> = {}) => {
+    const data = await raporVerisi(params);
+    return {
+      range: data.range,
+      hasActivityLogs: data.allLogs.length > 0,
+      mintikalar: data.mintikalar,
+    };
+  },
 
-  adminYurtTakibi: (params: Record<string, string | undefined> = {}) =>
-    istek<{
-      range: AdminRange;
-      hasActivityLogs: boolean;
-      yurts: AdminYurtMetrik[];
-      total: number;
-    }>("GET", `/admin/yurt-tracking${qs(params)}`),
+  adminYurtTakibi: async (params: Record<string, string | undefined> = {}) => {
+    const data = await raporVerisi(params);
+    return {
+      range: data.range,
+      hasActivityLogs: data.allLogs.length > 0,
+      yurts: data.yurts,
+      total: data.yurts.length,
+    };
+  },
 
-  adminVeriSagligi: () => istek<AdminVeriSagligi>("GET", "/admin/data-health"),
+  adminVeriSagligi: () => veriSagligiUret(),
 
   adminVeriSagligiAksiyon: (data: AdminVeriSagligiAksiyonRequest) =>
-    istek<{ ok: boolean; affected: number }>("POST", "/admin/data-health/actions", data),
+    adminVeriSagligiAksiyonUygula(data),
 
-  adminAktivite: (params: Record<string, string | undefined> = {}) =>
-    istek<AdminAktiviteResponse>("GET", `/admin/activity-logs${qs(params)}`),
+  adminAktivite: async (params: Record<string, string | undefined> = {}) => {
+    const range = tarihAraligi(params);
+    const start = Date.parse(range.startIso);
+    const end = Date.parse(range.endIso);
+    const records = await backendApi.listRecords<ActivityLogRecordData>("activity_log");
+    let logs = records
+      .map(activityFromRecord)
+      .filter((log) => {
+        const time = Date.parse(log.createdAt);
+        if (!Number.isFinite(time) || time < start || time > end) return false;
+        if (params.action && log.action !== params.action) return false;
+        if (params.district && log.district !== params.district) return false;
+        if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
+        return true;
+      });
+    logs = activityYetkiFiltresi(logs, await aktifKullaniciBaglami());
+    logs.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    const activeUsers = new Set(logs.map((l) => l.userId || l.userName).filter(Boolean)).size;
+    const activeYurts = new Set(logs.map((l) => l.institutionCode).filter(Boolean)).size;
+    return {
+      range,
+      hasActivityLogs: logs.length > 0,
+      logs,
+      summary: {
+        loginCount: logs.filter((l) => l.action === "login").length,
+        activeYurts,
+        activeUsers,
+        exportPng: logs.filter((l) => l.action === "export_png").length,
+        exportPdf: logs.filter((l) => l.action === "export_pdf").length,
+        shareWhatsapp: logs.filter((l) => l.action === "share_whatsapp").length,
+        supportCreated: logs.filter((l) => l.action === "support_created").length,
+      },
+    };
+  },
 
-  adminYurtKayitlari: (params: Record<string, string | undefined> = {}) =>
-    istek<{ institutions: AdminYurtKayit[] }>("GET", `/admin/institutions-registry${qs(params)}`),
+  adminYurtKayitlari: async (params: Record<string, string | undefined> = {}) => ({
+    institutions: await institutionRecords(params),
+  }),
 
-  adminYurtKayitOlustur: (data: {
+  adminYurtKayitOlustur: async (data: {
     institutionName: string;
     districtName: string;
     province?: string;
@@ -408,22 +1410,91 @@ export const api = {
     expectedUserCount?: number;
     status?: string;
     notes?: string;
-  }) => istek<{ institution: AdminYurtKayit }>("POST", "/admin/institutions-registry", data),
+  }) => {
+    const now = new Date().toISOString();
+    const record = await backendApi.createRecord<InstitutionRecordData>("institution", {
+      institutionName: data.institutionName,
+      institutionCode: data.institutionCode?.trim() || kurumKoduOner(data.districtName, data.institutionName),
+      districtName: data.districtName,
+      province: data.province ?? null,
+      expectedUserCount: data.expectedUserCount ?? null,
+      status: data.status ?? "active",
+      notes: data.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { institution: institutionFromRecord(record) };
+  },
 
   adminYurtKayitGuncelle: (
     id: string,
-    data: Partial<{ institutionName: string; districtName: string; province: string; status: string; notes: string }>,
-  ) => istek<{ institution: AdminYurtKayit }>("PATCH", `/admin/institutions-registry/${id}`, data),
+    data: Partial<{
+      institutionName: string;
+      districtName: string;
+      province: string;
+      institutionCode: string;
+      expectedUserCount: number;
+      status: string;
+      notes: string;
+    }>,
+  ) => backendApi.getRecord<InstitutionRecordData>(id).then(async (current) => {
+    const currentData = current.data ?? {};
+    const nextData: InstitutionRecordData = {
+      ...currentData,
+      ...data,
+      province: data.province ?? currentData.province ?? null,
+      expectedUserCount: data.expectedUserCount ?? currentData.expectedUserCount ?? null,
+      notes: data.notes ?? currentData.notes ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!nextData.institutionCode && nextData.districtName && nextData.institutionName) {
+      nextData.institutionCode = kurumKoduOner(nextData.districtName, nextData.institutionName);
+    }
+    const record = await backendApi.updateRecord<InstitutionRecordData>(id, "institution", nextData);
+    return { institution: institutionFromRecord(record) };
+  }),
 
-  activityLog: (action: string) => istek<{ ok: boolean }>("POST", "/activity/log", { action }),
+  activityLog: async (action: string) => {
+    await activityRecordOlustur(action);
+    return { ok: true };
+  },
 
-  adminReconcile: () =>
-    istek<{
-      linked: number;
-      institutionsCreated: number;
-      skipped: number;
-      unmatched: { id: string; name: string; email: string; reason: string }[];
-    }>("POST", "/admin/reconcile"),
+  adminReconcile: async () => {
+    const [users, institutions] = await Promise.all([appUserRecords(), institutionRecords()]);
+    const byCode = new Map(institutions.map((i) => [i.institutionCode, i]));
+    let linked = 0;
+    let skipped = 0;
+    const unmatched: { id: string; name: string; email: string; reason: string }[] = [];
+
+    for (const user of users) {
+      if (!user.institutionCode) {
+        skipped += 1;
+        unmatched.push({ id: user.id, name: user.name, email: user.email, reason: "Kurum kodu yok." });
+        continue;
+      }
+      const institution = byCode.get(user.institutionCode);
+      if (!institution) {
+        skipped += 1;
+        unmatched.push({ id: user.id, name: user.name, email: user.email, reason: "Kurum envanterde yok." });
+        continue;
+      }
+      await api.adminKullaniciGuncelle(user.id, {
+        district: institution.districtName,
+        province: institution.province,
+        institutionName: institution.institutionName,
+        institutionCode: institution.institutionCode,
+        institutionId: institution.id,
+      });
+      linked += 1;
+    }
+
+    return {
+      linked,
+      institutionsCreated: 0,
+      skipped,
+      unmatched,
+    };
+  },
 };
 
 export interface AdminRange {
@@ -560,6 +1631,7 @@ export interface AdminAktiviteLog {
   createdAt: string;
   action: string;
   userId: string | null;
+  userEmail?: string | null;
   userName: string | null;
   institutionCode: string | null;
   institutionName: string | null;

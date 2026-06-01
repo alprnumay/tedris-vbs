@@ -1,5 +1,6 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { api, type KullaniciBilgisi } from "../lib/api";
+import { backendApi } from "../lib/backendApi";
 
 interface Props {
   onGiris: (kullanici: KullaniciBilgisi) => void;
@@ -28,6 +29,7 @@ export default function GirisEkrani({ onGiris }: Props) {
     try {
       if (mod === "giris") {
         const r = await api.girisYap(email, sifre);
+        void backendApi.usageEvent("login", { source: "veli_bilgilendirme", mode: "giris" }).catch(() => {});
         onGiris(r.user);
       } else {
         if (!adSoyad.trim()) {
@@ -36,6 +38,7 @@ export default function GirisEkrani({ onGiris }: Props) {
           return;
         }
         const r = await api.kayitOl(email, sifre, adSoyad.trim());
+        void backendApi.usageEvent("login", { source: "veli_bilgilendirme", mode: "kayit" }).catch(() => {});
         onGiris(r.user);
       }
     } catch (err) {
@@ -130,7 +133,7 @@ export default function GirisEkrani({ onGiris }: Props) {
             fontSize: 20, fontWeight: 800, color: "#0f172a",
             lineHeight: 1.2, marginBottom: 6,
           }}>
-            Tedris Vbs
+            Nehari Veli Bilgilendirme
           </h1>
           <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
             Öğretmen ve yurt hocaları için afiş oluşturucu
@@ -300,3 +303,4 @@ export default function GirisEkrani({ onGiris }: Props) {
     </div>
   );
 }
+

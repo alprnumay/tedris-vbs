@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+﻿import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { supportRequestsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
@@ -23,9 +23,9 @@ async function emailGonder(userName: string | undefined, userEmail: string | und
     });
 
     await transporter.sendMail({
-      from: `"Tedris VBS Destek" <${smtpUser}>`,
+      from: `"Nehari Veli Bilgilendirme Destek" <${smtpUser}>`,
       to: DESTEK_EMAIL,
-      subject: "Tedris VBS — Yeni Destek Talebi",
+      subject: "Nehari Veli Bilgilendirme — Yeni Destek Talebi",
       text: [
         `Kullanıcı: ${userName || "Bilinmiyor"}`,
         `E-posta: ${userEmail || "—"}`,
@@ -156,3 +156,4 @@ router.get("/support/stats", requireAdmin, async (_req: Request, res: Response) 
 });
 
 export default router;
+

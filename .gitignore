@@ -31,6 +31,18 @@ node_modules
 !.vscode/extensions.json
 
 # misc
+/.env
+.env
+/.env.production
+.env.production
+*.env
+*.secret
+*.secrets
+secrets/
+secret/
+/.env.local
+.env.local
+.env.*.local
 /.sass-cache
 /connect.lock
 /coverage

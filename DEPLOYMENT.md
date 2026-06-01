@@ -1,4 +1,4 @@
-# Tedris VBS — Vercel + Render dağıtımı
+﻿# Nehari Veli Bilgilendirme — Vercel + Render dağıtımı
 
 Monorepo yapısı korunur: frontend `artifacts/veli-bilgilendirme`, backend `artifacts/api-server`.
 
@@ -121,7 +121,8 @@ Kökten kısayol: `pnpm dev` → yalnızca Vite (port 3000).
 
 ---
 
-## 7. Railway’den geçiş
+## 7. Eski API’den geçiş
 
 - Poster kaydı sunucuda **410** (devre dışı); afişler yalnızca tarayıcıda üretilir.
-- Eski `VITE_API_BASE_URL` Railway adresini gösteriyorsa Vercel env’i Render URL’si ile güncelleyin.
+- `VITE_API_BASE_URL` değerini yeni VPS API adresiyle güncel tutun.
+

@@ -138,14 +138,18 @@ export function IcSlogan({ config, y, fontSize = 14 }: { config: LogoConfigV1; y
 /** Kalkan altı — tam kurum adı güçlü */
 export function KalkanAltiBaslik({
   config,
+  x = 256,
   y,
   anaSize = 32,
   altSize = 17,
+  anchor = "middle",
 }: {
   config: LogoConfigV1;
+  x?: number;
   y: number;
   anaSize?: number;
   altSize?: number;
+  anchor?: "start" | "middle" | "end";
 }) {
   const { ana, alt } = kurumBaslikHiyerarsi(config.organization.kurumAdi);
   const font = fontFamilyAl(config.variant.fontPairId);
@@ -153,11 +157,11 @@ export function KalkanAltiBaslik({
 
   return (
     <>
-      <text x={256} y={y} textAnchor="middle" fill={palette.text} fontFamily={font} fontSize={anaSize} fontWeight={800} filter={`url(#${logoUid(config)}-sh)`}>
+      <text x={x} y={y} textAnchor={anchor} fill={palette.text} fontFamily={font} fontSize={anaSize} fontWeight={800} filter={`url(#${logoUid(config)}-sh)`}>
         {ana.toLocaleUpperCase("tr-TR")}
       </text>
       {alt ? (
-        <text x={256} y={y + anaSize * 0.85} textAnchor="middle" fill={palette.primary} fontFamily={font} fontSize={altSize} fontWeight={600} letterSpacing={0.8}>
+        <text x={x} y={y + anaSize * 0.85} textAnchor={anchor} fill={palette.primary} fontFamily={font} fontSize={altSize} fontWeight={600} letterSpacing={0.8}>
           {alt.toLocaleUpperCase("tr-TR")}
         </text>
       ) : null}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { ArrowLeft, ChevronLeft, ChevronRight, MessageCircle, Maximize2, Scan } from "lucide-react";
@@ -198,7 +198,7 @@ export function KolayAfisModulu({
       const dataUrl = await posterPngYakala();
       if (!dataUrl) return;
       const link = document.createElement("a");
-      link.download = `tedris-afis-${seciliAlt?.varyant ?? "afis"}.png`;
+      link.download = `nehari-afis-${seciliAlt?.varyant ?? "afis"}.png`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
@@ -221,7 +221,7 @@ export function KolayAfisModulu({
       const imgH = (imgW * (downloadRef.current?.offsetHeight ?? afisBoy.minHeight)) / afisBoy.width;
       const finalH = Math.min(imgH, pdfH - margin * 2);
       pdf.addImage(dataUrl, "PNG", margin, (pdfH - finalH) / 2, imgW, finalH);
-      pdf.save(`tedris-afis-${seciliAlt?.varyant ?? "afis"}.pdf`);
+      pdf.save(`nehari-afis-${seciliAlt?.varyant ?? "afis"}.pdf`);
     } finally {
       setPdfYukleniyor(false);
     }
@@ -394,3 +394,4 @@ export function KolayAfisModulu({
     </div>
   );
 }
+

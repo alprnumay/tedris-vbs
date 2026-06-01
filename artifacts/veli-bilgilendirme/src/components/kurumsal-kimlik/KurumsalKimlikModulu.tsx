@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+﻿import { useRef, useState } from "react";
 import type { KullaniciBilgisi } from "@/lib/api";
 import { logoOnerileriUret, sonrakiVaryasyonIndex } from "@/lib/logo/logoMotor";
 import { logoToPng, pngIndir } from "@/lib/logo/logoPngExport";
@@ -71,7 +71,7 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
       const ad = (secili.organization.kisaAd || secili.organization.kurumAdi || "logo")
         .replace(/\s+/g, "-")
         .toLowerCase();
-      pngIndir(dataUrl, `tedris-logo-${ad}.png`);
+      pngIndir(dataUrl, `nehari-logo-${ad}.png`);
     } finally {
       setIndiriliyor(false);
     }
@@ -181,3 +181,4 @@ export function KurumsalKimlikModulu({ kullanici, onAnaSayfa, onDestek, onCikis 
     </div>
   );
 }
+

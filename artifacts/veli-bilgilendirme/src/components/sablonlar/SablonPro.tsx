@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+﻿import type { CSSProperties } from "react";
 import { FormData, SablonTuru } from "../../types";
 import { baslikolustur } from "../../lib/dil";
 
@@ -120,7 +120,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
   const footer = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderTop: `1px solid ${dark ? "rgba(255,255,255,.12)" : "#e2e8f0"}`, paddingTop: 14 }}>
       <div><div style={{ fontSize: 14, fontWeight: 900 }}>{form.isim || "Sorumlu"}</div><div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,.6)" : "#64748b" }}>{form.rol || "Kurum Sorumlusu"}</div></div>
-      <div style={{ color: cfg.accent, fontSize: 11, fontWeight: 900 }}>{form.kurumAdi || "Tedris VBS"}</div>
+      <div style={{ color: cfg.accent, fontSize: 11, fontWeight: 900 }}>{form.kurumAdi || "Nehari Veli Bilgilendirme"}</div>
     </div>
   );
 
@@ -148,3 +148,4 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
     </div>
   );
 }
+

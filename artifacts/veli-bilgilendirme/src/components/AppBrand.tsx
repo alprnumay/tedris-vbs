@@ -1,4 +1,4 @@
-export function AppBrand({
+﻿export function AppBrand({
   kullaniciAdi,
   kompakt = false,
 }: {
@@ -23,9 +23,10 @@ export function AppBrand({
         </svg>
       </div>
       <div className="tedris-brand__text">
-        <h1>Tedris Vbs</h1>
+        <h1>Nehari Veli Bilgilendirme</h1>
         <p>{kullaniciAdi || "kurum iletişim paneli"}</p>
       </div>
     </div>
   );
 }
+

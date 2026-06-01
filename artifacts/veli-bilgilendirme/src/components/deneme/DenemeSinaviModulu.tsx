@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { KullaniciBilgisi } from "@/lib/api";
@@ -160,7 +160,7 @@ export function DenemeSinaviModulu({ kullanici, onAnaSayfa, onDestek, onYonetim,
         window.open(dataUrl, "_blank");
       } else {
         const link = document.createElement("a");
-        link.download = `tedris-deneme-sinavi-${form.sablon}.png`;
+        link.download = `nehari-deneme-sinavi-${form.sablon}.png`;
         link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
@@ -187,7 +187,7 @@ export function DenemeSinaviModulu({ kullanici, onAnaSayfa, onDestek, onYonetim,
       const y = (pdfH - finalH) / 2;
 
       pdf.addImage(dataUrl, "PNG", margin, y, imgW, finalH);
-      pdf.save(`tedris-deneme-sinavi-${form.sablon}.pdf`);
+      pdf.save(`nehari-deneme-sinavi-${form.sablon}.pdf`);
     } finally {
       setPdfYukleniyor(false);
     }
@@ -213,7 +213,7 @@ export function DenemeSinaviModulu({ kullanici, onAnaSayfa, onDestek, onYonetim,
           if (navigator.canShare({ files: [file] })) {
             await navigator.share({
               files: [file],
-              title: "Tedris VBS — Deneme sınavı afişi",
+              title: "Nehari Veli Bilgilendirme — Deneme sınavı afişi",
               text: metin,
             });
             return;
@@ -424,3 +424,4 @@ export function DenemeSinaviModulu({ kullanici, onAnaSayfa, onDestek, onYonetim,
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { ArrowLeft, MessageCircle, Maximize2, Scan } from "lucide-react";
@@ -170,7 +170,7 @@ export function YatiliProgramModulu({ kullanici, onAnaSayfa, onDestek, onCikis }
         window.open(dataUrl, "_blank");
       } else {
         const link = document.createElement("a");
-        link.download = `tedris-yatili-alistirma-${form.sablon}.png`;
+        link.download = `nehari-yatili-alistirma-${form.sablon}.png`;
         link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
@@ -195,7 +195,7 @@ export function YatiliProgramModulu({ kullanici, onAnaSayfa, onDestek, onCikis }
       const finalH = Math.min(imgH, pdfH - margin * 2);
       const y = (pdfH - finalH) / 2;
       pdf.addImage(dataUrl, "PNG", margin, y, imgW, finalH);
-      pdf.save(`tedris-yatili-alistirma-${form.sablon}.pdf`);
+      pdf.save(`nehari-yatili-alistirma-${form.sablon}.pdf`);
     } finally {
       setPdfYukleniyor(false);
     }
@@ -211,7 +211,7 @@ export function YatiliProgramModulu({ kullanici, onAnaSayfa, onDestek, onCikis }
           const blob = await (await fetch(dataUrl)).blob();
           const file = new File([blob], "yatili-alistirma.png", { type: "image/png" });
           if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: "Tedris VBS — Yatılı alıştırma afişi", text: metin });
+            await navigator.share({ files: [file], title: "Nehari Veli Bilgilendirme — Yatılı alıştırma afişi", text: metin });
             return;
           }
         }
@@ -362,3 +362,4 @@ export function YatiliProgramModulu({ kullanici, onAnaSayfa, onDestek, onCikis }
     </div>
   );
 }
+

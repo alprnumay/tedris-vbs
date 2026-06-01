@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   api,
   type AdminKullanici,
@@ -150,7 +150,7 @@ export default function AdminSayfasi() {
       if (aktifSekme === "veri" || aktifSekme === "excel") {
         jobs.push(api.adminVeriSagligi().then(setVeriSagligi));
       }
-      if (aktifSekme === "aktivite") {
+      if (aktifSekme === "aktivite" || aktifSekme === "excel") {
         jobs.push(
           api
             .adminAktivite({ ...fp, action: aktiviteAction || undefined })
@@ -232,7 +232,7 @@ export default function AdminSayfasi() {
   });
 
   const excelIndir = async (tip: "genel" | "mintika" | "yurt" | "kullanici" | "aktivite" | "veri") => {
-    const ozet = dashboard?.summary ?? {};
+    const ozet = dashboard?.summary;
     const raporAdi =
       tip === "genel" ? "Genel Bakış" :
       tip === "mintika" ? "Mıntıka Raporu" :
@@ -244,11 +244,11 @@ export default function AdminSayfasi() {
       rangeLabel: dashboard?.range.label ?? tarihAralik,
       filtreler: filtreMetni(),
       ozet: {
-        "Toplam yurt": ozet.totalYurts ?? yurts.length,
-        "Toplam kullanıcı": ozet.totalUsers ?? 0,
-        "Bugün aktif yurt": ozet.todayActiveYurts ?? 0,
-        "7+ gün pasif yurt": ozet.passive7dYurts ?? 0,
-        "Açık destek": ozet.openSupport ?? 0,
+        "Toplam yurt": ozet?.totalYurts ?? yurts.length,
+        "Toplam kullanıcı": ozet?.totalUsers ?? 0,
+        "Bugün aktif yurt": ozet?.todayActiveYurts ?? 0,
+        "7+ gün pasif yurt": ozet?.passive7dYurts ?? 0,
+        "Açık destek": ozet?.openSupport ?? 0,
       },
       mintikalar: tip !== "yurt" ? mintikalar : undefined,
       yurts: tip !== "mintika" ? yurts : undefined,
@@ -917,9 +917,9 @@ function RaporTablo({
               {showActions && (
                 <td style={{ padding: 8 }}>
                   {onPasif && <button type="button" onClick={() => onPasif(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>{u.isActive ? "Pasif" : "Aktif"}</button>}
-                  <button type="button" onClick={() => navigator.clipboard.writeText(`Tedris VBS giriş bilgisi\nE-posta: ${u.email}\nKurum: ${u.institutionName || "—"}\nMıntıka: ${u.district || "—"}\nRol: ${ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}`)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>Giriş bilgisi kopyala</button>
+                  <button type="button" onClick={() => navigator.clipboard.writeText(`Nehari Veli Bilgilendirme giriş bilgisi\nE-posta: ${u.email}\nKurum: ${u.institutionName || "—"}\nMıntıka: ${u.district || "—"}\nRol: ${ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}`)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>Giriş bilgisi kopyala</button>
                   {onSifre && <button type="button" onClick={() => onSifre(u)} style={{ fontSize: 10, cursor: "pointer" }}>Şifre sıfırla</button>}
-                  <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji(u))} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer" }}>Hatırlatma</button>
+                  <button type="button" onClick={() => navigator.clipboard.writeText(hatirlatmaMesaji({ name: u.name, email: u.email, institutionName: u.institutionName ?? undefined, district: u.district ?? undefined }))} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer" }}>Hatırlatma</button>
                   {onSil && <button type="button" onClick={() => onSil(u)} style={{ fontSize: 10, display: "block", marginTop: 4, cursor: "pointer", color: "#dc2626" }}>Sil</button>}
                 </td>
               )}
@@ -931,3 +931,4 @@ function RaporTablo({
     </div>
   );
 }
+

@@ -6,7 +6,7 @@ export function isDevelopmentEnv(): boolean {
 }
 
 /**
- * Frontend ve API farklı origin (Railway/Vercel+Render).
+ * Frontend ve API farklı origin.
  * NODE_ENV production olmasa bile cross-site sid gerekir.
  */
 export function useCrossSiteSessionCookie(): boolean {
