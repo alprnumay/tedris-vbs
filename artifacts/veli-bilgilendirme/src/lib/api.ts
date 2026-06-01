@@ -3,6 +3,7 @@ import { kurumKoduOner } from "./kurumSlug";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
+const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
 
 /** localStorage engellense bile oturum için bellek yedegi */
 let memorySessionToken: string | null = null;
@@ -62,7 +63,7 @@ interface InstitutionRecordData {
   updatedAt?: string;
 }
 
-type ReportPermission = "overview" | "district" | "institution" | "users" | "activity" | "excel";
+type ReportPermission = "overview" | "district" | "institution" | "users" | "activity" | "excel" | "all";
 
 interface AppUserRecordData {
   id?: string;
@@ -265,6 +266,75 @@ function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullan
     name: appUser.name || user.name,
     isAdmin: appUser.isAdmin || user.isAdmin,
   };
+}
+
+function isPrimaryAdminEmail(email?: string | null): boolean {
+  return email?.trim().toLocaleLowerCase("tr-TR") === PRIMARY_ADMIN_EMAIL;
+}
+
+function primaryAdminFields(): Pick<AppUserRecordData, "role" | "isAdmin" | "isActive" | "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions" | "deletedAt"> {
+  return {
+    role: "super_admin",
+    isAdmin: true,
+    isActive: true,
+    allowedCities: [],
+    allowedDistricts: [],
+    allowedInstitutions: [],
+    reportPermissions: ["all"],
+    deletedAt: null,
+  };
+}
+
+function primaryAdminEksikMi(user: AdminKullanici): boolean {
+  return !(
+    user.role === "super_admin" &&
+    user.isAdmin &&
+    user.isActive &&
+    user.reportPermissions?.includes("all") &&
+    !user.deletedAt
+  );
+}
+
+async function ensurePrimaryAdminAppUser(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {
+  if (!isPrimaryAdminEmail(authUser.email)) return appUserByEmail(authUser.email);
+
+  const existing = await appUserByEmail(authUser.email).catch(() => null);
+  const now = new Date().toISOString();
+  const adminFields = primaryAdminFields();
+
+  if (existing) {
+    if (!primaryAdminEksikMi(existing)) return existing;
+    const current = await backendApi.getRecord<AppUserRecordData>(existing.id);
+    const record = await backendApi.updateRecord<AppUserRecordData>(existing.id, "app_user", {
+      ...(current.data ?? {}),
+      id: authUser.id,
+      authUserId: authUser.id,
+      email: authUser.email,
+      name: authUser.name,
+      ...adminFields,
+      updatedAt: now,
+      createdAt: current.data?.createdAt ?? existing.createdAt ?? now,
+      lastLoginAt: current.data?.lastLoginAt ?? existing.lastLoginAt ?? null,
+    });
+    return appUserFromRecord(record);
+  }
+
+  const record = await backendApi.createRecord<AppUserRecordData>("app_user", {
+    id: authUser.id,
+    authUserId: authUser.id,
+    email: authUser.email,
+    name: authUser.name,
+    province: null,
+    district: null,
+    institutionName: null,
+    institutionCode: null,
+    institutionId: null,
+    ...adminFields,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: null,
+  });
+  return appUserFromRecord(record);
 }
 
 function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
@@ -823,7 +893,7 @@ export const api = {
     const r = await backendApi.me();
     const user = kullaniciFromBackend(r.user ?? (r as BackendUser));
     if (!user) return { user: null };
-    const appUser = await appUserByEmail(user.email).catch(() => null);
+    const appUser = await ensurePrimaryAdminAppUser(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
@@ -833,7 +903,7 @@ export const api = {
     const r = await backendApi.login({ email, password });
     const user = kullaniciFromBackend(r.user);
     if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    const appUser = await appUserByEmail(user.email).catch(() => null);
+    const appUser = await ensurePrimaryAdminAppUser(user).catch(() => null);
     if (appUser) {
       await backendApi.updateRecord<AppUserRecordData>(appUser.id, "app_user", {
         email: appUser.email,
@@ -866,7 +936,7 @@ export const api = {
     const r = await backendApi.register({ email, password, name });
     const user = kullaniciFromBackend(r.user);
     if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    const existing = await appUserByEmail(user.email).catch(() => null);
+    const existing = await ensurePrimaryAdminAppUser(user).catch(() => null);
     if (!existing) {
       const now = new Date().toISOString();
       const permissions = permissionDefaults("user", false);
