@@ -94,6 +94,7 @@ export default function AdminSayfasi() {
   const [sezonBaslangic, setSezonBaslangic] = useState("");
   const [sezonBitis, setSezonBitis] = useState("");
   const [silinecekKullanici, setSilinecekKullanici] = useState<AdminKullanici | null>(null);
+  const [silmeOnayAsamasi, setSilmeOnayAsamasi] = useState<1 | 2>(1);
   const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
   const [importYukleniyor, setImportYukleniyor] = useState(false);
   const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(false);
@@ -312,7 +313,13 @@ export default function AdminSayfasi() {
     if (!silinecekKullanici) return;
     await api.adminKullaniciSil(silinecekKullanici.id);
     setSilinecekKullanici(null);
+    setSilmeOnayAsamasi(1);
     await veriYukle();
+  };
+
+  const silmeModalAc = (u: AdminKullanici) => {
+    setSilinecekKullanici(u);
+    setSilmeOnayAsamasi(1);
   };
 
   const seciliIssueUserIds = () =>
@@ -646,7 +653,7 @@ export default function AdminSayfasi() {
               </FiltreAlan>
               <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
-            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onSil={setSilinecekKullanici} showActions showRol />
+            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onSil={silmeModalAc} showActions showRol />
           </div>
         )}
 
@@ -819,13 +826,26 @@ export default function AdminSayfasi() {
           <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
             <div style={{ fontSize: 16, fontWeight: 900, color: "#991b1b" }}>Kullanıcıyı sil / pasifleştir</div>
             <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.55 }}>
-              Bu kullanıcı silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?
-              Activity log kayıtları korunur; kullanıcı raporlarda aktif kullanıcı gibi sayılmaz.
+              {silmeOnayAsamasi === 1
+                ? "Bu kullanıcı silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?"
+                : "Son onay: Bu kullanıcı artık kullanıcı listesinde görünmeyecek ve aktif raporlara dahil edilmeyecek."}
+              {" "}Activity log kayıtları korunur.
             </p>
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{silinecekKullanici.name} · {silinecekKullanici.email}</div>
+            {normalizeRole(silinecekKullanici.role, silinecekKullanici.isAdmin) === "admin" && (
+              <div style={{ fontSize: 12, color: "#991b1b", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: 10, marginBottom: 12 }}>
+                Bu kayıt admin yetkisine sahip. Silmek için iki onay gerekir.
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => setSilinecekKullanici(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
-              <button type="button" onClick={kullaniciSil} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800 }}>Evet, sil</button>
+              <button type="button" onClick={() => { setSilinecekKullanici(null); setSilmeOnayAsamasi(1); }} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
+              <button
+                type="button"
+                onClick={() => silmeOnayAsamasi === 1 ? setSilmeOnayAsamasi(2) : void kullaniciSil()}
+                style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800 }}
+              >
+                {silmeOnayAsamasi === 1 ? "İlk onayı ver" : "Son onay: sil"}
+              </button>
             </div>
           </div>
         </div>
