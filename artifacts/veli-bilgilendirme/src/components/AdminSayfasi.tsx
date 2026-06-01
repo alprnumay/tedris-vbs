@@ -62,6 +62,12 @@ const TARIH_SECENEKLERI = [
   { v: "custom", l: "Özel aralık" },
 ];
 
+const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
+
+function kullaniciSilinebilirMi(user: AdminKullanici): boolean {
+  return user.email.trim().toLocaleLowerCase("tr-TR") !== PRIMARY_ADMIN_EMAIL;
+}
+
 export default function AdminSayfasi() {
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [yukleniyor, setYukleniyor] = useState(true);
@@ -95,6 +101,8 @@ export default function AdminSayfasi() {
   const [sezonBitis, setSezonBitis] = useState("");
   const [silinecekKullanici, setSilinecekKullanici] = useState<AdminKullanici | null>(null);
   const [silmeOnayAsamasi, setSilmeOnayAsamasi] = useState<1 | 2>(1);
+  const [seciliKullaniciIds, setSeciliKullaniciIds] = useState<string[]>([]);
+  const [topluSilYukleniyor, setTopluSilYukleniyor] = useState(false);
   const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
   const [importYukleniyor, setImportYukleniyor] = useState(false);
   const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(false);
@@ -181,6 +189,32 @@ export default function AdminSayfasi() {
   useEffect(() => {
     if (!yukleniyor) veriYukle();
   }, [aktifSekme, tarihAralik, yurtPreset, aktiviteAction]);
+
+  useEffect(() => {
+    const mevcutIds = new Set(kullanicilar.map((u) => u.id));
+    setSeciliKullaniciIds((prev) => prev.filter((id) => mevcutIds.has(id)));
+  }, [kullanicilar]);
+
+  const silinebilirKullanicilar = useMemo(
+    () => kullanicilar.filter(kullaniciSilinebilirMi),
+    [kullanicilar],
+  );
+
+  const seciliSilinebilirKullanicilar = useMemo(
+    () => silinebilirKullanicilar.filter((u) => seciliKullaniciIds.includes(u.id)),
+    [silinebilirKullanicilar, seciliKullaniciIds],
+  );
+
+  const tumKullanicilarSecili = silinebilirKullanicilar.length > 0
+    && silinebilirKullanicilar.every((u) => seciliKullaniciIds.includes(u.id));
+
+  const kullaniciSec = (id: string, checked: boolean) => {
+    setSeciliKullaniciIds((prev) => checked ? [...new Set([...prev, id])] : prev.filter((current) => current !== id));
+  };
+
+  const tumKullanicilariSec = (checked: boolean) => {
+    setSeciliKullaniciIds(checked ? silinebilirKullanicilar.map((u) => u.id) : []);
+  };
 
   const kullaniciPasif = async (u: AdminKullanici) => {
     await api.adminKullaniciGuncelle(u.id, { isActive: !u.isActive } as Partial<AdminKullanici>);
@@ -315,12 +349,42 @@ export default function AdminSayfasi() {
     await api.adminKullaniciSil(silinecekKullanici.id);
     setSilinecekKullanici(null);
     setSilmeOnayAsamasi(1);
+    setSeciliKullaniciIds((prev) => prev.filter((id) => id !== silinecekKullanici.id));
     await veriYukle();
   };
 
   const silmeModalAc = (u: AdminKullanici) => {
+    if (!kullaniciSilinebilirMi(u)) {
+      alert("Ana admin kullanıcısı silinemez.");
+      return;
+    }
     setSilinecekKullanici(u);
     setSilmeOnayAsamasi(1);
+  };
+
+  const topluKullaniciSil = async (mode: "selected" | "all") => {
+    const targets = mode === "all" ? silinebilirKullanicilar : seciliSilinebilirKullanicilar;
+    if (targets.length === 0) {
+      alert(mode === "all" ? "Silinebilecek kullanıcı yok." : "Silmek için kullanıcı seçin.");
+      return;
+    }
+    const label = mode === "all" ? "listedeki tüm silinebilir kullanıcı" : "seçili kullanıcı";
+    const onay = window.confirm(`${targets.length} ${label} silinecek/pasifleştirilecek. Ana admin korunur. Devam edilsin mi?`);
+    if (!onay) return;
+
+    setTopluSilYukleniyor(true);
+    try {
+      for (const user of targets) {
+        await api.adminKullaniciSil(user.id);
+      }
+      setSeciliKullaniciIds([]);
+      await veriYukle();
+      alert(`${targets.length} kullanıcı silindi/pasifleştirildi.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Toplu silme başarısız.");
+    } finally {
+      setTopluSilYukleniyor(false);
+    }
   };
 
   const seciliIssueUserIds = () =>
@@ -674,7 +738,33 @@ export default function AdminSayfasi() {
               </FiltreAlan>
               <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
-            <RaporTablo kullanicilar={kullanicilar} onPasif={kullaniciPasif} onSifre={sifreSifirla} onSil={silmeModalAc} showActions showRol />
+            <div style={{ background: "#fff", borderRadius: 14, padding: 12, border: "1.5px solid #e2e8f0", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, color: "#334155" }}>
+                <input type="checkbox" checked={tumKullanicilarSecili} onChange={(e) => tumKullanicilariSec(e.target.checked)} disabled={silinebilirKullanicilar.length === 0 || topluSilYukleniyor} />
+                Tümünü seç
+              </label>
+              <div style={{ fontSize: 12, color: "#64748b", flex: 1 }}>
+                {seciliSilinebilirKullanicilar.length} seçili · {silinebilirKullanicilar.length} silinebilir kullanıcı
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => void topluKullaniciSil("selected")} disabled={topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 800, cursor: topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0 ? "not-allowed" : "pointer", opacity: topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0 ? 0.55 : 1 }}>
+                  Seçilenleri sil
+                </button>
+                <button type="button" onClick={() => void topluKullaniciSil("all")} disabled={topluSilYukleniyor || silinebilirKullanicilar.length === 0} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontSize: 12, fontWeight: 800, cursor: topluSilYukleniyor || silinebilirKullanicilar.length === 0 ? "not-allowed" : "pointer", opacity: topluSilYukleniyor || silinebilirKullanicilar.length === 0 ? 0.55 : 1 }}>
+                  {topluSilYukleniyor ? "Siliniyor..." : "Listedeki tümünü sil"}
+                </button>
+              </div>
+            </div>
+            <RaporTablo
+              kullanicilar={kullanicilar}
+              onPasif={kullaniciPasif}
+              onSifre={sifreSifirla}
+              onSil={silmeModalAc}
+              showActions
+              showRol
+              seciliIds={seciliKullaniciIds}
+              onSec={kullaniciSec}
+            />
           </div>
         )}
 
@@ -903,6 +993,8 @@ function RaporTablo({
   onSil,
   showActions,
   showRol,
+  seciliIds,
+  onSec,
 }: {
   kullanicilar: AdminKullanici[];
   onPasif?: (u: AdminKullanici) => void;
@@ -910,12 +1002,15 @@ function RaporTablo({
   onSil?: (u: AdminKullanici) => void;
   showActions?: boolean;
   showRol?: boolean;
+  seciliIds?: string[];
+  onSec?: (id: string, checked: boolean) => void;
 }) {
   return (
     <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
+            {onSec && <th style={{ padding: 10, width: 36 }}>Seç</th>}
             <th style={{ padding: 10 }}>Ad</th><th>Yurt</th><th>Mıntıka</th>
             {showRol && <th>Rol</th>}
             <th>Son giriş</th><th>Durum</th>
@@ -925,6 +1020,17 @@ function RaporTablo({
         <tbody>
           {kullanicilar.map((u) => (
             <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+              {onSec && (
+                <td style={{ padding: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(seciliIds?.includes(u.id))}
+                    disabled={!kullaniciSilinebilirMi(u)}
+                    onChange={(e) => onSec(u.id, e.target.checked)}
+                    title={kullaniciSilinebilirMi(u) ? "Kullanıcıyı seç" : "Ana admin silinemez"}
+                  />
+                </td>
+              )}
               <td style={{ padding: 10 }}>
                 <div style={{ fontWeight: 700 }}>{u.name}</div>
                 <div style={{ fontSize: 10, color: "#94a3b8" }}>{u.email}</div>
