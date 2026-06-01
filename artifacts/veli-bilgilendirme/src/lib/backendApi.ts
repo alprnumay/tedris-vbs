@@ -181,20 +181,24 @@ export const backendApi = {
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
   fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number } = {}) => {
-    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 100);
     const maxPages = Math.min(Math.max(opts.maxPages ?? 100, 1), 500);
     const all: BackendRecord<T>[] = [];
     const seenIds = new Set<string>();
     const seenPages = new Set<string>();
-    let offset = 0;
     let cursor: string | undefined;
 
-    for (let page = 0; page < maxPages; page += 1) {
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      const page = pageIndex + 1;
+      const offset = pageIndex * limit;
       const params = new URLSearchParams();
       if (recordType) params.set("record_type", recordType);
       params.set("limit", String(limit));
       if (cursor) params.set("cursor", cursor);
-      else params.set("offset", String(offset));
+      else {
+        params.set("page", String(page));
+        params.set("offset", String(offset));
+      }
 
       const payload = await request<unknown>("GET", `/records?${params.toString()}`);
       const records = normalizeRecords<T>(payload);
@@ -213,7 +217,7 @@ export const backendApi = {
       }
 
       if (import.meta.env.DEV) {
-        console.debug("[backendApi.fetchAllRecords]", { recordType, page: page + 1, loaded: records.length, totalLoaded: all.length });
+        console.debug("[backendApi.fetchAllRecords]", { recordType, page, offset, loaded: records.length, totalLoaded: all.length });
       }
 
       if (!records.length || !newRecords) break;
@@ -223,7 +227,7 @@ export const backendApi = {
         continue;
       }
       if (meta.hasMore === false) break;
-      offset += records.length;
+      if (records.length < limit) break;
     }
 
     return all;
