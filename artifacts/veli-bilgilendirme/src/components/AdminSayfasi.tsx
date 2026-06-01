@@ -269,6 +269,7 @@ export default function AdminSayfasi() {
         file,
         kurumSecenekleriTum.map((k) => k.institutionCode),
         mevcutEpostalar,
+        kurumSecenekleriTum,
       );
       setImportRows(rows);
     } catch (e) {
@@ -279,18 +280,18 @@ export default function AdminSayfasi() {
   };
 
   const importBaslat = async () => {
-    const aktarilacak = importRows.filter((r) => r.durum === "yeni" || r.durum === "email_cakisiyor");
     setImportYukleniyor(true);
     try {
       const sonuc = await api.adminTopluKurumImport({
-        rows: aktarilacak.map((r) => ({
+        rows: importRows.map((r) => ({
           rowNumber: r.rowNumber,
           district: r.district,
-          institutionName: r.institutionName,
+          institutionName: r.cleanInstitutionName || r.institutionName,
           institutionCode: r.institutionCode,
           email: r.email,
           province: r.province,
         })),
+        totalRows: importRows.length,
         createUsers: importKullaniciOlustur,
         defaultPassword: importSifre,
       });
@@ -638,9 +639,29 @@ export default function AdminSayfasi() {
                       </tbody>
                     </table>
                   </div>
-                  {importSonuc && <p style={{ fontSize: 12, color: "#166534", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, marginTop: 10 }}>
-                    {importSonuc.readRows} satır okundu. {importSonuc.addedInstitutions} kurum eklendi. {importSonuc.existingInstitutions} kurum zaten vardı. {importSonuc.skippedRows} satır atlandı. {importSonuc.createdUsers} kullanıcı oluşturuldu.
-                  </p>}
+                  {importSonuc && (
+                    <div style={{ fontSize: 12, color: "#166534", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, marginTop: 10, lineHeight: 1.7 }}>
+                      <div>Toplam okunan satır: <b>{importSonuc.readRows}</b></div>
+                      <div>Geçerli satır: <b>{importSonuc.validRows ?? importSonuc.readRows - importSonuc.skippedRows}</b></div>
+                      <div>Yeni kurum eklenen: <b>{importSonuc.addedInstitutions}</b></div>
+                      <div>Zaten var olan kurum: <b>{importSonuc.existingInstitutions}</b></div>
+                      <div>Yeni kullanıcı oluşturulan: <b>{importSonuc.createdUsers}</b></div>
+                      <div>Zaten var olan kullanıcı: <b>{importSonuc.existingUsers}</b></div>
+                      <div>Atlanan satır: <b>{importSonuc.skippedRows}</b></div>
+                      {importSonuc.errors.length > 0 && (
+                        <details style={{ marginTop: 8 }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 800 }}>Atlanan / uyarılı satırlar</summary>
+                          <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: "#475569" }}>
+                            {importSonuc.errors.slice(0, 20).map((err, idx) => (
+                              <li key={`${err.rowNumber ?? "row"}-${idx}`}>
+                                Satır {err.rowNumber ?? "?"}: {err.reason} {err.institutionName ? `Kurum: ${err.institutionName}.` : ""} {err.email ? `E-posta: ${err.email}.` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

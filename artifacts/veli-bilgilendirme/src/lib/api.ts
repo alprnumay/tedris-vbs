@@ -409,6 +409,28 @@ async function kurumIdBul(institutionCode?: string | null): Promise<string | nul
   return institutions[0]?.id ?? null;
 }
 
+function normalizeImportKey(value?: string | null): string {
+  return (value ?? "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ı/g, "i")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeEmail(value?: string | null): string {
+  return (value ?? "").trim().toLocaleLowerCase("tr-TR");
+}
+
+function institutionCompositeKey(data: { institutionName?: string | null; districtName?: string | null; district?: string | null; province?: string | null }): string {
+  return [
+    normalizeImportKey(data.institutionName),
+    normalizeImportKey(data.districtName ?? data.district),
+    normalizeImportKey(data.province),
+  ].join("|");
+}
+
 function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecordData, "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions"> {
   if (isAdmin || role === "admin" || role === "super_admin") {
     return {
@@ -1200,9 +1222,10 @@ export const api = {
 
   adminTopluKurumImport: async (data: AdminImportCommitRequest) => {
     const institutions = await institutionRecords();
-    const institutionCodes = new Set(institutions.map((i) => i.institutionCode));
+    const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
+    const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));
     const users = await appUserRecords();
-    const emails = new Set(users.map((u) => u.email.toLocaleLowerCase("tr-TR")));
+    const emails = new Set(users.map((u) => normalizeEmail(u.email)));
     const byDistrict: Record<string, number> = {};
     const errors: AdminImportCommitResponse["errors"] = [];
     let addedInstitutions = 0;
@@ -1210,18 +1233,29 @@ export const api = {
     let skippedRows = 0;
     let createdUsers = 0;
     let existingUsers = 0;
+    const seenCodes = new Set<string>();
+    const seenKeys = new Set<string>();
 
     for (const row of data.rows) {
       const district = row.district?.trim();
       const institutionName = row.institutionName?.trim();
       if (!district || !institutionName) {
         skippedRows += 1;
-        errors.push({ rowNumber: row.rowNumber, district, institutionName, reason: "Mıntıka veya kurum adı eksik." });
+        errors.push({ rowNumber: row.rowNumber, district, institutionName, email: row.email, reason: "Mıntıka veya kurum adı eksik." });
         continue;
       }
       const institutionCode = row.institutionCode?.trim() || kurumKoduOner(district, institutionName);
+      const codeKey = normalizeImportKey(institutionCode);
+      const compositeKey = institutionCompositeKey({ institutionName, districtName: district, province: row.province });
+      if (seenCodes.has(codeKey) || seenKeys.has(compositeKey)) {
+        skippedRows += 1;
+        errors.push({ rowNumber: row.rowNumber, district, institutionName, institutionCode, email: row.email, reason: "Dosya içinde mükerrer kurum satırı." });
+        continue;
+      }
+      seenCodes.add(codeKey);
+      seenKeys.add(compositeKey);
       byDistrict[district] = (byDistrict[district] ?? 0) + 1;
-      if (institutionCodes.has(institutionCode)) {
+      if (institutionCodes.has(codeKey) || institutionKeys.has(compositeKey)) {
         existingInstitutions += 1;
       } else {
         await api.adminYurtKayitOlustur({
@@ -1231,12 +1265,13 @@ export const api = {
           institutionCode,
           status: "active",
         });
-        institutionCodes.add(institutionCode);
+        institutionCodes.add(codeKey);
+        institutionKeys.add(compositeKey);
         addedInstitutions += 1;
       }
 
       if (data.createUsers && row.email) {
-        const email = row.email.toLocaleLowerCase("tr-TR");
+        const email = normalizeEmail(row.email);
         if (emails.has(email)) {
           existingUsers += 1;
         } else {
@@ -1255,12 +1290,15 @@ export const api = {
           emails.add(email);
           createdUsers += 1;
         }
+      } else if (data.createUsers && !row.email) {
+        errors.push({ rowNumber: row.rowNumber, district, institutionName, institutionCode, reason: "Kullanıcı oluşturma için e-posta eksik." });
       }
     }
 
     return {
       ok: true,
-      readRows: data.rows.length,
+      readRows: data.totalRows ?? data.rows.length,
+      validRows: (data.totalRows ?? data.rows.length) - skippedRows,
       addedInstitutions,
       existingInstitutions,
       skippedRows,
@@ -1657,6 +1695,7 @@ export interface AdminImportCommitRequest {
     name?: string;
     province?: string;
   }[];
+  totalRows?: number;
   createUsers?: boolean;
   defaultPassword?: string;
 }
@@ -1664,13 +1703,14 @@ export interface AdminImportCommitRequest {
 export interface AdminImportCommitResponse {
   ok: boolean;
   readRows: number;
+  validRows?: number;
   addedInstitutions: number;
   existingInstitutions: number;
   skippedRows: number;
   createdUsers: number;
   existingUsers: number;
   byDistrict: Record<string, number>;
-  errors: { rowNumber?: number; district?: string; institutionName?: string; reason: string }[];
+  errors: { rowNumber?: number; district?: string; institutionName?: string; institutionCode?: string; email?: string; reason: string }[];
 }
 
 export interface AdminVeriSagligiAksiyonRequest {

@@ -113,13 +113,38 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
 
 function normalizeRecords<T>(payload: unknown): BackendRecord<T>[] {
   if (Array.isArray(payload)) return payload as BackendRecord<T>[];
-  const p = payload as { records?: unknown; data?: unknown; items?: unknown };
+  const p = payload as { records?: unknown; data?: unknown; items?: unknown; record?: unknown };
+  const d = p.data as { records?: unknown; items?: unknown; data?: unknown; id?: unknown } | undefined;
   if (Array.isArray(p.records)) return p.records as BackendRecord<T>[];
-  if (Array.isArray(p.data)) return p.data as BackendRecord<T>[];
   if (Array.isArray(p.items)) return p.items as BackendRecord<T>[];
+  if (Array.isArray(p.data)) return p.data as BackendRecord<T>[];
+  if (d && Array.isArray(d.records)) return d.records as BackendRecord<T>[];
+  if (d && Array.isArray(d.items)) return d.items as BackendRecord<T>[];
+  if (d && Array.isArray(d.data)) return d.data as BackendRecord<T>[];
   if ((payload as { id?: unknown }).id != null) return [payload as BackendRecord<T>];
-  if (p.data && (p.data as { id?: unknown }).id != null) return [p.data as BackendRecord<T>];
+  if (p.record && (p.record as { id?: unknown }).id != null) return [p.record as BackendRecord<T>];
+  if (d?.id != null) return [d as BackendRecord<T>];
   return [];
+}
+
+function pageMeta(payload: unknown) {
+  const p = payload as Record<string, unknown>;
+  const d = (p.data && typeof p.data === "object" ? p.data : {}) as Record<string, unknown>;
+  const meta = (p.meta && typeof p.meta === "object" ? p.meta : d.meta && typeof d.meta === "object" ? d.meta : {}) as Record<string, unknown>;
+  const read = (keys: string[]) => {
+    for (const key of keys) {
+      const value = p[key] ?? d[key] ?? meta[key];
+      if (value != null) return value;
+    }
+    return undefined;
+  };
+  const totalRaw = read(["total", "totalCount", "total_count"]);
+  const hasMoreRaw = read(["hasMore", "has_more", "hasNextPage", "has_next_page"]);
+  return {
+    total: typeof totalRaw === "number" ? totalRaw : typeof totalRaw === "string" ? Number(totalRaw) : undefined,
+    hasMore: typeof hasMoreRaw === "boolean" ? hasMoreRaw : undefined,
+    nextCursor: read(["nextCursor", "next_cursor", "cursor", "next"]) as string | undefined,
+  };
 }
 
 function normalizeRecord<T>(payload: unknown): BackendRecord<T> {
@@ -155,9 +180,62 @@ export const backendApi = {
   createRecord: async <T>(recordType: string, data: T) =>
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
+  fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number } = {}) => {
+    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const maxPages = Math.min(Math.max(opts.maxPages ?? 100, 1), 500);
+    const all: BackendRecord<T>[] = [];
+    const seenIds = new Set<string>();
+    const seenPages = new Set<string>();
+    let offset = 0;
+    let cursor: string | undefined;
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const params = new URLSearchParams();
+      if (recordType) params.set("record_type", recordType);
+      params.set("limit", String(limit));
+      if (cursor) params.set("cursor", cursor);
+      else params.set("offset", String(offset));
+
+      const payload = await request<unknown>("GET", `/records?${params.toString()}`);
+      const records = normalizeRecords<T>(payload);
+      const meta = pageMeta(payload);
+      const signature = records.map((record) => String(record.id)).join("|");
+      if (signature && seenPages.has(signature)) break;
+      if (signature) seenPages.add(signature);
+
+      let newRecords = 0;
+      for (const record of records) {
+        const key = String(record.id);
+        if (seenIds.has(key)) continue;
+        seenIds.add(key);
+        all.push(record);
+        newRecords += 1;
+      }
+
+      if (import.meta.env.DEV) {
+        console.debug("[backendApi.fetchAllRecords]", { recordType, page: page + 1, loaded: records.length, totalLoaded: all.length });
+      }
+
+      if (!records.length || !newRecords) break;
+      if (meta.total != null && Number.isFinite(meta.total) && all.length >= meta.total) break;
+      if (meta.nextCursor) {
+        cursor = meta.nextCursor;
+        continue;
+      }
+      if (meta.hasMore === false) break;
+      offset += records.length;
+    }
+
+    return all;
+  },
+
   listRecords: async <T>(recordType?: string) => {
-    const query = recordType ? `?record_type=${encodeURIComponent(recordType)}` : "";
-    return normalizeRecords<T>(await request("GET", `/records${query}`));
+    try {
+      return await backendApi.fetchAllRecords<T>(recordType);
+    } catch (error) {
+      const suffix = recordType ? ` (${recordType})` : "";
+      throw new Error(error instanceof Error ? `Kayıtlar okunamadı${suffix}: ${error.message}` : `Kayıtlar okunamadı${suffix}.`);
+    }
   },
 
   getRecord: async <T>(id: string | number) =>

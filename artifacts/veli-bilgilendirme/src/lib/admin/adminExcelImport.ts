@@ -17,6 +17,13 @@ export interface KurumImportSatiri {
   durumMetni: string;
 }
 
+export interface MevcutImportKurum {
+  institutionCode?: string | null;
+  institutionName?: string | null;
+  districtName?: string | null;
+  province?: string | null;
+}
+
 function titleCaseTr(value: string): string {
   return value
     .trim()
@@ -34,10 +41,25 @@ function cellText(value: ExcelJS.CellValue): string {
   return String(value).trim();
 }
 
+function normalizeImportKey(value?: string | null): string {
+  return (value ?? "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ı/g, "i")
+    .replace(/\s+/g, " ");
+}
+
+function institutionCompositeKey(institutionName: string, districtName: string, province: string): string {
+  return [institutionName, districtName, province].map(normalizeImportKey).join("|");
+}
+
 export async function excelKurumImportOku(
   file: File,
   mevcutKurumKodlari: string[],
   mevcutEpostalar: string[],
+  mevcutKurumlar: MevcutImportKurum[] = [],
 ): Promise<KurumImportSatiri[]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(await file.arrayBuffer());
@@ -46,8 +68,11 @@ export async function excelKurumImportOku(
 
   const seenCodes = new Set<string>();
   const seenEmails = new Set<string>();
-  const kurumSet = new Set(mevcutKurumKodlari.map((k) => k.toLowerCase()));
-  const emailSet = new Set(mevcutEpostalar.map((e) => e.toLowerCase()));
+  const kurumSet = new Set(mevcutKurumKodlari.map(normalizeImportKey));
+  const kurumKeySet = new Set(
+    mevcutKurumlar.map((k) => institutionCompositeKey(k.institutionName ?? "", k.districtName ?? "", k.province ?? "")),
+  );
+  const emailSet = new Set(mevcutEpostalar.map((e) => e.toLocaleLowerCase("tr-TR")));
   const rows: KurumImportSatiri[] = [];
 
   ws.eachRow((row, rowNumber) => {
@@ -65,20 +90,20 @@ export async function excelKurumImportOku(
     if (!district || !institutionName) {
       durum = "eksik";
       durumMetni = "Eksik bilgi";
-    } else if (seenCodes.has(institutionCode.toLowerCase()) || seenEmails.has(email.toLowerCase())) {
+    } else if (seenCodes.has(normalizeImportKey(institutionCode)) || seenEmails.has(email.toLocaleLowerCase("tr-TR"))) {
       durum = "mukerrer";
       durumMetni = "Dosyada mükerrer";
-    } else if (kurumSet.has(institutionCode.toLowerCase())) {
+    } else if (kurumSet.has(normalizeImportKey(institutionCode)) || kurumKeySet.has(institutionCompositeKey(cleanInstitutionName, district, province))) {
       durum = "var";
       durumMetni = "Zaten var";
-    } else if (emailSet.has(email.toLowerCase())) {
+    } else if (emailSet.has(email.toLocaleLowerCase("tr-TR"))) {
       durum = "email_cakisiyor";
       email = epostaAlternatif(district, institutionName, 2);
       durumMetni = "E-posta çakışıyor";
     }
 
-    if (institutionCode) seenCodes.add(institutionCode.toLowerCase());
-    if (email) seenEmails.add(email.toLowerCase());
+    if (institutionCode) seenCodes.add(normalizeImportKey(institutionCode));
+    if (email) seenEmails.add(email.toLocaleLowerCase("tr-TR"));
     rows.push({
       rowNumber,
       sira,
