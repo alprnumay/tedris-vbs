@@ -61,6 +61,7 @@ interface InstitutionRecordData {
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  deletedAt?: string | null;
 }
 
 type ReportPermission = "overview" | "district" | "institution" | "users" | "activity" | "excel" | "all";
@@ -369,12 +370,12 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
 function filterAppUsers(users: AdminKullanici[], params: Record<string, string | undefined>): AdminKullanici[] {
   const search = params.search?.trim().toLocaleLowerCase("tr-TR");
   return users.filter((user) => {
-    if (user.deletedAt) return false;
+    if (!params.active && (user.deletedAt || !user.isActive)) return false;
     if (params.district && user.district !== params.district) return false;
     if (params.institutionCode && user.institutionCode !== params.institutionCode) return false;
     if (params.role && user.role !== params.role) return false;
-    if (params.active === "active" && !user.isActive) return false;
-    if (params.active === "inactive" && user.isActive) return false;
+    if (params.active === "active" && (user.deletedAt || !user.isActive)) return false;
+    if (params.active === "inactive" && !user.deletedAt && user.isActive) return false;
     if (search) {
       const haystack = [user.name, user.email, user.institutionName, user.district, user.institutionCode]
         .filter(Boolean)
@@ -429,6 +430,29 @@ function institutionCompositeKey(data: { institutionName?: string | null; distri
     normalizeImportKey(data.districtName ?? data.district),
     normalizeImportKey(data.province),
   ].join("|");
+}
+
+function activeInstitutionRecord(record: BackendRecord<InstitutionRecordData>): boolean {
+  const data = record.data ?? {};
+  const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
+  return !data.deletedAt && (!status || status === "active");
+}
+
+function institutionCompletenessScore(institution: AdminYurtKayit): number {
+  return [
+    institution.institutionCode,
+    institution.institutionName,
+    institution.districtName,
+    institution.province,
+    institution.expectedUserCount,
+    institution.notes,
+  ].filter((value) => value != null && String(value).trim()).length;
+}
+
+function canonicalInstitution(a: AdminYurtKayit, b: AdminYurtKayit): AdminYurtKayit {
+  const scoreDiff = institutionCompletenessScore(b) - institutionCompletenessScore(a);
+  if (scoreDiff !== 0) return scoreDiff > 0 ? b : a;
+  return Date.parse(a.createdAt) <= Date.parse(b.createdAt) ? a : b;
 }
 
 function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecordData, "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions"> {
@@ -750,16 +774,76 @@ async function adminSettingsRecord() {
 }
 
 async function veriSagligiUret(): Promise<AdminVeriSagligi> {
-  const [users, institutions, logs] = await Promise.all([
+  const [users, institutions, rawInstitutionRecords, logs] = await Promise.all([
     appUserRecords(),
     institutionRecords(),
+    backendApi.listRecords<InstitutionRecordData>("institution"),
     backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
   ]);
-  const institutionCodes = new Set(institutions.map((i) => i.institutionCode));
+  const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
+  const inactiveInstitutionCodes = new Set(
+    rawInstitutionRecords
+      .filter((record) => !activeInstitutionRecord(record))
+      .map((record) => normalizeImportKey(record.data?.institutionCode)),
+  );
   const userIds = new Set(users.map((u) => u.id));
   const issues: AdminDataHealthIssue[] = [];
+  const activeRawInstitutions = rawInstitutionRecords.filter(activeInstitutionRecord).map(institutionFromRecord);
+  const institutionsByComposite = new Map<string, AdminYurtKayit[]>();
+  const institutionsByCode = new Map<string, AdminYurtKayit[]>();
+  const usersByEmail = new Map<string, AdminKullanici[]>();
+
+  for (const institution of activeRawInstitutions) {
+    const compositeKey = institutionCompositeKey(institution);
+    institutionsByComposite.set(compositeKey, [...(institutionsByComposite.get(compositeKey) ?? []), institution]);
+    const codeKey = normalizeImportKey(institution.institutionCode);
+    if (codeKey) institutionsByCode.set(codeKey, [...(institutionsByCode.get(codeKey) ?? []), institution]);
+  }
+
+  for (const group of institutionsByComposite.values()) {
+    if (group.length <= 1) continue;
+    const canonical = group.reduce(canonicalInstitution);
+    issues.push({
+      id: `institution-duplicate-${canonical.id}`,
+      type: "institution_duplicate",
+      targetKind: "institution",
+      targetId: canonical.id,
+      record: `${canonical.institutionName} (${canonical.districtName})`,
+      description: `${group.length} aktif kurum kaydı aynı normalize kurum bilgisiyle tekrarlanıyor.`,
+      suggestion: "Duplicate kurumları pasifleştirin ve kullanıcıları canonical kuruma bağlayın.",
+    });
+  }
+
+  for (const [codeKey, group] of institutionsByCode.entries()) {
+    if (group.length <= 1) continue;
+    issues.push({
+      id: `institution-code-duplicate-${codeKey}`,
+      type: "institution_duplicate_code",
+      targetKind: "institution",
+      targetId: group[0]?.id ?? null,
+      record: group[0]?.institutionCode ?? codeKey,
+      description: `${group.length} aktif kurum aynı kurum kodunu kullanıyor.`,
+      suggestion: "Aynı kurum koduyla duran duplicate kurum kayıtlarını pasifleştirin.",
+    });
+  }
 
   for (const user of users) {
+    const emailKey = normalizeEmail(user.email);
+    if (emailKey) usersByEmail.set(emailKey, [...(usersByEmail.get(emailKey) ?? []), user]);
+
+    if (!emailKey) {
+      issues.push({
+        id: `user-missing-email-${user.id}`,
+        type: "user_missing_email",
+        targetKind: "user",
+        targetId: user.id,
+        record: user.name,
+        description: "Kullanıcının e-posta bilgisi eksik.",
+        suggestion: "Kullanıcı e-postasını tamamlayın veya kaydı pasifleştirin.",
+      });
+    }
+
+    const userInstitutionCode = normalizeImportKey(user.institutionCode);
     if (!user.district || !user.institutionCode) {
       issues.push({
         id: `user-missing-${user.id}`,
@@ -770,17 +854,35 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
         description: "Kullanıcının mıntıka veya kurum eşleşmesi eksik.",
         suggestion: "Kullanıcıyı bir mıntıka ve kuruma eşleştirin.",
       });
-    } else if (!institutionCodes.has(user.institutionCode)) {
+    } else if (!institutionCodes.has(userInstitutionCode)) {
+      const inactiveMatch = inactiveInstitutionCodes.has(userInstitutionCode);
       issues.push({
-        id: `user-orphan-${user.id}`,
-        type: "user_orphan_institution",
+        id: inactiveMatch ? `user-inactive-institution-${user.id}` : `user-orphan-${user.id}`,
+        type: inactiveMatch ? "user_inactive_institution" : "user_orphan_institution",
         targetKind: "user",
         targetId: user.id,
         record: `${user.name} (${user.institutionCode})`,
-        description: "Kullanıcının kurum kodu envanterde bulunamadı.",
-        suggestion: "Kurum kodunu düzeltin veya kurum kaydını oluşturun.",
+        description: inactiveMatch
+          ? "Kullanıcı pasif/silinmiş bir kurum kaydına bağlı."
+          : "Kullanıcının kurum kodu aktif envanterde bulunamadı.",
+        suggestion: inactiveMatch
+          ? "Kullanıcıyı aktif canonical kurum kaydına bağlayın."
+          : "Kurum kodunu düzeltin veya kurum kaydını oluşturun.",
       });
     }
+  }
+
+  for (const [email, group] of usersByEmail.entries()) {
+    if (group.length <= 1) continue;
+    issues.push({
+      id: `user-duplicate-email-${email}`,
+      type: "user_duplicate_email",
+      targetKind: "user",
+      targetId: group[0]?.id ?? null,
+      record: email,
+      description: `${group.length} aktif kullanıcı aynı e-posta adresini kullanıyor.`,
+      suggestion: "Aynı e-postaya sahip kullanıcı kayıtlarını kontrol edip fazla olanları pasifleştirin.",
+    });
   }
 
   for (const log of logs) {
@@ -798,7 +900,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
   }
 
   const unmatchedUsers = users
-    .filter((u) => !u.district || !u.institutionCode || !institutionCodes.has(u.institutionCode))
+    .filter((u) => !u.district || !u.institutionCode || !institutionCodes.has(normalizeImportKey(u.institutionCode)))
     .map((u) => ({
       id: u.id,
       name: u.name,
@@ -812,6 +914,13 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
   return {
     score,
     issueCount: issues.length,
+    summary: {
+      users: users.length,
+      institutions: institutions.length,
+      activityLogs: logs.length,
+      duplicateInstitutions: [...institutionsByComposite.values()].filter((group) => group.length > 1).length,
+      duplicateUsers: [...usersByEmail.values()].filter((group) => group.length > 1).length,
+    },
     issues,
     unmatchedUsers,
   };
@@ -904,7 +1013,14 @@ function filterInstitutions<T extends { districtName: string; institutionCode: s
 
 async function institutionRecords(params: Record<string, string | undefined> = {}) {
   const records = await backendApi.listRecords<InstitutionRecordData>("institution");
-  const institutions = records.map(institutionFromRecord).sort((a, b) =>
+  const byKey = new Map<string, AdminYurtKayit>();
+  for (const record of records.filter(activeInstitutionRecord)) {
+    const institution = institutionFromRecord(record);
+    const key = institutionCompositeKey(institution);
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? canonicalInstitution(existing, institution) : institution);
+  }
+  const institutions = [...byKey.values()].sort((a, b) =>
     a.districtName.localeCompare(b.districtName, "tr") || a.institutionName.localeCompare(b.institutionName, "tr"),
   );
   return filterInstitutions(institutions, params);
@@ -1725,6 +1841,13 @@ export interface AdminVeriSagligiAksiyonRequest {
 export interface AdminVeriSagligi {
   score: number | null;
   issueCount: number;
+  summary?: {
+    users: number;
+    institutions: number;
+    activityLogs: number;
+    duplicateInstitutions: number;
+    duplicateUsers: number;
+  };
   issues: AdminDataHealthIssue[];
   unmatchedUsers: {
     id: string;
