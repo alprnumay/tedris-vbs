@@ -59,12 +59,12 @@ export function clearBackendToken() {
   }
 }
 
-function headers(json = true): Headers {
+function headers(json = true, includeAuth = true): Headers {
   const h = new Headers();
   if (json) h.set("Content-Type", "application/json");
   if (PROJECT_API_KEY) h.set("X-Project-Key", PROJECT_API_KEY);
   const token = getBackendToken();
-  if (token) h.set("Authorization", `Bearer ${token}`);
+  if (includeAuth && token) h.set("Authorization", `Bearer ${token}`);
   return h;
 }
 
@@ -74,7 +74,7 @@ function tokenFrom(data: unknown): string | undefined {
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }
 
-async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: HttpMethod, path: string, body?: unknown, opts: { includeAuth?: boolean } = {}): Promise<T> {
   if (!API_BASE || !PROJECT_API_KEY) {
     throw new Error("Sunucu bağlantı ayarları eksik.");
   }
@@ -83,7 +83,7 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: headers(body !== undefined),
+      headers: headers(body !== undefined, opts.includeAuth ?? true),
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -183,7 +183,7 @@ export const backendApi = {
   createRecord: async <T>(recordType: string, data: T) =>
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
-  fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number } = {}) => {
+  fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {}) => {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 100);
     const maxPages = Math.min(Math.max(opts.maxPages ?? 100, 1), 500);
     const all: BackendRecord<T>[] = [];
@@ -203,7 +203,7 @@ export const backendApi = {
         params.set("offset", String(offset));
       }
 
-      const payload = await request<unknown>("GET", `/records?${params.toString()}`);
+      const payload = await request<unknown>("GET", `/records?${params.toString()}`, undefined, { includeAuth: opts.includeAuth });
       const records = normalizeRecords<T>(payload);
       const meta = pageMeta(payload);
       const signature = records.map((record) => String(record.id)).join("|");
@@ -236,9 +236,9 @@ export const backendApi = {
     return all;
   },
 
-  listRecords: async <T>(recordType?: string) => {
+  listRecords: async <T>(recordType?: string, opts: { includeAuth?: boolean } = {}) => {
     try {
-      return await backendApi.fetchAllRecords<T>(recordType);
+      return await backendApi.fetchAllRecords<T>(recordType, opts);
     } catch (error) {
       const suffix = recordType ? ` (${recordType})` : "";
       throw new Error(error instanceof Error ? `Kayıtlar okunamadı${suffix}: ${error.message}` : `Kayıtlar okunamadı${suffix}.`);

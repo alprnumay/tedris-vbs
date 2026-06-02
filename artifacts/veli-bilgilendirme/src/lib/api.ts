@@ -90,6 +90,7 @@ interface AppUserRecordData {
   email?: string;
   loginEmail?: string;
   generatedEmail?: string;
+  username?: string;
   name?: string;
   role?: string;
   isAdmin?: boolean;
@@ -110,6 +111,12 @@ interface AppUserRecordData {
   updatedAt?: string;
   passwordResetAt?: string | null;
 }
+
+type AppUserRecordLike = BackendRecord<AppUserRecordData> & AppUserRecordData & {
+  username?: string;
+  payload?: AppUserRecordData;
+  data?: AppUserRecordData;
+};
 
 interface ActivityLogRecordData {
   id?: string;
@@ -207,6 +214,7 @@ export interface AdminKullanici {
   lastLoginAt: string | null;
   deletedAt?: string | null;
   createdAt: string;
+  updatedAt?: string;
   activityStatus?: AktiviteDurum;
   daysSinceLogin?: number | null;
   login_time?: string | null;
@@ -452,13 +460,64 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
   return created;
 }
 
+function appUserDataFromRecord(record: BackendRecord<AppUserRecordData>): AppUserRecordData {
+  const raw = record as AppUserRecordLike;
+  const payload = raw.payload ?? {};
+  const data = raw.data ?? {};
+  return {
+    ...payload,
+    ...raw,
+    ...data,
+    id: data.id ?? raw.id,
+  };
+}
+
+function appUserEmailsFromRecord(record: BackendRecord<AppUserRecordData>): string[] {
+  const raw = record as AppUserRecordLike;
+  return [
+    raw.email,
+    raw.loginEmail,
+    raw.generatedEmail,
+    raw.username,
+    raw.payload?.email,
+    raw.payload?.loginEmail,
+    raw.payload?.generatedEmail,
+    raw.payload?.username,
+    raw.data?.email,
+    raw.data?.loginEmail,
+    raw.data?.generatedEmail,
+    raw.data?.username,
+  ]
+    .map((value) => normalizeEmail(value))
+    .filter(Boolean);
+}
+
+function appUserRawDiag(record: BackendRecord<AppUserRecordData>) {
+  const raw = record as AppUserRecordLike;
+  const data = appUserDataFromRecord(record);
+  return {
+    id: String(record.id),
+    email: raw.email ?? null,
+    dataEmail: raw.data?.email ?? null,
+    loginEmail: raw.loginEmail ?? raw.data?.loginEmail ?? null,
+    generatedEmail: raw.generatedEmail ?? raw.data?.generatedEmail ?? null,
+    isActive: data.isActive,
+    status: data.status ?? null,
+    deletedAt: data.deletedAt ?? null,
+    institutionName: data.institutionName ?? null,
+    institutionCode: data.institutionCode ?? null,
+    district: data.district ?? null,
+  };
+}
+
 function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
-  const data = record.data ?? {};
-  const email = String(data.email ?? data.loginEmail ?? data.generatedEmail ?? "");
+  const data = appUserDataFromRecord(record);
+  const email = String(data.email ?? data.loginEmail ?? data.generatedEmail ?? data.username ?? "");
   const role = data.role ?? (data.isAdmin ? "admin" : "user");
   const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
   const isActive = data.isActive ?? (!data.deletedAt && status !== "inactive" && status !== "deleted");
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
+  const updatedAt = data.updatedAt ?? record.updatedAt ?? record.updated_at ?? createdAt;
   return {
     id: String(record.id),
     authUserId: data.authUserId ?? null,
@@ -476,6 +535,7 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
     lastLoginAt: data.lastLoginAt ?? null,
     deletedAt: data.deletedAt ?? null,
     createdAt,
+    updatedAt,
     activityStatus: data.lastLoginAt ? "week" : "never",
     daysSinceLogin: data.lastLoginAt ? Math.max(0, Math.floor((Date.now() - Date.parse(data.lastLoginAt)) / 86_400_000)) : null,
     allowedDistricts: data.allowedDistricts ?? [],
@@ -487,10 +547,10 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
 
 function appUserMatchScore(user: AdminKullanici, authUserId?: string): number {
   let score = 0;
-  if (!user.deletedAt) score += 1000;
-  if (user.isActive) score += 500;
+  if (appUserAktifMi(user)) score += 10_000;
+  if (user.institutionCode) score += 2_000;
+  if (!user.deletedAt) score += 1_000;
   if (authUserId && user.authUserId === authUserId) score += 250;
-  if (user.institutionCode) score += 120;
   if (user.institutionName) score += 40;
   if (user.district) score += 40;
   if (user.province) score += 20;
@@ -501,16 +561,36 @@ function appUserMatchScore(user: AdminKullanici, authUserId?: string): number {
 function selectBestAppUser(users: AdminKullanici[], authUserId?: string): AdminKullanici | null {
   return users
     .slice()
-    .sort((a, b) => appUserMatchScore(b, authUserId) - appUserMatchScore(a, authUserId) || Date.parse(a.createdAt) - Date.parse(b.createdAt))[0] ?? null;
+    .sort((a, b) =>
+      appUserMatchScore(b, authUserId) - appUserMatchScore(a, authUserId) ||
+      Date.parse(b.updatedAt ?? b.createdAt) - Date.parse(a.updatedAt ?? a.createdAt)
+    )[0] ?? null;
 }
 
 async function appUsersByEmail(email: string): Promise<AdminKullanici[]> {
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
-  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
-  return records
-    .map(appUserFromRecord)
-    .filter((user) => normalizeEmail(user.email) === normalized);
+  const records = await backendApi.listRecords<AppUserRecordData>("app_user", { includeAuth: false })
+    .catch(() => backendApi.listRecords<AppUserRecordData>("app_user"));
+  const matches = records.filter((record) => appUserEmailsFromRecord(record).includes(normalized));
+  const users = matches.map(appUserFromRecord);
+  console.log("[TEDRIS_LOGIN_APP_USER_CANDIDATES]", {
+    loginEmail: normalized,
+    candidateCount: users.length,
+    candidates: users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      dataEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.email ?? null,
+      loginEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.loginEmail ?? null,
+      generatedEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.generatedEmail ?? null,
+      isActive: user.isActive,
+      status: user.status ?? null,
+      deletedAt: user.deletedAt ?? null,
+      institutionCode: user.institutionCode,
+      computedActive: appUserAktifMi(user),
+    })),
+  });
+  return users;
 }
 
 function filterAppUsers(users: AdminKullanici[], params: Record<string, string | undefined>): AdminKullanici[] {
@@ -555,6 +635,12 @@ function generatedInstitutionEmail(district: string, institutionName: string, ex
 
 async function appUserRecords(params: Record<string, string | undefined> = {}) {
   const records = await backendApi.listRecords<AppUserRecordData>("app_user");
+  for (const record of records) {
+    const emails = appUserEmailsFromRecord(record);
+    if (emails.includes("burdurbaglarbasi@gmail.com")) {
+      console.log("[TEDRIS_USER_ROW_RAW]", appUserRawDiag(record));
+    }
+  }
   const users = records
     .map(appUserFromRecord)
     .sort((a, b) => a.name.localeCompare(b.name, "tr") || a.email.localeCompare(b.email, "tr"));
