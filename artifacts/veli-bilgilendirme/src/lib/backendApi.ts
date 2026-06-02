@@ -183,7 +183,17 @@ export const backendApi = {
   createRecord: async <T>(recordType: string, data: T) =>
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
-  fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {}) => {
+  fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {}) =>
+    backendApi.fetchAllRecordsFromPath<T>("/records", recordType, opts),
+
+  fetchAllAdminRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {}) =>
+    backendApi.fetchAllRecordsFromPath<T>("/admin/records", recordType, opts),
+
+  fetchAllRecordsFromPath: async <T>(
+    path: "/records" | "/admin/records",
+    recordType?: string,
+    opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {},
+  ) => {
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 100);
     const maxPages = Math.min(Math.max(opts.maxPages ?? 100, 1), 500);
     const all: BackendRecord<T>[] = [];
@@ -203,7 +213,7 @@ export const backendApi = {
         params.set("offset", String(offset));
       }
 
-      const payload = await request<unknown>("GET", `/records?${params.toString()}`, undefined, { includeAuth: opts.includeAuth });
+      const payload = await request<unknown>("GET", `${path}?${params.toString()}`, undefined, { includeAuth: opts.includeAuth });
       const records = normalizeRecords<T>(payload);
       const meta = pageMeta(payload);
       const signature = records.map((record) => String(record.id)).join("|");
@@ -220,7 +230,7 @@ export const backendApi = {
       }
 
       if (import.meta.env.DEV) {
-        console.debug("[backendApi.fetchAllRecords]", { recordType, page, offset, loaded: records.length, totalLoaded: all.length });
+        console.debug("[backendApi.fetchAllRecordsFromPath]", { path, recordType, page, offset, loaded: records.length, totalLoaded: all.length });
       }
 
       if (!records.length || !newRecords) break;
@@ -245,14 +255,38 @@ export const backendApi = {
     }
   },
 
+  listAdminRecords: async <T>(recordType?: string, opts: { includeAuth?: boolean } = {}) => {
+    try {
+      return await backendApi.fetchAllAdminRecords<T>(recordType, opts);
+    } catch (error) {
+      const suffix = recordType ? ` (${recordType})` : "";
+      throw new Error(error instanceof Error ? `Admin kayıtları okunamadı${suffix}: ${error.message}` : `Admin kayıtları okunamadı${suffix}.`);
+    }
+  },
+
   getRecord: async <T>(id: string | number) =>
     normalizeRecord<T>(await request("GET", `/records/${encodeURIComponent(id)}`)),
+
+  getAdminRecord: async <T>(id: string | number) =>
+    normalizeRecord<T>(await request("GET", `/admin/records/${encodeURIComponent(id)}`)),
 
   updateRecord: async <T>(id: string | number, recordType: string, data: T) =>
     normalizeRecord<T>(await request("PUT", `/records/${encodeURIComponent(id)}`, { record_type: recordType, data })),
 
+  updateAdminRecord: async <T>(id: string | number, recordType: string, data: T) =>
+    normalizeRecord<T>(await request("PUT", `/admin/records/${encodeURIComponent(id)}`, { record_type: recordType, data })),
+
+  assignRecordOwner: async (id: string | number, ownerUserId: string | number) => {
+    const numericId = typeof ownerUserId === "string" ? Number(ownerUserId) : ownerUserId;
+    const userId = Number.isFinite(numericId) ? numericId : ownerUserId;
+    return request<{ ok?: boolean }>("PUT", `/admin/records/${encodeURIComponent(id)}`, { userId });
+  },
+
   deleteRecord: (id: string | number) =>
     request<{ ok?: boolean }>("DELETE", `/records/${encodeURIComponent(id)}`),
+
+  deleteAdminRecord: (id: string | number) =>
+    request<{ ok?: boolean }>("DELETE", `/admin/records/${encodeURIComponent(id)}`),
 
   latestPosterDraft: async () => {
     const records = await backendApi.listRecords<PosterDraftData>("poster_draft");
