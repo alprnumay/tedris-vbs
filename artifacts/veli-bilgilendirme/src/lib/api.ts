@@ -33,6 +33,18 @@ export interface KullaniciBilgisi {
   email: string;
   name: string;
   isAdmin?: boolean;
+  appUserId?: string;
+  role?: string;
+  isActive?: boolean;
+  district?: string | null;
+  province?: string | null;
+  institutionName?: string | null;
+  institutionCode?: string | null;
+  institutionId?: string | null;
+  allowedDistricts?: string[];
+  allowedCities?: string[];
+  allowedInstitutions?: string[];
+  reportPermissions?: ReportPermission[];
 }
 
 export interface KayitliProfil {
@@ -162,6 +174,7 @@ export type AktiviteDurum = "today" | "week" | "inactive" | "never";
 
 export interface AdminKullanici {
   id: string;
+  authUserId?: string | null;
   email: string;
   name: string;
   province: string | null;
@@ -263,9 +276,20 @@ function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullan
   if (!appUser) return user;
   return {
     ...user,
-    id: appUser.id || user.id,
+    appUserId: appUser.id,
     name: appUser.name || user.name,
+    role: appUser.role,
     isAdmin: appUser.isAdmin || user.isAdmin,
+    isActive: appUser.isActive,
+    district: appUser.district,
+    province: appUser.province,
+    institutionName: appUser.institutionName,
+    institutionCode: appUser.institutionCode,
+    institutionId: appUser.institutionId,
+    allowedDistricts: appUser.allowedDistricts ?? [],
+    allowedCities: appUser.allowedCities ?? [],
+    allowedInstitutions: appUser.allowedInstitutions ?? [],
+    reportPermissions: appUser.reportPermissions ?? [],
   };
 }
 
@@ -296,29 +320,34 @@ function primaryAdminEksikMi(user: AdminKullanici): boolean {
   );
 }
 
-async function ensurePrimaryAdminAppUser(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {
-  if (!isPrimaryAdminEmail(authUser.email)) return appUserByEmail(authUser.email);
-
-  const existing = await appUserByEmail(authUser.email).catch(() => null);
+async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {
+  const matches = await appUsersByEmail(authUser.email).catch(() => []);
+  const existing = selectBestAppUser(matches, authUser.id);
   const now = new Date().toISOString();
-  const adminFields = primaryAdminFields();
 
   if (existing) {
-    if (!primaryAdminEksikMi(existing)) return existing;
+    const isPrimaryAdmin = isPrimaryAdminEmail(authUser.email);
+    const needsPrimaryAdminUpdate = isPrimaryAdmin && primaryAdminEksikMi(existing);
+    const needsAuthLink = !existing.authUserId && authUser.id;
+    if (!needsPrimaryAdminUpdate && !needsAuthLink) return existing;
+
     const current = await backendApi.getRecord<AppUserRecordData>(existing.id);
+    const currentData = current.data ?? {};
     const record = await backendApi.updateRecord<AppUserRecordData>(existing.id, "app_user", {
-      ...(current.data ?? {}),
-      id: authUser.id,
-      authUserId: authUser.id,
-      email: authUser.email,
-      name: authUser.name,
-      ...adminFields,
+      ...currentData,
+      id: currentData.id ?? authUser.id,
+      authUserId: currentData.authUserId ?? authUser.id,
+      email: currentData.email ?? authUser.email,
+      name: currentData.name ?? authUser.name,
+      ...(isPrimaryAdmin ? primaryAdminFields() : {}),
       updatedAt: now,
-      createdAt: current.data?.createdAt ?? existing.createdAt ?? now,
-      lastLoginAt: current.data?.lastLoginAt ?? existing.lastLoginAt ?? null,
+      createdAt: currentData.createdAt ?? existing.createdAt ?? now,
+      lastLoginAt: currentData.lastLoginAt ?? existing.lastLoginAt ?? null,
     });
     return appUserFromRecord(record);
   }
+
+  if (!isPrimaryAdminEmail(authUser.email)) return null;
 
   const record = await backendApi.createRecord<AppUserRecordData>("app_user", {
     id: authUser.id,
@@ -330,7 +359,7 @@ async function ensurePrimaryAdminAppUser(authUser: KullaniciBilgisi): Promise<Ad
     institutionName: null,
     institutionCode: null,
     institutionId: null,
-    ...adminFields,
+    ...primaryAdminFields(),
     createdAt: now,
     updatedAt: now,
     lastLoginAt: null,
@@ -345,6 +374,7 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
   return {
     id: String(record.id),
+    authUserId: data.authUserId ?? null,
     email: String(data.email ?? ""),
     name: String(data.name ?? data.email ?? "Kullanıcı"),
     province: data.province ?? null,
@@ -365,6 +395,34 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
     allowedInstitutions: data.allowedInstitutions ?? [],
     reportPermissions: data.reportPermissions ?? [],
   };
+}
+
+function appUserMatchScore(user: AdminKullanici, authUserId?: string): number {
+  let score = 0;
+  if (!user.deletedAt) score += 1000;
+  if (user.isActive) score += 500;
+  if (authUserId && user.authUserId === authUserId) score += 250;
+  if (user.institutionCode) score += 120;
+  if (user.institutionName) score += 40;
+  if (user.district) score += 40;
+  if (user.province) score += 20;
+  if (user.role === "super_admin") score += 10;
+  return score;
+}
+
+function selectBestAppUser(users: AdminKullanici[], authUserId?: string): AdminKullanici | null {
+  return users
+    .slice()
+    .sort((a, b) => appUserMatchScore(b, authUserId) - appUserMatchScore(a, authUserId) || Date.parse(a.createdAt) - Date.parse(b.createdAt))[0] ?? null;
+}
+
+async function appUsersByEmail(email: string): Promise<AdminKullanici[]> {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return [];
+  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
+  return records
+    .map(appUserFromRecord)
+    .filter((user) => normalizeEmail(user.email) === normalized);
 }
 
 function filterAppUsers(users: AdminKullanici[], params: Record<string, string | undefined>): AdminKullanici[] {
@@ -396,12 +454,7 @@ async function appUserRecords(params: Record<string, string | undefined> = {}) {
 }
 
 async function appUserByEmail(email: string): Promise<AdminKullanici | null> {
-  const normalized = email.trim().toLocaleLowerCase("tr-TR");
-  if (!normalized) return null;
-  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
-  return records
-    .map(appUserFromRecord)
-    .find((user) => user.email.toLocaleLowerCase("tr-TR") === normalized) ?? null;
+  return selectBestAppUser(await appUsersByEmail(email));
 }
 
 async function kurumIdBul(institutionCode?: string | null): Promise<string | null> {
@@ -550,7 +603,7 @@ async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
   const me = await backendApi.me().catch(() => null);
   const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
   if (!user?.email) return null;
-  return appUserByEmail(user.email).catch(() => null);
+  return ensureAppUserForAuthUser(user).catch(() => null);
 }
 
 function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici | null): AdminAktiviteLog[] {
@@ -571,8 +624,15 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
   const appUser = await aktifKullaniciBaglami();
   const me = await backendApi.me().catch(() => null);
   const authUser = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+  const institution = appUser?.institutionCode
+    ? (await institutionRecords({ institutionCode: appUser.institutionCode }).catch(() => []))[0] ?? null
+    : null;
   const userId = appUser?.id ?? authUser?.id ?? null;
-  const institutionId = appUser?.institutionId ?? await kurumIdBul(appUser?.institutionCode);
+  const institutionId = appUser?.institutionId ?? institution?.id ?? await kurumIdBul(appUser?.institutionCode);
+  const institutionName = appUser?.institutionName ?? institution?.institutionName ?? null;
+  const institutionCode = appUser?.institutionCode ?? institution?.institutionCode ?? null;
+  const district = appUser?.district ?? institution?.districtName ?? null;
+  const province = appUser?.province ?? institution?.province ?? null;
   await backendApi.createRecord<ActivityLogRecordData>("activity_log", {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     userId,
@@ -581,11 +641,16 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
     action,
     createdAt: now,
     institutionId,
-    institutionName: appUser?.institutionName ?? null,
-    institutionCode: appUser?.institutionCode ?? null,
-    district: appUser?.district ?? null,
-    province: appUser?.province ?? null,
-    metadata: metadata ?? null,
+    institutionName,
+    institutionCode,
+    district,
+    province,
+    metadata: {
+      ...(metadata ?? {}),
+      missingInstitutionContext: !institutionCode || !district || !institutionName,
+      authUserId: authUser?.id ?? null,
+      appUserId: appUser?.id ?? null,
+    },
   });
   await backendApi.usageEvent(action, { source: "activity_log", ...metadata }).catch(() => {});
 }
@@ -843,6 +908,18 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       });
     }
 
+    if (!user.authUserId) {
+      issues.push({
+        id: `user-missing-auth-${user.id}`,
+        type: "user_missing_auth_user",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.name} (${user.email})`,
+        description: "Kullanıcının auth hesabı ile app_user kaydı henüz bağlanmamış.",
+        suggestion: "Kullanıcı bir kez giriş yaptığında authUserId otomatik tamamlanır.",
+      });
+    }
+
     const userInstitutionCode = normalizeImportKey(user.institutionCode);
     if (!user.district || !user.institutionCode) {
       issues.push({
@@ -886,6 +963,17 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
   }
 
   for (const log of logs) {
+    if (!log.institutionCode || !log.institutionName || !log.district) {
+      issues.push({
+        id: `activity-missing-institution-${log.id}`,
+        type: "activity_missing_institution",
+        targetKind: "activity",
+        targetId: log.id,
+        record: `${log.action} (${log.userName ?? log.userEmail ?? log.userId ?? "Kullanıcı"})`,
+        description: "Aktivite kaydında kurum, yurt veya mıntıka bilgisi eksik.",
+        suggestion: "Kullanıcının app_user kurum eşleşmesini kontrol edin; yeni aktiviteler app_user üzerinden otomatik tamamlanır.",
+      });
+    }
     if (log.userId && !userIds.has(log.userId)) {
       issues.push({
         id: `activity-user-${log.id}`,
@@ -1031,7 +1119,7 @@ export const api = {
     const r = await backendApi.me();
     const user = kullaniciFromBackend(r.user ?? (r as BackendUser));
     if (!user) return { user: null };
-    const appUser = await ensurePrimaryAdminAppUser(user).catch(() => null);
+    const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
@@ -1041,9 +1129,10 @@ export const api = {
     const r = await backendApi.login({ email, password });
     const user = kullaniciFromBackend(r.user);
     if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    const appUser = await ensurePrimaryAdminAppUser(user).catch(() => null);
+    const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
     if (appUser) {
       await backendApi.updateRecord<AppUserRecordData>(appUser.id, "app_user", {
+        authUserId: appUser.authUserId ?? user.id,
         email: appUser.email,
         name: appUser.name,
         role: appUser.role,
@@ -1074,11 +1163,11 @@ export const api = {
     const r = await backendApi.register({ email, password, name });
     const user = kullaniciFromBackend(r.user);
     if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    const existing = await ensurePrimaryAdminAppUser(user).catch(() => null);
-    if (!existing) {
+    let appUser = await ensureAppUserForAuthUser(user).catch(() => null);
+    if (!appUser) {
       const now = new Date().toISOString();
       const permissions = permissionDefaults("user", false);
-      await backendApi.createRecord<AppUserRecordData>("app_user", {
+      const record = await backendApi.createRecord<AppUserRecordData>("app_user", {
         id: user.id,
         authUserId: user.id,
         email: user.email,
@@ -1097,9 +1186,10 @@ export const api = {
         lastLoginAt: now,
         deletedAt: null,
       }).catch(() => null);
+      appUser = record ? appUserFromRecord(record) : null;
     }
     await activityRecordOlustur("login", { source: "auth_register" }).catch(() => null);
-    return { user };
+    return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
   cikisYap: async () => {
@@ -1123,6 +1213,7 @@ export const api = {
       updatedAt: now,
       createdAt: now,
     });
+    await activityRecordOlustur("profile_saved", { source: "user_profile" }).catch(() => null);
     return { profile: profilFromRecord(record) };
   },
 

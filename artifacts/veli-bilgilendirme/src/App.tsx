@@ -179,6 +179,9 @@ function MainApp() {
   };
 
   const backendEvent = useCallback((eventType: string, metadata?: Record<string, unknown>) => {
+    if (eventType === "poster_saved" || eventType === "image_uploaded") {
+      void api.activityLog(eventType).catch(() => {});
+    }
     void backendApi.usageEvent(eventType, {
       source: "veli_bilgilendirme",
       template: seciliSablon,

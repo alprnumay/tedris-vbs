@@ -423,6 +423,9 @@ export default function AdminSayfasi() {
       export_pdf: "PDF aldı",
       share_whatsapp: "WhatsApp paylaştı",
       open_veli_module: "Veli Bilgilendirme açtı",
+      poster_saved: "Taslak kaydetti",
+      image_uploaded: "Görsel yükledi",
+      profile_saved: "Profil kaydetti",
       support_created: "Destek talebi oluşturdu",
     })[action] ?? action;
 
@@ -786,6 +789,9 @@ export default function AdminSayfasi() {
                   <option value="export_pdf">PDF aldı</option>
                   <option value="share_whatsapp">WhatsApp paylaştı</option>
                   <option value="open_veli_module">Veli Bilgilendirme açtı</option>
+                  <option value="poster_saved">Taslak kaydetti</option>
+                  <option value="image_uploaded">Görsel yükledi</option>
+                  <option value="profile_saved">Profil kaydetti</option>
                   <option value="support_created">Destek talebi oluşturdu</option>
                 </select>
               </FiltreAlan>
