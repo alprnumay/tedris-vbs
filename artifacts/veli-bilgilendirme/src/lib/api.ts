@@ -30,11 +30,13 @@ function clearStoredSessionToken() {
 }
 
 let viewerAdminCache: boolean | null = null;
+let adminOwnershipSyncRan = false;
 
 function clearAuthState() {
   clearStoredSessionToken();
   clearBackendToken();
   viewerAdminCache = null;
+  adminOwnershipSyncRan = false;
 }
 
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
@@ -57,11 +59,57 @@ async function resolveViewerUsesAdminRecords(): Promise<boolean> {
 }
 
 async function syncAppUserRecordOwnership(records: BackendRecord<AppUserRecordData>[]) {
-  for (const record of records) {
-    const authUserId = record.data?.authUserId;
-    if (!authUserId || String(record.userId ?? "") === String(authUserId)) continue;
-    await backendApi.assignRecordOwner(record.id, authUserId).catch(() => null);
+  const authUsers = await backendApi.listAuthUsers().catch(() => [] as BackendUser[]);
+  const authIdByEmail = new Map<string, string>();
+  for (const user of authUsers) {
+    const email = normalizeEmail(typeof user.email === "string" ? user.email : "");
+    if (email && user.id != null) authIdByEmail.set(email, String(user.id));
   }
+
+  for (const record of records) {
+    const data = record.data ?? {};
+    let authUserId = data.authUserId ? String(data.authUserId) : "";
+    if (!authUserId) {
+      authUserId = authIdByEmail.get(getAppUserEmail(record)) ?? "";
+    }
+    if (!authUserId) continue;
+
+    const currentOwner = String(record.userId ?? "");
+    if (currentOwner === authUserId) continue;
+
+    const nextData: AppUserRecordData = {
+      ...data,
+      authUserId,
+      email: getAppUserEmail(record) || data.email,
+      loginEmail: data.loginEmail ?? getAppUserEmail(record) ?? data.email,
+      generatedEmail: data.generatedEmail ?? getAppUserEmail(record) ?? data.email,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await backendApi.assignRecordOwner(record.id, authUserId, { recordType: "app_user", data: nextData });
+      console.log("[TEDRIS_OWNERSHIP_SYNC_OK]", {
+        recordId: record.id,
+        authUserId,
+        email: getAppUserEmail(record),
+      });
+    } catch (error) {
+      console.warn("[TEDRIS_OWNERSHIP_SYNC_FAIL]", {
+        recordId: record.id,
+        authUserId,
+        email: getAppUserEmail(record),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+async function ensureAdminOwnershipSyncOnce() {
+  if (adminOwnershipSyncRan) return;
+  if (!await resolveViewerUsesAdminRecords()) return;
+  adminOwnershipSyncRan = true;
+  const records = await backendApi.listAdminRecords<AppUserRecordData>("app_user").catch(() => [] as BackendRecord<AppUserRecordData>[]);
+  await syncAppUserRecordOwnership(records);
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
@@ -401,6 +449,10 @@ function logLoginDiag(authUser: KullaniciBilgisi | null, appUser: AdminKullanici
 function zorunluAktifAppUser(authUser: KullaniciBilgisi, appUser: AdminKullanici | null): AdminKullanici {
   logLoginDiag(authUser, appUser);
   if (!appUser) {
+    console.warn("[TEDRIS_LOGIN_OWNERSHIP_HINT]", {
+      email: authUser.email,
+      hint: "Auth kaydı var ama app_user kaydı bu kullanıcıya devredilmemiş olabilir. Yönetici bir kez panele girip oturum açmalı.",
+    });
     throw new Error("Bu e-posta için aktif uygulama kullanıcı kaydı bulunamadı. Lütfen yöneticinizle iletişime geçin.");
   }
   if (!appUserAktifMi(appUser)) {
@@ -1623,6 +1675,7 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
+    await ensureAdminOwnershipSyncOnce().catch(() => null);
     const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
@@ -1635,6 +1688,7 @@ export const api = {
       if (!user) {
         throw new Error("Kullanıcı bilgisi alınamadı.");
       }
+      await ensureAdminOwnershipSyncOnce().catch(() => null);
       const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
       const activeAppUser = zorunluAktifAppUser(user, appUser);
       await updateAppUserRecord(activeAppUser.id, {
@@ -1893,7 +1947,23 @@ export const api = {
       ? await updateAppUserRecord(existing.id, payload)
       : await backendApi.createRecord<AppUserRecordData>("app_user", payload);
     if (authUser?.id) {
-      await backendApi.assignRecordOwner(record.id, authUser.id).catch(() => null);
+      const recordData = appUserDataFromRecord(record);
+      await backendApi.assignRecordOwner(record.id, authUser.id, {
+        recordType: "app_user",
+        data: {
+          ...(record.data ?? recordData),
+          authUserId: authUser.id,
+          email: data.email,
+          loginEmail: data.email,
+          generatedEmail: data.email,
+        },
+      }).catch((error) => {
+        console.warn("[TEDRIS_OWNERSHIP_ASSIGN_FAIL]", {
+          recordId: record.id,
+          authUserId: authUser.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     }
     return { user: appUserFromRecord(record) };
   },

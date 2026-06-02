@@ -18,6 +18,7 @@ export interface BackendRecord<T = unknown> {
   recordType?: string;
   record_type?: string;
   type?: string;
+  userId?: string | number;
   data?: T;
   updatedAt?: string;
   updated_at?: string;
@@ -180,6 +181,19 @@ export const backendApi = {
   resetAuthPassword: (id: string, body: { password?: string; generate?: boolean }) =>
     request<{ ok?: boolean; password?: string }>("POST", `/admin/users/${encodeURIComponent(id)}/reset-password`, body),
 
+  listAuthUsers: async () => {
+    const payload = await request<unknown>("GET", "/admin/users");
+    const users = normalizeRecords<BackendUser>(payload);
+    if (users.length) return users;
+    const p = payload as { users?: BackendUser[]; data?: { users?: BackendUser[] } | BackendUser[] };
+    if (Array.isArray(p.users)) return p.users;
+    if (Array.isArray(p.data)) return p.data;
+    if (p.data && typeof p.data === "object" && Array.isArray((p.data as { users?: BackendUser[] }).users)) {
+      return (p.data as { users: BackendUser[] }).users;
+    }
+    return [];
+  },
+
   createRecord: async <T>(recordType: string, data: T) =>
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
@@ -276,10 +290,19 @@ export const backendApi = {
   updateAdminRecord: async <T>(id: string | number, recordType: string, data: T) =>
     normalizeRecord<T>(await request("PUT", `/admin/records/${encodeURIComponent(id)}`, { record_type: recordType, data })),
 
-  assignRecordOwner: async (id: string | number, ownerUserId: string | number) => {
+  assignRecordOwner: async (
+    id: string | number,
+    ownerUserId: string | number,
+    opts?: { recordType?: string; data?: unknown },
+  ) => {
     const numericId = typeof ownerUserId === "string" ? Number(ownerUserId) : ownerUserId;
     const userId = Number.isFinite(numericId) ? numericId : ownerUserId;
-    return request<{ ok?: boolean }>("PUT", `/admin/records/${encodeURIComponent(id)}`, { userId });
+    const body: Record<string, unknown> = { userId };
+    if (opts?.data) {
+      body.record_type = opts.recordType ?? "app_user";
+      body.data = opts.data;
+    }
+    return request<{ ok?: boolean }>("PUT", `/admin/records/${encodeURIComponent(id)}`, body);
   },
 
   deleteRecord: (id: string | number) =>
