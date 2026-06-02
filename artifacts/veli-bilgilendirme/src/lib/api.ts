@@ -29,6 +29,11 @@ function clearStoredSessionToken() {
   }
 }
 
+function clearAuthState() {
+  clearStoredSessionToken();
+  clearBackendToken();
+}
+
 export interface KullaniciBilgisi {
   id: string;
   email: string;
@@ -306,6 +311,38 @@ function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullan
     allowedInstitutions: appUser.allowedInstitutions ?? [],
     reportPermissions: appUser.reportPermissions ?? [],
   };
+}
+
+function appUserAktifMi(user?: AdminKullanici | null): user is AdminKullanici {
+  const status = String(user?.status ?? "").trim().toLocaleLowerCase("tr-TR");
+  return Boolean(user && !user.deletedAt && user.isActive !== false && status !== "inactive" && status !== "deleted");
+}
+
+function logLoginDiag(authUser: KullaniciBilgisi | null, appUser: AdminKullanici | null) {
+  console.log("[TEDRIS_LOGIN_DIAG]", {
+    email: authUser?.email ?? appUser?.email ?? null,
+    authUserFound: Boolean(authUser),
+    appUserFound: Boolean(appUser),
+    appUserId: appUser?.id,
+    appUserIsActive: appUser?.isActive,
+    appUserStatus: appUser?.status,
+    deletedAt: appUser?.deletedAt,
+    institutionCode: appUser?.institutionCode,
+    institutionName: appUser?.institutionName,
+  });
+}
+
+function zorunluAktifAppUser(authUser: KullaniciBilgisi, appUser: AdminKullanici | null): AdminKullanici {
+  logLoginDiag(authUser, appUser);
+  if (!appUser) {
+    clearAuthState();
+    throw new Error("Bu e-posta için aktif uygulama kullanıcı kaydı bulunamadı. Lütfen yöneticinizle iletişime geçin.");
+  }
+  if (!appUserAktifMi(appUser)) {
+    clearAuthState();
+    throw new Error("Hesabınız pasif durumda. Lütfen yöneticinizle iletişime geçin.");
+  }
+  return appUser;
 }
 
 function isPrimaryAdminEmail(email?: string | null): boolean {
@@ -712,7 +749,12 @@ async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
   const me = await backendApi.me().catch(() => null);
   const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
   if (!user?.email) return null;
-  return ensureAppUserForAuthUser(user).catch(() => null);
+  const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
+  if (!appUserAktifMi(appUser)) {
+    clearAuthState();
+    return null;
+  }
+  return appUser;
 }
 
 function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici | null): AdminAktiviteLog[] {
@@ -730,9 +772,10 @@ function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici 
 
 async function activityRecordOlustur(action: string, metadata?: Record<string, unknown>) {
   const now = new Date().toISOString();
-  const appUser = await aktifKullaniciBaglami();
   const me = await backendApi.me().catch(() => null);
   const authUser = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+  const appUser = authUser ? await aktifKullaniciBaglami() : null;
+  if (authUser && !appUser) return;
   const institution = appUser?.institutionCode
     ? (await institutionRecords({ institutionCode: appUser.institutionCode }).catch(() => []))[0] ?? null
     : null;
@@ -745,6 +788,8 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
   await backendApi.createRecord<ActivityLogRecordData>("activity_log", {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     userId,
+    appUserId: appUser?.id ?? null,
+    authUserId: authUser?.id ?? appUser?.authUserId ?? null,
     userEmail: appUser?.email ?? authUser?.email ?? null,
     userName: appUser?.name ?? authUser?.name ?? null,
     action,
@@ -760,6 +805,13 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
       authUserId: authUser?.id ?? null,
       appUserId: appUser?.id ?? null,
     },
+  });
+  console.log("[TEDRIS_ACTIVITY_DIAG]", {
+    action,
+    userEmail: appUser?.email ?? authUser?.email ?? null,
+    appUserId: appUser?.id ?? null,
+    institutionCode,
+    created: true,
   });
   console.log("[TEDRIS_ACTIVITY_LOG_CREATED]", {
     action,
@@ -1333,89 +1385,72 @@ async function institutionRecords(params: Record<string, string | undefined> = {
 
 export const api = {
   me: async () => {
-    const r = await backendApi.me();
+    const r = await backendApi.me().catch((error) => {
+      clearAuthState();
+      throw error;
+    });
     const user = kullaniciFromBackend(r.user ?? (r as BackendUser));
-    if (!user) return { user: null };
+    if (!user) {
+      clearAuthState();
+      return { user: null };
+    }
     const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
-    return { user: mergeKullaniciWithAppUser(user, appUser) };
+    return { user: mergeKullaniciWithAppUser(user, zorunluAktifAppUser(user, appUser)) };
   },
 
   girisYap: async (email: string, password: string) => {
-    clearStoredSessionToken();
-    clearBackendToken();
+    clearAuthState();
     const r = await backendApi.login({ email, password });
     const user = kullaniciFromBackend(r.user);
-    if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
-    if (appUser) {
-      await backendApi.updateRecord<AppUserRecordData>(appUser.id, "app_user", {
-        authUserId: appUser.authUserId ?? user.id,
-        email: appUser.email,
-        loginEmail: appUser.email,
-        generatedEmail: appUser.email,
-        name: appUser.name,
-        role: appUser.role,
-        isAdmin: appUser.isAdmin,
-        isActive: appUser.isActive,
-        district: appUser.district,
-        province: appUser.province,
-        institutionName: appUser.institutionName,
-        institutionCode: appUser.institutionCode,
-        institutionId: appUser.institutionId,
-        allowedDistricts: appUser.allowedDistricts,
-        allowedCities: appUser.allowedCities,
-        allowedInstitutions: appUser.allowedInstitutions,
-        reportPermissions: appUser.reportPermissions,
-        createdAt: appUser.createdAt,
-        updatedAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-        deletedAt: appUser.deletedAt ?? null,
-      }).catch(() => null);
+    if (!user) {
+      clearAuthState();
+      throw new Error("Kullanıcı bilgisi alınamadı.");
     }
+    const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
+    const activeAppUser = zorunluAktifAppUser(user, appUser);
+    await backendApi.updateRecord<AppUserRecordData>(activeAppUser.id, "app_user", {
+      authUserId: activeAppUser.authUserId ?? user.id,
+      email: activeAppUser.email,
+      loginEmail: activeAppUser.email,
+      generatedEmail: activeAppUser.email,
+      name: activeAppUser.name,
+      role: activeAppUser.role,
+      isAdmin: activeAppUser.isAdmin,
+      isActive: activeAppUser.isActive,
+      status: activeAppUser.status ?? "active",
+      district: activeAppUser.district,
+      province: activeAppUser.province,
+      institutionName: activeAppUser.institutionName,
+      institutionCode: activeAppUser.institutionCode,
+      institutionId: activeAppUser.institutionId,
+      allowedDistricts: activeAppUser.allowedDistricts,
+      allowedCities: activeAppUser.allowedCities,
+      allowedInstitutions: activeAppUser.allowedInstitutions,
+      reportPermissions: activeAppUser.reportPermissions,
+      createdAt: activeAppUser.createdAt,
+      updatedAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      deletedAt: activeAppUser.deletedAt ?? null,
+    }).catch(() => null);
     await activityRecordOlustur("login", { source: "auth_login" }).catch(() => null);
-    return { user: mergeKullaniciWithAppUser(user, appUser) };
+    return { user: mergeKullaniciWithAppUser(user, activeAppUser) };
   },
 
   kayitOl: async (email: string, password: string, name: string) => {
-    clearStoredSessionToken();
-    clearBackendToken();
+    clearAuthState();
     const r = await backendApi.register({ email, password, name });
     const user = kullaniciFromBackend(r.user);
-    if (!user) throw new Error("Kullanıcı bilgisi alınamadı.");
-    let appUser = await ensureAppUserForAuthUser(user).catch(() => null);
-    if (!appUser) {
-      const now = new Date().toISOString();
-      const permissions = permissionDefaults("user", false);
-      const record = await backendApi.createRecord<AppUserRecordData>("app_user", {
-        id: user.id,
-        authUserId: user.id,
-        email: user.email,
-        loginEmail: user.email,
-        generatedEmail: user.email,
-        name: user.name,
-        role: "user",
-        isAdmin: false,
-        isActive: true,
-        district: null,
-        province: null,
-        institutionName: null,
-        institutionCode: null,
-        institutionId: null,
-        ...permissions,
-        createdAt: now,
-        updatedAt: now,
-        lastLoginAt: now,
-        deletedAt: null,
-      }).catch(() => null);
-      appUser = record ? appUserFromRecord(record) : null;
+    if (!user) {
+      clearAuthState();
+      throw new Error("Kullanıcı bilgisi alınamadı.");
     }
+    const appUser = zorunluAktifAppUser(user, await ensureAppUserForAuthUser(user).catch(() => null));
     await activityRecordOlustur("login", { source: "auth_register" }).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
   cikisYap: async () => {
-    clearStoredSessionToken();
-    clearBackendToken();
+    clearAuthState();
     return { ok: true };
   },
 
@@ -1657,13 +1692,43 @@ export const api = {
   adminSifreSifirla: async (id: string, opts?: { password?: string; generate?: boolean }) => {
     const current = await backendApi.getRecord<AppUserRecordData>(id);
     const currentData = current.data ?? {};
-    const password = opts?.password || `Nehari${Math.floor(100000 + Math.random() * 900000)}`;
+    const appUser = appUserFromRecord(current);
+    const authUserId = currentData.authUserId ?? appUser.authUserId;
+    if (!authUserId) {
+      console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
+        email: appUser.email,
+        target: "auth_password",
+        authUserUpdated: false,
+        appUserUpdated: false,
+      });
+      throw new Error("Şifre değiştirilemedi. Bu işlem gerçek giriş şifresini güncelleyen auth endpointine bağlı değil.");
+    }
+
+    let reset: { ok?: boolean; password?: string };
+    try {
+      reset = await backendApi.resetAuthPassword(authUserId, opts ?? { generate: true });
+    } catch {
+      console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
+        email: appUser.email,
+        target: "auth_password",
+        authUserUpdated: false,
+        appUserUpdated: false,
+      });
+      throw new Error("Şifre değiştirilemedi. Bu işlem gerçek giriş şifresini güncelleyen auth endpointine bağlı değil.");
+    }
+
     await backendApi.updateRecord<AppUserRecordData>(id, "app_user", {
       ...currentData,
       passwordResetAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    return { ok: true, password };
+    console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
+      email: appUser.email,
+      target: "auth_password",
+      authUserUpdated: true,
+      appUserUpdated: true,
+    });
+    return { ok: true, password: reset.password };
   },
 
   adminKullaniciSil: async (id: string) => {
@@ -1674,6 +1739,13 @@ export const api = {
       deletedAt: new Date().toISOString(),
     } as Partial<AdminKullanici>);
     await deactivateInstitutionIfNoActiveUsers(userBeforeDelete?.institutionCode ?? r.user.institutionCode).catch(() => null);
+    console.log("[TEDRIS_DISABLE_USER_DIAG]", {
+      email: r.user.email,
+      appUserUpdated: true,
+      authUserDisabled: false,
+      isActive: r.user.isActive,
+      status: r.user.status ?? "deleted",
+    });
     console.log("[TEDRIS_USER_DELETE]", {
       email: r.user.email,
       institutionCode: r.user.institutionCode,

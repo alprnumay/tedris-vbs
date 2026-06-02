@@ -177,6 +177,9 @@ export const backendApi = {
 
   me: () => request<{ user?: BackendUser }>("GET", "/auth/me"),
 
+  resetAuthPassword: (id: string, body: { password?: string; generate?: boolean }) =>
+    request<{ ok?: boolean; password?: string }>("POST", `/admin/users/${encodeURIComponent(id)}/reset-password`, body),
+
   createRecord: async <T>(recordType: string, data: T) =>
     normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
 
