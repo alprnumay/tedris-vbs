@@ -526,8 +526,7 @@ async function repairAppUserRecordEmail(record: BackendRecord<AppUserRecordData>
 }
 
 async function loadAppUserRawRecords(): Promise<BackendRecord<AppUserRecordData>[]> {
-  return backendApi.listRecords<AppUserRecordData>("app_user", { includeAuth: false })
-    .catch(() => backendApi.listRecords<AppUserRecordData>("app_user"));
+  return backendApi.listRecords<AppUserRecordData>("app_user");
 }
 
 function appUserEmailsFromRecord(record: BackendRecord<AppUserRecordData>): string[] {
