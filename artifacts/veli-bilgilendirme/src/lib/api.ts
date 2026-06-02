@@ -496,9 +496,13 @@ function filterAppUsers(users: AdminKullanici[], params: Record<string, string |
   });
 }
 
+function isActiveRecord(data?: { isActive?: boolean; status?: string | null; deletedAt?: string | null } | null): boolean {
+  const status = String(data?.status ?? "").trim().toLocaleLowerCase("tr-TR");
+  return !data?.deletedAt && data?.isActive !== false && status !== "inactive" && status !== "deleted";
+}
+
 function appUserActiveData(data: Pick<AppUserRecordData, "isActive" | "deletedAt" | "status">): boolean {
-  const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
-  return !data.deletedAt && data.isActive !== false && status !== "inactive" && status !== "deleted";
+  return isActiveRecord(data);
 }
 
 function generatedInstitutionEmail(district: string, institutionName: string, existingEmails: Set<string>): string {
@@ -553,9 +557,7 @@ function institutionCompositeKey(data: { institutionName?: string | null; distri
 }
 
 function activeInstitutionRecord(record: BackendRecord<InstitutionRecordData>): boolean {
-  const data = record.data ?? {};
-  const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
-  return !data.deletedAt && (!status || status === "active");
+  return isActiveRecord(record.data);
 }
 
 function institutionCompletenessScore(institution: AdminYurtKayit): number {
@@ -827,6 +829,7 @@ function yurtMetrikleriUret(
   users: AdminKullanici[],
   allLogs: AdminAktiviteLog[],
   rangeLogs: AdminAktiviteLog[],
+  supportRequests: AdminDestek[] = [],
   params: Record<string, string | undefined> = {},
 ): AdminYurtMetrik[] {
   const todayStart = new Date();
@@ -838,6 +841,10 @@ function yurtMetrikleriUret(
     const institutionUsers = users.filter((user) => user.institutionCode === institution.institutionCode);
     const logs = allLogs.filter((log) => log.institutionCode === institution.institutionCode);
     const currentLogs = rangeLogs.filter((log) => log.institutionCode === institution.institutionCode);
+    const openSupport = supportRequests.filter((request) => {
+      if (request.institution_code !== institution.institutionCode) return false;
+      return request.status !== "cozuldu" && request.status !== "closed";
+    }).length;
     const loginLogs = logs.filter((log) => log.action === "login");
     const lastLoginAt = loginLogs.map((log) => log.createdAt).sort().at(-1) ?? null;
     const lastActivityAt = logs.map((log) => log.createdAt).sort().at(-1) ?? null;
@@ -857,7 +864,7 @@ function yurtMetrikleriUret(
       logins30d,
       lastLoginAt,
       lastActivityAt,
-      openSupport: currentLogs.filter((log) => log.action === "support_message_sent" || log.action === "support_created").length,
+      openSupport,
       activityStatus: yurtDurumu(lastLoginAt),
       registryStatus: institution.status,
       inRegistry: true,
@@ -912,6 +919,7 @@ async function raporVerisi(params: Record<string, string | undefined> = {}) {
   const users = (await appUserRecords(params)).filter((user) => scopeUserAllowed(user, viewer));
   const usersByEmail = appUserByEmailMap(users);
   const institutionsByCode = institutionByCodeMap(institutions);
+  const scopedInstitutionCodes = new Set(institutions.map((institution) => institution.institutionCode));
   const allLogs = activityYetkiFiltresi(
     (await backendApi.listRecords<ActivityLogRecordData>("activity_log"))
       .map(activityFromRecord)
@@ -923,9 +931,23 @@ async function raporVerisi(params: Record<string, string | undefined> = {}) {
     return true;
   });
   const rangeLogs = logFiltrele(allLogs, params, range);
-  const yurts = yurtMetrikleriUret(institutions, users, allLogs, rangeLogs, params);
+  const supportRequests = (await destekKayitlari()).filter((request) => {
+    const time = Date.parse(request.createdAt);
+    if (Number.isFinite(time) && (time < Date.parse(range.startIso) || time > Date.parse(range.endIso))) return false;
+    if (params.district && request.district !== params.district) return false;
+    if (params.institutionCode && request.institution_code !== params.institutionCode) return false;
+    if (request.institution_code && !scopedInstitutionCodes.has(request.institution_code)) return false;
+    return true;
+  });
+  console.log("[TEDRIS_REPORT_COUNTS]", {
+    activeInstitutions: institutions.length,
+    activeUsers: users.length,
+    logs: allLogs.length,
+    noLoginCount: institutions.length - new Set(allLogs.filter((log) => log.action === "login").map((log) => log.institutionCode).filter(Boolean)).size,
+  });
+  const yurts = yurtMetrikleriUret(institutions, users, allLogs, rangeLogs, supportRequests, params);
   const mintikalar = mintikaMetrikleriUret(yurts, users);
-  return { range, institutions, users, allLogs, rangeLogs, yurts, mintikalar };
+  return { range, institutions, users, allLogs, rangeLogs, supportRequests, yurts, mintikalar };
 }
 
 function destekFromRecord(record: BackendRecord<SupportRequestRecordData>): AdminDestek {
@@ -1038,6 +1060,21 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       description: `${group.length} aktif kurum aynı kurum kodunu kullanıyor.`,
       suggestion: "Aynı kurum koduyla duran duplicate kurum kayıtlarını pasifleştirin.",
     });
+  }
+
+  const activeUserInstitutionCodes = new Set(users.map((user) => normalizeImportKey(user.institutionCode)).filter(Boolean));
+  for (const institution of institutions) {
+    if (!activeUserInstitutionCodes.has(normalizeImportKey(institution.institutionCode))) {
+      issues.push({
+        id: `institution-without-user-${institution.id}`,
+        type: "institution_without_active_user",
+        targetKind: "institution",
+        targetId: institution.id,
+        record: `${institution.institutionName} (${institution.institutionCode})`,
+        description: "Aktif kurum kaydına bağlı aktif app_user bulunmuyor.",
+        suggestion: "Bu kurum takip edilecekse aktif kullanıcı oluşturun; değilse kurumu pasifleştirin.",
+      });
+    }
   }
 
   for (const user of users) {
@@ -1206,6 +1243,23 @@ async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonReques
     }
   }
   return { ok: true, affected };
+}
+
+async function deactivateInstitutionIfNoActiveUsers(institutionCode?: string | null) {
+  if (!institutionCode) return;
+  const activeUsers = (await appUserRecords({ active: "active" })).filter((user) => user.institutionCode === institutionCode);
+  if (activeUsers.length > 0) return;
+  const institutions = await institutionRecords({ institutionCode });
+  const institution = institutions[0];
+  if (!institution) return;
+  const current = await backendApi.getRecord<InstitutionRecordData>(institution.id).catch(() => null);
+  if (!current) return;
+  await backendApi.updateRecord<InstitutionRecordData>(institution.id, "institution", {
+    ...(current.data ?? {}),
+    status: "inactive",
+    deletedAt: current.data?.deletedAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function profilFromRecord(record: BackendRecord<UserProfileRecordData>): KayitliProfil {
@@ -1613,11 +1667,19 @@ export const api = {
   },
 
   adminKullaniciSil: async (id: string) => {
+    const userBeforeDelete = await backendApi.getRecord<AppUserRecordData>(id).then(appUserFromRecord).catch(() => null);
     const r = await api.adminKullaniciGuncelle(id, {
       isActive: false,
       status: "deleted",
       deletedAt: new Date().toISOString(),
     } as Partial<AdminKullanici>);
+    await deactivateInstitutionIfNoActiveUsers(userBeforeDelete?.institutionCode ?? r.user.institutionCode).catch(() => null);
+    console.log("[TEDRIS_USER_DELETE]", {
+      email: r.user.email,
+      institutionCode: r.user.institutionCode,
+      userStatus: r.user.status ?? "deleted",
+      institutionStatus: "inactive_if_no_active_users",
+    });
     return { ok: true, user: r.user };
   },
 
