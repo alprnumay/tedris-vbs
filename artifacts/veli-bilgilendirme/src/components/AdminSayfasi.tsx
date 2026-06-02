@@ -299,11 +299,26 @@ export default function AdminSayfasi() {
     setImportYukleniyor(true);
     setImportSonuc(null);
     try {
+      const [kurumRes, kullaniciRes] = await Promise.all([
+        api.adminYurtKayitlari().catch(() => ({ institutions: [] as typeof kurumKayitlari })),
+        api.adminKullanicilar({ active: "active" }).catch(() => ({ users: [] as typeof kullanicilar })),
+      ]);
+      const kurumlar = kurumRes.institutions.length > 0
+        ? kurumRes.institutions.map((k) => ({
+            institutionCode: k.institutionCode,
+            institutionName: k.institutionName,
+            districtName: k.districtName,
+            province: k.province,
+          }))
+        : kurumSecenekleriTum;
+      const epostalar = kullaniciRes.users.length > 0
+        ? kullaniciRes.users.map((u) => u.email.toLowerCase())
+        : mevcutEpostalar;
       const rows = await excelKurumImportOku(
         file,
-        kurumSecenekleriTum.map((k) => k.institutionCode),
-        mevcutEpostalar,
-        kurumSecenekleriTum,
+        kurumlar.map((k) => k.institutionCode),
+        epostalar,
+        kurumlar,
       );
       setImportRows(rows);
     } catch (e) {
@@ -331,6 +346,8 @@ export default function AdminSayfasi() {
       });
       setImportSonuc(sonuc);
       await veriYukle();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Excel içe aktarma başarısız.");
     } finally {
       setImportYukleniyor(false);
     }

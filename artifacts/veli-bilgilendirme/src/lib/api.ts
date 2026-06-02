@@ -104,12 +104,33 @@ async function syncAppUserRecordOwnership(records: BackendRecord<AppUserRecordDa
   }
 }
 
+function mergeRecordsById<T>(...groups: BackendRecord<T>[][]): BackendRecord<T>[] {
+  const byId = new Map<string, BackendRecord<T>>();
+  for (const group of groups) {
+    for (const record of group) {
+      byId.set(String(record.id), record);
+    }
+  }
+  return [...byId.values()];
+}
+
+async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<T>[]> {
+  if (!getBackendToken()) {
+    throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+  }
+  const owned = await backendApi.fetchAllRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
+  if (!(await resolveViewerUsesAdminRecords())) return owned;
+  const adminScoped = await backendApi.fetchAllAdminRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
+  return adminScoped.length ? mergeRecordsById(owned, adminScoped) : owned;
+}
+
 async function ensureAdminOwnershipSyncOnce() {
   if (adminOwnershipSyncRan) return;
   if (!await resolveViewerUsesAdminRecords()) return;
   adminOwnershipSyncRan = true;
-  const records = await backendApi.listAdminRecords<AppUserRecordData>("app_user").catch(() => [] as BackendRecord<AppUserRecordData>[]);
-  await syncAppUserRecordOwnership(records);
+  void loadProjectRecords<AppUserRecordData>("app_user")
+    .then((records) => syncAppUserRecordOwnership(records))
+    .catch(() => null);
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
@@ -131,12 +152,7 @@ async function updateAppUserRecord(id: string | number, data: AppUserRecordData)
 }
 
 async function loadInstitutionRawRecords(): Promise<BackendRecord<InstitutionRecordData>[]> {
-  if (await resolveViewerUsesAdminRecords()) {
-    return backendApi.listAdminRecords<InstitutionRecordData>("institution").catch(() =>
-      backendApi.listRecords<InstitutionRecordData>("institution"),
-    );
-  }
-  return backendApi.listRecords<InstitutionRecordData>("institution");
+  return loadProjectRecords<InstitutionRecordData>("institution");
 }
 
 export interface KullaniciBilgisi {
@@ -634,22 +650,16 @@ async function repairAppUserRecordEmail(record: BackendRecord<AppUserRecordData>
 }
 
 async function loadAppUserRecordsForLogin(authUser: KullaniciBilgisi): Promise<BackendRecord<AppUserRecordData>[]> {
-  const owned = await backendApi.listRecords<AppUserRecordData>("app_user");
+  const owned = await backendApi.listRecords<AppUserRecordData>("app_user").catch(() => [] as BackendRecord<AppUserRecordData>[]);
   if (owned.length) return owned;
   if (isVpsAdminUser(authUser)) {
-    const all = await backendApi.listAdminRecords<AppUserRecordData>("app_user").catch(() => [] as BackendRecord<AppUserRecordData>[]);
-    if (all.length) return all;
+    return backendApi.fetchAllAdminRecords<AppUserRecordData>("app_user").catch(() => owned);
   }
   return owned;
 }
 
 async function loadAppUserRawRecords(): Promise<BackendRecord<AppUserRecordData>[]> {
-  if (await resolveViewerUsesAdminRecords()) {
-    const records = await backendApi.listAdminRecords<AppUserRecordData>("app_user");
-    await syncAppUserRecordOwnership(records);
-    return records;
-  }
-  return backendApi.listRecords<AppUserRecordData>("app_user");
+  return loadProjectRecords<AppUserRecordData>("app_user");
 }
 
 function appUserEmailsFromRecord(record: BackendRecord<AppUserRecordData>): string[] {
@@ -1675,7 +1685,7 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
-    await ensureAdminOwnershipSyncOnce().catch(() => null);
+    void ensureAdminOwnershipSyncOnce();
     const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
@@ -1688,7 +1698,7 @@ export const api = {
       if (!user) {
         throw new Error("Kullanıcı bilgisi alınamadı.");
       }
-      await ensureAdminOwnershipSyncOnce().catch(() => null);
+      void ensureAdminOwnershipSyncOnce();
       const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
       const activeAppUser = zorunluAktifAppUser(user, appUser);
       await updateAppUserRecord(activeAppUser.id, {
@@ -2069,7 +2079,7 @@ export const api = {
     const institutions = await institutionRecords();
     const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
     const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));
-    const rawUserRecords = await backendApi.listRecords<AppUserRecordData>("app_user");
+    const rawUserRecords = await loadAppUserRawRecords();
     const users = rawUserRecords.map(appUserFromRecord);
     const emails = new Set(users.map((u) => getAppUserEmail(u)).filter(Boolean));
     const usersByEmail = new Map<string, AdminKullanici>(
