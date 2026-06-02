@@ -408,7 +408,9 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
       ...currentData,
       id: currentData.id ?? authUser.id,
       authUserId: currentData.authUserId ?? authUser.id,
-      email: currentData.email || currentData.loginEmail || currentData.generatedEmail || authUser.email,
+      email: getAppUserEmail(currentData) || getAppUserEmail(current) || authUser.email,
+      loginEmail: currentData.loginEmail ?? (getAppUserEmail(current) || authUser.email),
+      generatedEmail: currentData.generatedEmail ?? (getAppUserEmail(current) || authUser.email),
       name: currentData.name ?? authUser.name,
       ...(isPrimaryAdmin ? primaryAdminFields() : {}),
       updatedAt: now,
@@ -460,36 +462,77 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
   return created;
 }
 
+type AppUserEmailSource = AppUserRecordLike | AppUserRecordData | AdminKullanici | BackendRecord<AppUserRecordData>;
+
+function getAppUserEmail(source: AppUserEmailSource): string {
+  const raw = source as AppUserRecordLike;
+  const nested = raw.data ?? raw.payload ?? {};
+  for (const value of [
+    raw.email,
+    raw.loginEmail,
+    raw.generatedEmail,
+    raw.username,
+    nested.email,
+    nested.loginEmail,
+    nested.generatedEmail,
+    nested.username,
+  ]) {
+    const normalized = normalizeEmail(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 function appUserDataFromRecord(record: BackendRecord<AppUserRecordData>): AppUserRecordData {
   const raw = record as AppUserRecordLike;
   const payload = raw.payload ?? {};
   const data = raw.data ?? {};
-  return {
+  const merged = {
     ...payload,
     ...raw,
     ...data,
     id: data.id ?? raw.id,
   };
+  const email = getAppUserEmail(record);
+  return {
+    ...merged,
+    email: email || merged.email,
+    loginEmail: merged.loginEmail ?? (email || undefined),
+    generatedEmail: merged.generatedEmail ?? (email || undefined),
+  };
+}
+
+function appUserRecordNeedsEmailRepair(record: BackendRecord<AppUserRecordData>): boolean {
+  const data = record.data ?? {};
+  const canonical = getAppUserEmail(record);
+  return Boolean(canonical && normalizeEmail(data.email) !== canonical);
+}
+
+async function repairAppUserRecordEmail(record: BackendRecord<AppUserRecordData>): Promise<BackendRecord<AppUserRecordData>> {
+  const data = record.data ?? {};
+  const canonical = getAppUserEmail(record);
+  if (!canonical || normalizeEmail(data.email) === canonical) return record;
+  try {
+    return await backendApi.updateRecord<AppUserRecordData>(record.id, "app_user", {
+      ...data,
+      email: canonical,
+      loginEmail: data.loginEmail ?? canonical,
+      generatedEmail: data.generatedEmail ?? canonical,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    return record;
+  }
+}
+
+async function loadAppUserRawRecords(): Promise<BackendRecord<AppUserRecordData>[]> {
+  return backendApi.listRecords<AppUserRecordData>("app_user", { includeAuth: false })
+    .catch(() => backendApi.listRecords<AppUserRecordData>("app_user"));
 }
 
 function appUserEmailsFromRecord(record: BackendRecord<AppUserRecordData>): string[] {
-  const raw = record as AppUserRecordLike;
-  return [
-    raw.email,
-    raw.loginEmail,
-    raw.generatedEmail,
-    raw.username,
-    raw.payload?.email,
-    raw.payload?.loginEmail,
-    raw.payload?.generatedEmail,
-    raw.payload?.username,
-    raw.data?.email,
-    raw.data?.loginEmail,
-    raw.data?.generatedEmail,
-    raw.data?.username,
-  ]
-    .map((value) => normalizeEmail(value))
-    .filter(Boolean);
+  const email = getAppUserEmail(record);
+  return email ? [email] : [];
 }
 
 function appUserRawDiag(record: BackendRecord<AppUserRecordData>) {
@@ -501,6 +544,7 @@ function appUserRawDiag(record: BackendRecord<AppUserRecordData>) {
     dataEmail: raw.data?.email ?? null,
     loginEmail: raw.loginEmail ?? raw.data?.loginEmail ?? null,
     generatedEmail: raw.generatedEmail ?? raw.data?.generatedEmail ?? null,
+    computedEmail: getAppUserEmail(record) || null,
     isActive: data.isActive,
     status: data.status ?? null,
     deletedAt: data.deletedAt ?? null,
@@ -512,7 +556,7 @@ function appUserRawDiag(record: BackendRecord<AppUserRecordData>) {
 
 function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
   const data = appUserDataFromRecord(record);
-  const email = String(data.email ?? data.loginEmail ?? data.generatedEmail ?? data.username ?? "");
+  const email = getAppUserEmail(record);
   const role = data.role ?? (data.isAdmin ? "admin" : "user");
   const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
   const isActive = data.isActive ?? (!data.deletedAt && status !== "inactive" && status !== "deleted");
@@ -550,6 +594,7 @@ function appUserMatchScore(user: AdminKullanici, authUserId?: string): number {
   if (appUserAktifMi(user)) score += 10_000;
   if (user.institutionCode) score += 2_000;
   if (!user.deletedAt) score += 1_000;
+  if (user.authUserId) score += 500;
   if (authUserId && user.authUserId === authUserId) score += 250;
   if (user.institutionName) score += 40;
   if (user.district) score += 40;
@@ -570,25 +615,33 @@ function selectBestAppUser(users: AdminKullanici[], authUserId?: string): AdminK
 async function appUsersByEmail(email: string): Promise<AdminKullanici[]> {
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
-  const records = await backendApi.listRecords<AppUserRecordData>("app_user", { includeAuth: false })
-    .catch(() => backendApi.listRecords<AppUserRecordData>("app_user"));
-  const matches = records.filter((record) => appUserEmailsFromRecord(record).includes(normalized));
+  const records = await loadAppUserRawRecords();
+  const matches = await Promise.all(
+    records
+      .filter((record) => appUserEmailsFromRecord(record).includes(normalized))
+      .map((record) => (appUserRecordNeedsEmailRepair(record) ? repairAppUserRecordEmail(record) : record)),
+  );
   const users = matches.map(appUserFromRecord);
   console.log("[TEDRIS_LOGIN_APP_USER_CANDIDATES]", {
     loginEmail: normalized,
     candidateCount: users.length,
-    candidates: users.map((user) => ({
-      id: user.id,
-      email: user.email,
-      dataEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.email ?? null,
-      loginEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.loginEmail ?? null,
-      generatedEmail: (matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined)?.data?.generatedEmail ?? null,
-      isActive: user.isActive,
-      status: user.status ?? null,
-      deletedAt: user.deletedAt ?? null,
-      institutionCode: user.institutionCode,
-      computedActive: appUserAktifMi(user),
-    })),
+    candidates: users.map((user) => {
+      const raw = matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined;
+      return {
+        id: user.id,
+        email: user.email,
+        dataEmail: raw?.data?.email ?? null,
+        loginEmail: raw?.data?.loginEmail ?? null,
+        generatedEmail: raw?.data?.generatedEmail ?? null,
+        computedEmail: getAppUserEmail(user),
+        isActive: user.isActive,
+        status: user.status ?? null,
+        deletedAt: user.deletedAt ?? null,
+        institutionCode: user.institutionCode,
+        district: user.district,
+        computedActive: appUserAktifMi(user),
+      };
+    }),
   });
   return users;
 }
@@ -634,10 +687,9 @@ function generatedInstitutionEmail(district: string, institutionName: string, ex
 }
 
 async function appUserRecords(params: Record<string, string | undefined> = {}) {
-  const records = await backendApi.listRecords<AppUserRecordData>("app_user");
+  const records = await loadAppUserRawRecords();
   for (const record of records) {
-    const emails = appUserEmailsFromRecord(record);
-    if (emails.includes("burdurbaglarbasi@gmail.com")) {
+    if (appUserRecordNeedsEmailRepair(record)) {
       console.log("[TEDRIS_USER_ROW_RAW]", appUserRawDiag(record));
     }
   }
@@ -800,7 +852,7 @@ function institutionByCodeMap(institutions: AdminYurtKayit[]) {
 function appUserByEmailMap(users: AdminKullanici[]) {
   const map = new Map<string, AdminKullanici>();
   for (const user of users) {
-    const email = normalizeEmail(user.email);
+    const email = getAppUserEmail(user);
     if (!email) continue;
     const existing = map.get(email);
     map.set(email, existing ? selectBestAppUser([existing, user]) ?? user : user);
@@ -1143,10 +1195,11 @@ async function adminSettingsRecord() {
 }
 
 async function veriSagligiUret(): Promise<AdminVeriSagligi> {
-  const [users, institutions, rawInstitutionRecords, rawLogs, supportRequests] = await Promise.all([
+  const [users, institutions, rawInstitutionRecords, rawUserRecords, rawLogs, supportRequests] = await Promise.all([
     appUserRecords(),
     institutionRecords(),
     backendApi.listRecords<InstitutionRecordData>("institution"),
+    loadAppUserRawRecords(),
     backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
     destekKayitlari(),
   ]);
@@ -1216,7 +1269,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
   }
 
   for (const user of users) {
-    const emailKey = normalizeEmail(user.email);
+    const emailKey = getAppUserEmail(user);
     if (emailKey) usersByEmailGroups.set(emailKey, [...(usersByEmailGroups.get(emailKey) ?? []), user]);
 
     if (!emailKey) {
@@ -1270,6 +1323,21 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
           : "Kurum kodunu düzeltin veya kurum kaydını oluşturun.",
       });
     }
+  }
+
+  for (const record of rawUserRecords) {
+    if (!appUserRecordNeedsEmailRepair(record)) continue;
+    const user = appUserFromRecord(record);
+    const canonical = getAppUserEmail(record);
+    issues.push({
+      id: `user-repairable-email-${record.id}`,
+      type: "user_repairable_email",
+      targetKind: "user",
+      targetId: String(record.id),
+      record: `${user.name} (${canonical})`,
+      description: "E-posta alanı boş ama loginEmail/generatedEmail/data.email dolu; kayıt onarılabilir.",
+      suggestion: "Veri Onar işlemini çalıştırın veya kullanıcı bir kez giriş yaptığında email alanı otomatik tamamlanır.",
+    });
   }
 
   for (const [email, group] of usersByEmailGroups.entries()) {
@@ -1847,8 +1915,13 @@ export const api = {
     const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));
     const rawUserRecords = await backendApi.listRecords<AppUserRecordData>("app_user");
     const users = rawUserRecords.map(appUserFromRecord);
-    const emails = new Set(users.map((u) => normalizeEmail(u.email)));
-    const usersByEmail = new Map(users.map((u) => [normalizeEmail(u.email), u]));
+    const emails = new Set(users.map((u) => getAppUserEmail(u)).filter(Boolean));
+    const usersByEmail = new Map<string, AdminKullanici>(
+      users.flatMap((u) => {
+        const email = getAppUserEmail(u);
+        return email ? [[email, u] as const] : [];
+      }),
+    );
     const byDistrict: Record<string, number> = {};
     const errors: AdminImportCommitResponse["errors"] = [];
     let addedInstitutions = 0;
@@ -2234,25 +2307,24 @@ export const api = {
 
   adminReconcile: async () => {
     const [rawUserRecords, institutions] = await Promise.all([
-      backendApi.listRecords<AppUserRecordData>("app_user"),
+      loadAppUserRawRecords(),
       institutionRecords(),
     ]);
     for (const record of rawUserRecords) {
+      if (appUserRecordNeedsEmailRepair(record)) {
+        await repairAppUserRecordEmail(record);
+        continue;
+      }
       const data = record.data ?? {};
-      const repairedEmail = data.email || data.loginEmail || data.generatedEmail;
-      const shouldRepairEmail = !data.email && repairedEmail;
       const shouldRepairStatus = appUserActiveData(data) && data.status !== "active";
-      if (!shouldRepairEmail && !shouldRepairStatus) continue;
+      if (!shouldRepairStatus) continue;
       await backendApi.updateRecord<AppUserRecordData>(record.id, "app_user", {
         ...data,
-        email: repairedEmail,
-        loginEmail: data.loginEmail ?? repairedEmail,
-        generatedEmail: data.generatedEmail ?? repairedEmail,
-        status: shouldRepairStatus ? "active" : data.status,
+        status: "active",
         updatedAt: new Date().toISOString(),
       });
     }
-    const users = (await appUserRecords()).filter((user) => user.email);
+    const users = (await appUserRecords()).filter((user) => getAppUserEmail(user));
     const byCode = new Map(institutions.map((i) => [i.institutionCode, i]));
     let linked = 0;
     let skipped = 0;
