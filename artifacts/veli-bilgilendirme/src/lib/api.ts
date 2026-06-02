@@ -1,6 +1,7 @@
 import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
 import { kurumKoduOner } from "./kurumSlug";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
+import { epostaAlternatif, epostaUret, kurumKoduUret } from "./admin/adminKullaniciUret";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
@@ -82,10 +83,13 @@ interface AppUserRecordData {
   id?: string;
   authUserId?: string;
   email?: string;
+  loginEmail?: string;
+  generatedEmail?: string;
   name?: string;
   role?: string;
   isAdmin?: boolean;
   isActive?: boolean;
+  status?: string;
   district?: string | null;
   province?: string | null;
   institutionName?: string | null;
@@ -105,6 +109,8 @@ interface AppUserRecordData {
 interface ActivityLogRecordData {
   id?: string;
   userId?: string | null;
+  appUserId?: string | null;
+  authUserId?: string | null;
   userEmail?: string | null;
   userName?: string | null;
   action?: string;
@@ -119,8 +125,12 @@ interface ActivityLogRecordData {
 
 interface SupportRequestRecordData {
   userId?: string | null;
+  appUserId?: string | null;
+  authUserId?: string | null;
   userEmail?: string | null;
   userName?: string | null;
+  institutionId?: string | null;
+  subject?: string | null;
   message?: string;
   imageBase64?: string;
   status?: string;
@@ -131,6 +141,7 @@ interface SupportRequestRecordData {
   district?: string | null;
   institutionName?: string | null;
   institutionCode?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface AdminSettingRecordData {
@@ -154,8 +165,11 @@ export interface KayitliAfis {
 export interface DestekMesaji {
   id: string | number;
   userId: string | null;
+  appUserId?: string | null;
+  authUserId?: string | null;
   userEmail: string | null;
   userName: string | null;
+  subject?: string | null;
   message: string;
   createdAt: string;
 }
@@ -184,6 +198,7 @@ export interface AdminKullanici {
   role: string;
   isActive: boolean;
   isAdmin: boolean;
+  status?: string | null;
   lastLoginAt: string | null;
   deletedAt?: string | null;
   createdAt: string;
@@ -329,7 +344,18 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
     const isPrimaryAdmin = isPrimaryAdminEmail(authUser.email);
     const needsPrimaryAdminUpdate = isPrimaryAdmin && primaryAdminEksikMi(existing);
     const needsAuthLink = !existing.authUserId && authUser.id;
-    if (!needsPrimaryAdminUpdate && !needsAuthLink) return existing;
+    if (!needsPrimaryAdminUpdate && !needsAuthLink) {
+      console.log("[TEDRIS_AUTH_MATCH]", {
+        email: existing.email,
+        authUserId: authUser.id,
+        appUserId: existing.id,
+        institutionCode: existing.institutionCode,
+        institutionName: existing.institutionName,
+        district: existing.district,
+        province: existing.province,
+      });
+      return existing;
+    }
 
     const current = await backendApi.getRecord<AppUserRecordData>(existing.id);
     const currentData = current.data ?? {};
@@ -337,14 +363,24 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
       ...currentData,
       id: currentData.id ?? authUser.id,
       authUserId: currentData.authUserId ?? authUser.id,
-      email: currentData.email ?? authUser.email,
+      email: currentData.email || currentData.loginEmail || currentData.generatedEmail || authUser.email,
       name: currentData.name ?? authUser.name,
       ...(isPrimaryAdmin ? primaryAdminFields() : {}),
       updatedAt: now,
       createdAt: currentData.createdAt ?? existing.createdAt ?? now,
       lastLoginAt: currentData.lastLoginAt ?? existing.lastLoginAt ?? null,
     });
-    return appUserFromRecord(record);
+    const linked = appUserFromRecord(record);
+    console.log("[TEDRIS_AUTH_MATCH]", {
+      email: linked.email,
+      authUserId: authUser.id,
+      appUserId: linked.id,
+      institutionCode: linked.institutionCode,
+      institutionName: linked.institutionName,
+      district: linked.district,
+      province: linked.province,
+    });
+    return linked;
   }
 
   if (!isPrimaryAdminEmail(authUser.email)) return null;
@@ -353,6 +389,8 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
     id: authUser.id,
     authUserId: authUser.id,
     email: authUser.email,
+    loginEmail: authUser.email,
+    generatedEmail: authUser.email,
     name: authUser.name,
     province: null,
     district: null,
@@ -364,19 +402,31 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
     updatedAt: now,
     lastLoginAt: null,
   });
-  return appUserFromRecord(record);
+  const created = appUserFromRecord(record);
+  console.log("[TEDRIS_AUTH_MATCH]", {
+    email: created.email,
+    authUserId: authUser.id,
+    appUserId: created.id,
+    institutionCode: created.institutionCode,
+    institutionName: created.institutionName,
+    district: created.district,
+    province: created.province,
+  });
+  return created;
 }
 
 function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
   const data = record.data ?? {};
+  const email = String(data.email ?? data.loginEmail ?? data.generatedEmail ?? "");
   const role = data.role ?? (data.isAdmin ? "admin" : "user");
-  const isActive = data.isActive ?? !data.deletedAt;
+  const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
+  const isActive = data.isActive ?? (!data.deletedAt && status !== "inactive" && status !== "deleted");
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
   return {
     id: String(record.id),
     authUserId: data.authUserId ?? null,
-    email: String(data.email ?? ""),
-    name: String(data.name ?? data.email ?? "Kullanıcı"),
+    email,
+    name: String(data.name ?? email ?? "Kullanıcı"),
     province: data.province ?? null,
     district: data.district ?? null,
     institutionName: data.institutionName ?? null,
@@ -384,6 +434,7 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
     institutionId: data.institutionId ?? null,
     role,
     isActive,
+    status: data.status ?? null,
     isAdmin: Boolean(data.isAdmin) || role === "admin" || role === "super_admin",
     lastLoginAt: data.lastLoginAt ?? null,
     deletedAt: data.deletedAt ?? null,
@@ -443,6 +494,22 @@ function filterAppUsers(users: AdminKullanici[], params: Record<string, string |
     }
     return true;
   });
+}
+
+function appUserActiveData(data: Pick<AppUserRecordData, "isActive" | "deletedAt" | "status">): boolean {
+  const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
+  return !data.deletedAt && data.isActive !== false && status !== "inactive" && status !== "deleted";
+}
+
+function generatedInstitutionEmail(district: string, institutionName: string, existingEmails: Set<string>): string {
+  const base = epostaUret(district, institutionName);
+  if (!base) return "";
+  if (!existingEmails.has(normalizeEmail(base))) return base;
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = epostaAlternatif(district, institutionName, suffix);
+    if (candidate && !existingEmails.has(normalizeEmail(candidate))) return candidate;
+  }
+  return base;
 }
 
 async function appUserRecords(params: Record<string, string | undefined> = {}) {
@@ -589,6 +656,8 @@ function activityFromRecord(record: BackendRecord<ActivityLogRecordData>): Admin
     createdAt,
     action: String(data.action ?? ""),
     userId: data.userId ?? null,
+    appUserId: data.appUserId ?? null,
+    authUserId: data.authUserId ?? null,
     userEmail: data.userEmail ?? null,
     userName: data.userName ?? data.userEmail ?? null,
     institutionCode: data.institutionCode ?? null,
@@ -596,6 +665,44 @@ function activityFromRecord(record: BackendRecord<ActivityLogRecordData>): Admin
     district: data.district ?? null,
     province: data.province ?? null,
     metadata: data.metadata ?? null,
+  };
+}
+
+function institutionByCodeMap(institutions: AdminYurtKayit[]) {
+  return new Map(institutions.map((institution) => [normalizeImportKey(institution.institutionCode), institution]));
+}
+
+function appUserByEmailMap(users: AdminKullanici[]) {
+  const map = new Map<string, AdminKullanici>();
+  for (const user of users) {
+    const email = normalizeEmail(user.email);
+    if (!email) continue;
+    const existing = map.get(email);
+    map.set(email, existing ? selectBestAppUser([existing, user]) ?? user : user);
+  }
+  return map;
+}
+
+function enrichActivityLog(
+  log: AdminAktiviteLog,
+  usersByEmail: Map<string, AdminKullanici>,
+  institutionsByCode: Map<string, AdminYurtKayit>,
+): AdminAktiviteLog {
+  const user = log.userEmail ? usersByEmail.get(normalizeEmail(log.userEmail)) : undefined;
+  const code = log.institutionCode ?? user?.institutionCode ?? null;
+  const institution = code ? institutionsByCode.get(normalizeImportKey(code)) : undefined;
+  return {
+    ...log,
+    userId: log.userId ?? user?.id ?? null,
+    appUserId: log.appUserId ?? user?.id ?? null,
+    authUserId: log.authUserId ?? user?.authUserId ?? null,
+    userEmail: log.userEmail ?? user?.email ?? null,
+    userName: log.userName ?? user?.name ?? null,
+    institutionId: log.institutionId ?? user?.institutionId ?? institution?.id ?? null,
+    institutionName: log.institutionName ?? user?.institutionName ?? institution?.institutionName ?? null,
+    institutionCode: code ?? institution?.institutionCode ?? null,
+    district: log.district ?? user?.district ?? institution?.districtName ?? null,
+    province: log.province ?? user?.province ?? institution?.province ?? null,
   };
 }
 
@@ -651,6 +758,13 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
       authUserId: authUser?.id ?? null,
       appUserId: appUser?.id ?? null,
     },
+  });
+  console.log("[TEDRIS_ACTIVITY_LOG_CREATED]", {
+    action,
+    userEmail: appUser?.email ?? authUser?.email ?? null,
+    institutionCode,
+    district,
+    province,
   });
   await backendApi.usageEvent(action, { source: "activity_log", ...metadata }).catch(() => {});
 }
@@ -743,7 +857,7 @@ function yurtMetrikleriUret(
       logins30d,
       lastLoginAt,
       lastActivityAt,
-      openSupport: currentLogs.filter((log) => log.action === "support_created").length,
+      openSupport: currentLogs.filter((log) => log.action === "support_message_sent" || log.action === "support_created").length,
       activityStatus: yurtDurumu(lastLoginAt),
       registryStatus: institution.status,
       inRegistry: true,
@@ -796,8 +910,12 @@ async function raporVerisi(params: Record<string, string | undefined> = {}) {
   const viewer = await aktifKullaniciBaglami();
   const institutions = (await institutionRecords(params)).filter((institution) => scopeInstitutionAllowed(institution, viewer));
   const users = (await appUserRecords(params)).filter((user) => scopeUserAllowed(user, viewer));
+  const usersByEmail = appUserByEmailMap(users);
+  const institutionsByCode = institutionByCodeMap(institutions);
   const allLogs = activityYetkiFiltresi(
-    (await backendApi.listRecords<ActivityLogRecordData>("activity_log")).map(activityFromRecord),
+    (await backendApi.listRecords<ActivityLogRecordData>("activity_log"))
+      .map(activityFromRecord)
+      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode)),
     viewer,
   ).filter((log) => {
     if (params.district && log.district !== params.district) return false;
@@ -815,8 +933,11 @@ function destekFromRecord(record: BackendRecord<SupportRequestRecordData>): Admi
   return {
     id: record.id,
     userId: data.userId ?? null,
+    appUserId: data.appUserId ?? null,
+    authUserId: data.authUserId ?? null,
     userEmail: data.userEmail ?? null,
     userName: data.userName ?? null,
+    subject: data.subject ?? null,
     message: String(data.message ?? ""),
     createdAt: data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString(),
     status: data.status ?? "yeni",
@@ -829,8 +950,31 @@ function destekFromRecord(record: BackendRecord<SupportRequestRecordData>): Admi
 }
 
 async function destekKayitlari() {
-  const records = await backendApi.listRecords<SupportRequestRecordData>("support_request");
-  return records.map(destekFromRecord).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const [records, users, institutions] = await Promise.all([
+    backendApi.listRecords<SupportRequestRecordData>("support_request"),
+    appUserRecords(),
+    institutionRecords(),
+  ]);
+  const usersByEmail = appUserByEmailMap(users);
+  const institutionsByCode = institutionByCodeMap(institutions);
+  return records.map((record) => {
+    const request = destekFromRecord(record);
+    const user = request.userEmail ? usersByEmail.get(normalizeEmail(request.userEmail)) : undefined;
+    const code = request.institution_code ?? user?.institutionCode ?? null;
+    const institution = code ? institutionsByCode.get(normalizeImportKey(code)) : undefined;
+    return {
+      ...request,
+      userId: request.userId ?? user?.id ?? null,
+      appUserId: request.appUserId ?? user?.id ?? null,
+      authUserId: request.authUserId ?? user?.authUserId ?? null,
+      userEmail: request.userEmail ?? user?.email ?? null,
+      userName: request.userName ?? user?.name ?? null,
+      province: request.province ?? user?.province ?? institution?.province ?? null,
+      district: request.district ?? user?.district ?? institution?.districtName ?? null,
+      institution_name: request.institution_name ?? user?.institutionName ?? institution?.institutionName ?? null,
+      institution_code: code ?? institution?.institutionCode ?? null,
+    };
+  }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
 async function adminSettingsRecord() {
@@ -839,12 +983,16 @@ async function adminSettingsRecord() {
 }
 
 async function veriSagligiUret(): Promise<AdminVeriSagligi> {
-  const [users, institutions, rawInstitutionRecords, logs] = await Promise.all([
+  const [users, institutions, rawInstitutionRecords, rawLogs, supportRequests] = await Promise.all([
     appUserRecords(),
     institutionRecords(),
     backendApi.listRecords<InstitutionRecordData>("institution"),
     backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
+    destekKayitlari(),
   ]);
+  const usersByEmail = appUserByEmailMap(users);
+  const institutionsByCodeForLogs = institutionByCodeMap(institutions);
+  const logs = rawLogs.map((log) => enrichActivityLog(log, usersByEmail, institutionsByCodeForLogs));
   const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
   const inactiveInstitutionCodes = new Set(
     rawInstitutionRecords
@@ -856,7 +1004,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
   const activeRawInstitutions = rawInstitutionRecords.filter(activeInstitutionRecord).map(institutionFromRecord);
   const institutionsByComposite = new Map<string, AdminYurtKayit[]>();
   const institutionsByCode = new Map<string, AdminYurtKayit[]>();
-  const usersByEmail = new Map<string, AdminKullanici[]>();
+  const usersByEmailGroups = new Map<string, AdminKullanici[]>();
 
   for (const institution of activeRawInstitutions) {
     const compositeKey = institutionCompositeKey(institution);
@@ -894,7 +1042,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
 
   for (const user of users) {
     const emailKey = normalizeEmail(user.email);
-    if (emailKey) usersByEmail.set(emailKey, [...(usersByEmail.get(emailKey) ?? []), user]);
+    if (emailKey) usersByEmailGroups.set(emailKey, [...(usersByEmailGroups.get(emailKey) ?? []), user]);
 
     if (!emailKey) {
       issues.push({
@@ -949,7 +1097,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
     }
   }
 
-  for (const [email, group] of usersByEmail.entries()) {
+  for (const [email, group] of usersByEmailGroups.entries()) {
     if (group.length <= 1) continue;
     issues.push({
       id: `user-duplicate-email-${email}`,
@@ -987,6 +1135,20 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
     }
   }
 
+  for (const request of supportRequests) {
+    if (!request.institution_code || !request.district || !request.province) {
+      issues.push({
+        id: `support-missing-institution-${request.id}`,
+        type: "support_missing_institution",
+        targetKind: "registry",
+        targetId: String(request.id),
+        record: `${request.subject ?? "Destek"} (${request.userEmail ?? request.userName ?? "Kullanıcı"})`,
+        description: "Destek mesajında kurum, mıntıka veya şehir bilgisi eksik.",
+        suggestion: "Kullanıcının app_user kurum eşleşmesini kontrol edin; yeni destek kayıtları app_user üzerinden otomatik tamamlanır.",
+      });
+    }
+  }
+
   const unmatchedUsers = users
     .filter((u) => !u.district || !u.institutionCode || !institutionCodes.has(normalizeImportKey(u.institutionCode)))
     .map((u) => ({
@@ -1006,8 +1168,9 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       users: users.length,
       institutions: institutions.length,
       activityLogs: logs.length,
+      supportRequests: supportRequests.length,
       duplicateInstitutions: [...institutionsByComposite.values()].filter((group) => group.length > 1).length,
-      duplicateUsers: [...usersByEmail.values()].filter((group) => group.length > 1).length,
+      duplicateUsers: [...usersByEmailGroups.values()].filter((group) => group.length > 1).length,
     },
     issues,
     unmatchedUsers,
@@ -1134,6 +1297,8 @@ export const api = {
       await backendApi.updateRecord<AppUserRecordData>(appUser.id, "app_user", {
         authUserId: appUser.authUserId ?? user.id,
         email: appUser.email,
+        loginEmail: appUser.email,
+        generatedEmail: appUser.email,
         name: appUser.name,
         role: appUser.role,
         isAdmin: appUser.isAdmin,
@@ -1171,6 +1336,8 @@ export const api = {
         id: user.id,
         authUserId: user.id,
         email: user.email,
+        loginEmail: user.email,
+        generatedEmail: user.email,
         name: user.name,
         role: "user",
         isAdmin: false,
@@ -1237,22 +1404,42 @@ export const api = {
 
   destekGonder: async (mesaj: string, imageBase64?: string) => {
     const appUser = await aktifKullaniciBaglami();
+    const me = await backendApi.me().catch(() => null);
+    const authUser = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
+    const institution = appUser?.institutionCode
+      ? (await institutionRecords({ institutionCode: appUser.institutionCode }).catch(() => []))[0] ?? null
+      : null;
+    const subject = "Destek Talebi";
+    const now = new Date().toISOString();
     await backendApi.createRecord<SupportRequestRecordData>("support_request", {
       userId: appUser?.id ?? null,
+      appUserId: appUser?.id ?? null,
+      authUserId: authUser?.id ?? appUser?.authUserId ?? null,
       userEmail: appUser?.email ?? null,
       userName: appUser?.name ?? null,
+      institutionId: appUser?.institutionId ?? institution?.id ?? null,
+      subject,
       message: mesaj,
       imageBase64,
-      status: "yeni",
+      status: "open",
       adminNote: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      province: appUser?.province ?? null,
-      district: appUser?.district ?? null,
-      institutionName: appUser?.institutionName ?? null,
-      institutionCode: appUser?.institutionCode ?? null,
+      createdAt: now,
+      updatedAt: now,
+      province: appUser?.province ?? institution?.province ?? null,
+      district: appUser?.district ?? institution?.districtName ?? null,
+      institutionName: appUser?.institutionName ?? institution?.institutionName ?? null,
+      institutionCode: appUser?.institutionCode ?? institution?.institutionCode ?? null,
+      metadata: {
+        hasImage: Boolean(imageBase64),
+        missingInstitutionContext: !appUser?.institutionCode || !appUser?.district || !appUser?.institutionName,
+      },
     });
-    await activityRecordOlustur("support_created", { source: "support_request" }).catch(() => null);
+    console.log("[TEDRIS_SUPPORT_CREATED]", {
+      userEmail: appUser?.email ?? authUser?.email ?? null,
+      institutionCode: appUser?.institutionCode ?? institution?.institutionCode ?? null,
+      subject,
+    });
+    await activityRecordOlustur("support_message_sent", { source: "support_request", subject }).catch(() => null);
     return { ok: true };
   },
 
@@ -1355,10 +1542,13 @@ export const api = {
       id: authUser?.id ?? data.email,
       authUserId: authUser?.id,
       email: data.email,
+      loginEmail: data.email,
+      generatedEmail: data.email,
       name: data.name,
       role,
       isAdmin: data.isAdmin ?? role === "admin",
       isActive: data.isActive ?? true,
+      status: data.isActive === false ? "inactive" : "active",
       district: data.district ?? null,
       province: data.province ?? null,
       institutionName: data.institutionName ?? null,
@@ -1387,11 +1577,14 @@ export const api = {
     const institutionCode = data.institutionCode ?? currentData.institutionCode ?? null;
     const nextData: AppUserRecordData = {
       ...currentData,
-      email: data.email ?? currentData.email,
+      email: data.email ?? currentData.email ?? currentData.loginEmail ?? currentData.generatedEmail,
+      loginEmail: data.email ?? currentData.loginEmail ?? currentData.email ?? currentData.generatedEmail,
+      generatedEmail: data.email ?? currentData.generatedEmail ?? currentData.email ?? currentData.loginEmail,
       name: data.name ?? currentData.name,
       role,
       isAdmin: data.isAdmin ?? currentData.isAdmin ?? role === "admin",
       isActive: data.isActive ?? currentData.isActive ?? true,
+      status: data.status ?? currentData.status ?? ((data.isActive ?? currentData.isActive) === false ? "inactive" : "active"),
       district: data.district ?? currentData.district ?? null,
       province: data.province ?? currentData.province ?? null,
       institutionName: data.institutionName ?? currentData.institutionName ?? null,
@@ -1422,6 +1615,7 @@ export const api = {
   adminKullaniciSil: async (id: string) => {
     const r = await api.adminKullaniciGuncelle(id, {
       isActive: false,
+      status: "deleted",
       deletedAt: new Date().toISOString(),
     } as Partial<AdminKullanici>);
     return { ok: true, user: r.user };
@@ -1431,8 +1625,10 @@ export const api = {
     const institutions = await institutionRecords();
     const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
     const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));
-    const users = await appUserRecords();
+    const rawUserRecords = await backendApi.listRecords<AppUserRecordData>("app_user");
+    const users = rawUserRecords.map(appUserFromRecord);
     const emails = new Set(users.map((u) => normalizeEmail(u.email)));
+    const usersByEmail = new Map(users.map((u) => [normalizeEmail(u.email), u]));
     const byDistrict: Record<string, number> = {};
     const errors: AdminImportCommitResponse["errors"] = [];
     let addedInstitutions = 0;
@@ -1442,6 +1638,7 @@ export const api = {
     let existingUsers = 0;
     const seenCodes = new Set<string>();
     const seenKeys = new Set<string>();
+    const shouldCreateUsers = data.createUsers !== false;
 
     for (const row of data.rows) {
       const district = row.district?.trim();
@@ -1451,7 +1648,7 @@ export const api = {
         errors.push({ rowNumber: row.rowNumber, district, institutionName, email: row.email, reason: "Mıntıka veya kurum adı eksik." });
         continue;
       }
-      const institutionCode = row.institutionCode?.trim() || kurumKoduOner(district, institutionName);
+      const institutionCode = row.institutionCode?.trim() || kurumKoduUret(district, institutionName) || kurumKoduOner(district, institutionName);
       const codeKey = normalizeImportKey(institutionCode);
       const compositeKey = institutionCompositeKey({ institutionName, districtName: district, province: row.province });
       if (seenCodes.has(codeKey) || seenKeys.has(compositeKey)) {
@@ -1477,9 +1674,29 @@ export const api = {
         addedInstitutions += 1;
       }
 
-      if (data.createUsers && row.email) {
-        const email = normalizeEmail(row.email);
-        if (emails.has(email)) {
+      if (shouldCreateUsers) {
+        const generatedEmail = row.email?.trim() || generatedInstitutionEmail(district, institutionName, emails);
+        const email = normalizeEmail(generatedEmail);
+        if (!email) {
+          skippedRows += 1;
+          errors.push({ rowNumber: row.rowNumber, district, institutionName, institutionCode, reason: "Otomatik e-posta üretilemedi." });
+          continue;
+        }
+        const existingUser = usersByEmail.get(email);
+        if (existingUser && existingUser.isActive && !existingUser.deletedAt && existingUser.status !== "inactive" && existingUser.status !== "deleted") {
+          existingUsers += 1;
+        } else if (existingUser) {
+          await api.adminKullaniciGuncelle(existingUser.id, {
+            email,
+            name: existingUser.name || institutionName,
+            district,
+            province: row.province,
+            institutionName,
+            institutionCode,
+            isActive: true,
+            status: "active",
+            deletedAt: null,
+          } as Partial<AdminKullanici>);
           existingUsers += 1;
         } else {
           await api.adminKullaniciOlustur({
@@ -1495,10 +1712,24 @@ export const api = {
             isAdmin: false,
           });
           emails.add(email);
+          usersByEmail.set(email, {
+            id: email,
+            email,
+            name: row.name || institutionName,
+            role: "user",
+            isAdmin: false,
+            isActive: true,
+            status: "active",
+            district,
+            province: row.province ?? null,
+            institutionName,
+            institutionCode,
+            institutionId: null,
+            lastLoginAt: null,
+            createdAt: new Date().toISOString(),
+          });
           createdUsers += 1;
         }
-      } else if (data.createUsers && !row.email) {
-        errors.push({ rowNumber: row.rowNumber, district, institutionName, institutionCode, reason: "Kullanıcı oluşturma için e-posta eksik." });
       }
     }
 
@@ -1575,7 +1806,7 @@ export const api = {
     const current = await backendApi.getRecord<SupportRequestRecordData>(id);
     await backendApi.updateRecord<SupportRequestRecordData>(id, "support_request", {
       ...(current.data ?? {}),
-      status: data.status ?? current.data?.status ?? "yeni",
+      status: data.status ?? current.data?.status ?? "open",
       adminNote: data.adminNote ?? current.data?.adminNote ?? null,
       updatedAt: new Date().toISOString(),
     });
@@ -1682,9 +1913,16 @@ export const api = {
     const range = tarihAraligi(params);
     const start = Date.parse(range.startIso);
     const end = Date.parse(range.endIso);
-    const records = await backendApi.listRecords<ActivityLogRecordData>("activity_log");
+    const [records, users, institutions] = await Promise.all([
+      backendApi.listRecords<ActivityLogRecordData>("activity_log"),
+      appUserRecords(),
+      institutionRecords(),
+    ]);
+    const usersByEmail = appUserByEmailMap(users);
+    const institutionsByCode = institutionByCodeMap(institutions);
     let logs = records
       .map(activityFromRecord)
+      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode))
       .filter((log) => {
         const time = Date.parse(log.createdAt);
         if (!Number.isFinite(time) || time < start || time > end) return false;
@@ -1708,7 +1946,7 @@ export const api = {
         exportPng: logs.filter((l) => l.action === "export_png").length,
         exportPdf: logs.filter((l) => l.action === "export_pdf").length,
         shareWhatsapp: logs.filter((l) => l.action === "share_whatsapp").length,
-        supportCreated: logs.filter((l) => l.action === "support_created").length,
+        supportCreated: logs.filter((l) => l.action === "support_message_sent" || l.action === "support_created").length,
       },
     };
   },
@@ -1775,7 +2013,26 @@ export const api = {
   },
 
   adminReconcile: async () => {
-    const [users, institutions] = await Promise.all([appUserRecords(), institutionRecords()]);
+    const [rawUserRecords, institutions] = await Promise.all([
+      backendApi.listRecords<AppUserRecordData>("app_user"),
+      institutionRecords(),
+    ]);
+    for (const record of rawUserRecords) {
+      const data = record.data ?? {};
+      const repairedEmail = data.email || data.loginEmail || data.generatedEmail;
+      const shouldRepairEmail = !data.email && repairedEmail;
+      const shouldRepairStatus = appUserActiveData(data) && data.status !== "active";
+      if (!shouldRepairEmail && !shouldRepairStatus) continue;
+      await backendApi.updateRecord<AppUserRecordData>(record.id, "app_user", {
+        ...data,
+        email: repairedEmail,
+        loginEmail: data.loginEmail ?? repairedEmail,
+        generatedEmail: data.generatedEmail ?? repairedEmail,
+        status: shouldRepairStatus ? "active" : data.status,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    const users = (await appUserRecords()).filter((user) => user.email);
     const byCode = new Map(institutions.map((i) => [i.institutionCode, i]));
     let linked = 0;
     let skipped = 0;
@@ -1936,6 +2193,7 @@ export interface AdminVeriSagligi {
     users: number;
     institutions: number;
     activityLogs: number;
+    supportRequests?: number;
     duplicateInstitutions: number;
     duplicateUsers: number;
   };
@@ -1955,8 +2213,11 @@ export interface AdminAktiviteLog {
   createdAt: string;
   action: string;
   userId: string | null;
+  appUserId?: string | null;
+  authUserId?: string | null;
   userEmail?: string | null;
   userName: string | null;
+  institutionId?: string | null;
   institutionCode: string | null;
   institutionName: string | null;
   district: string | null;

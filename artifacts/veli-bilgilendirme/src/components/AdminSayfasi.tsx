@@ -105,7 +105,7 @@ export default function AdminSayfasi() {
   const [topluSilYukleniyor, setTopluSilYukleniyor] = useState(false);
   const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
   const [importYukleniyor, setImportYukleniyor] = useState(false);
-  const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(false);
+  const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(true);
   const [importSifre, setImportSifre] = useState("tedris2026");
   const [importSonuc, setImportSonuc] = useState<AdminImportCommitResponse | null>(null);
   const [seciliIssueIds, setSeciliIssueIds] = useState<string[]>([]);
@@ -426,6 +426,7 @@ export default function AdminSayfasi() {
       poster_saved: "Taslak kaydetti",
       image_uploaded: "Görsel yükledi",
       profile_saved: "Profil kaydetti",
+      support_message_sent: "Destek mesajı gönderdi",
       support_created: "Destek talebi oluşturdu",
     })[action] ?? action;
 
@@ -792,6 +793,7 @@ export default function AdminSayfasi() {
                   <option value="poster_saved">Taslak kaydetti</option>
                   <option value="image_uploaded">Görsel yükledi</option>
                   <option value="profile_saved">Profil kaydetti</option>
+                  <option value="support_message_sent">Destek mesajı gönderdi</option>
                   <option value="support_created">Destek talebi oluşturdu</option>
                 </select>
               </FiltreAlan>
@@ -891,6 +893,7 @@ export default function AdminSayfasi() {
               <FiltreAlan label="Durum">
                 <select style={selectStyle} value={destekFiltre} onChange={(e) => setDestekFiltre(e.target.value)}>
                   <option value="">Tümü</option>
+                  <option value="open">Açık</option>
                   <option value="yeni">Yeni</option>
                   <option value="inceleniyor">İnceleniyor</option>
                   <option value="cozuldu">Çözüldü</option>
@@ -900,8 +903,8 @@ export default function AdminSayfasi() {
             {filtreliDestek.length === 0 && <p style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Veri yok</p>}
             {filtreliDestek.map((m) => (
               <div key={m.id} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
-                <div style={{ fontWeight: 800 }}>{m.userName || "İsimsiz"}</div>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{m.institution_name || "—"} · {m.district || "—"} · {formatTarih(m.createdAt)}</div>
+                <div style={{ fontWeight: 800 }}>{m.subject || "Destek Talebi"} · {m.userName || "İsimsiz"}</div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{m.userEmail || "—"} · {m.institution_name || "—"} · {m.district || "—"} · {m.province || "—"} · {formatTarih(m.createdAt)}</div>
                 <p style={{ fontSize: 13, marginTop: 8 }}>{m.message}</p>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button type="button" onClick={() => api.adminDestekGuncelle(m.id, { status: "inceleniyor" }).then(veriYukle)} style={{ fontSize: 11, padding: "6px 10px", cursor: "pointer" }}>İnceleniyor</button>

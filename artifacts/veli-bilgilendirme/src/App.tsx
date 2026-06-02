@@ -179,7 +179,7 @@ function MainApp() {
   };
 
   const backendEvent = useCallback((eventType: string, metadata?: Record<string, unknown>) => {
-    if (eventType === "poster_saved" || eventType === "image_uploaded") {
+    if (eventType === "poster_saved" || eventType === "poster_downloaded" || eventType === "image_uploaded") {
       void api.activityLog(eventType).catch(() => {});
     }
     void backendApi.usageEvent(eventType, {
