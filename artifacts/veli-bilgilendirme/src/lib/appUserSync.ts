@@ -185,51 +185,20 @@ export function selectCanonicalAppUserRecord(
     )[0] ?? null;
 }
 
-export async function claimAppUserRecordForAuthUser(
-  record: BackendRecord<AppUserRecordData>,
+/** Login: yalnızca oturum sahibinin görebildiği kayıtlar; admin onarım yok. */
+export async function findAppUserRecordsForLoginReadOnly(
   authUser: AuthLoginLike,
-  updateRecord: (id: string | number, data: AppUserRecordData) => Promise<BackendRecord<AppUserRecordData>>,
-): Promise<BackendRecord<AppUserRecordData>> {
-  const nextData = buildCanonicalAppUserData(record, authUser);
-  try {
-    await backendApi.assignRecordOwner(record.id, authUser.id, { recordType: "app_user", data: nextData });
-    console.log("[TEDRIS_LOGIN_CLAIM_OWNER]", { recordId: record.id, authUserId: authUser.id, email: nextData.email });
-  } catch (error) {
-    console.warn("[TEDRIS_LOGIN_CLAIM_OWNER_FAIL]", {
-      recordId: record.id,
-      authUserId: authUser.id,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return updateRecord(record.id, nextData);
-  }
-  return { ...record, data: nextData, userId: authUser.id };
-}
-
-export async function findAppUserRecordsForLogin(
-  authUser: AuthLoginLike,
-  updateRecord: (id: string | number, data: AppUserRecordData) => Promise<BackendRecord<AppUserRecordData>>,
 ): Promise<BackendRecord<AppUserRecordData>[]> {
   const normalized = normalizeEmail(authUser.email);
-  const catalog = await loadAllAppUserCatalog();
-  const catalogMatches = catalog.filter((record) => recordMatchesAppUserEmail(record, normalized, authUser.id));
-
+  const owned = await backendApi.fetchAllRecords<AppUserRecordData>("app_user", { maxPages: 15 }).catch(() => []);
+  const matches = owned.filter((record) => recordMatchesAppUserEmail(record, normalized, authUser.id));
   console.log("[TEDRIS_LOGIN_LOOKUP_SOURCE]", {
     loginEmail: normalized,
-    catalogCount: catalog.length,
-    catalogMatchCount: catalogMatches.length,
+    ownedCount: owned.length,
+    matchCount: matches.length,
+    mode: "read_only_owned",
   });
-
-  for (const record of catalogMatches) {
-    if (String(record.userId ?? "") !== String(authUser.id)) {
-      await claimAppUserRecordForAuthUser(record, authUser, updateRecord).catch(() => null);
-    }
-  }
-
-  const owned = await backendApi.fetchAllRecords<AppUserRecordData>("app_user").catch(() => []);
-  const ownedMatches = owned.filter((record) => recordMatchesAppUserEmail(record, normalized, authUser.id));
-  if (ownedMatches.length) return ownedMatches;
-
-  return catalogMatches;
+  return matches;
 }
 
 export interface ReconcileDeps {
@@ -317,27 +286,47 @@ export async function reconcileAppUsersAndAuthUsers(deps: ReconcileDeps): Promis
     }
 
     if (!auth && !deleted) {
-      try {
-        const created = await deps.registerAuthUser({
-          email,
-          password: deps.defaultPassword,
-          name: String(nextData.name ?? email),
-        });
-        const createdId = created?.user?.id;
-        if (createdId) {
-          nextData.authUserId = String(createdId);
-          authByEmail.set(email, created.user as BackendUser);
-          result.authUsersCreated += 1;
-          result.authUserIdLinked += 1;
-        } else {
-          result.orphanAppOnly.push(email);
+      const existingAuth = authByEmail.get(email);
+      if (existingAuth?.id) {
+        nextData.authUserId = String(existingAuth.id);
+        result.authUserIdLinked += 1;
+      } else {
+        try {
+          const created = await deps.registerAuthUser({
+            email,
+            password: deps.defaultPassword,
+            name: String(nextData.name ?? email),
+          });
+          const createdId = created?.user?.id;
+          if (createdId) {
+            nextData.authUserId = String(createdId);
+            authByEmail.set(email, created.user as BackendUser);
+            result.authUsersCreated += 1;
+            result.authUserIdLinked += 1;
+          } else {
+            const fallback = await findAuthUserByEmail(email, authUsers);
+            if (fallback?.id) {
+              nextData.authUserId = String(fallback.id);
+              authByEmail.set(email, fallback);
+              result.authUserIdLinked += 1;
+            } else {
+              result.orphanAppOnly.push(email);
+            }
+          }
+        } catch (error) {
+          const fallback = await findAuthUserByEmail(email, authUsers);
+          if (fallback?.id) {
+            nextData.authUserId = String(fallback.id);
+            authByEmail.set(email, fallback);
+            result.authUserIdLinked += 1;
+          } else {
+            result.errors.push({
+              id: String(canonicalRecord.id),
+              email,
+              reason: error instanceof Error ? error.message : "Auth oluşturulamadı",
+            });
+          }
         }
-      } catch (error) {
-        result.errors.push({
-          id: String(canonicalRecord.id),
-          email,
-          reason: error instanceof Error ? error.message : "Auth oluşturulamadı",
-        });
       }
     }
 
@@ -347,15 +336,24 @@ export async function reconcileAppUsersAndAuthUsers(deps: ReconcileDeps): Promis
         await backendApi.assignRecordOwner(canonicalRecord.id, targetOwner, { recordType: "app_user", data: nextData });
         result.ownershipTransferred += 1;
       } catch (error) {
-        try {
-          await deps.updateAppUserRecord(canonicalRecord.id, nextData);
-          result.ownershipTransferred += 1;
-        } catch (inner) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
           result.errors.push({
             id: String(canonicalRecord.id),
             email,
-            reason: inner instanceof Error ? inner.message : "Sahiplik devredilemedi",
+            reason: "admin_records_forbidden",
           });
+        } else {
+          try {
+            await deps.updateAppUserRecord(canonicalRecord.id, nextData);
+            result.ownershipTransferred += 1;
+          } catch (inner) {
+            result.errors.push({
+              id: String(canonicalRecord.id),
+              email,
+              reason: inner instanceof Error ? inner.message : "Sahiplik devredilemedi",
+            });
+          }
         }
       }
     } else {

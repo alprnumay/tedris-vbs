@@ -3,7 +3,7 @@ import { kurumKoduOner } from "./kurumSlug";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
 import { epostaAlternatif, epostaUret, kurumKoduUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
 import {
-  findAppUserRecordsForLogin,
+  findAppUserRecordsForLoginReadOnly,
   findAuthUserByEmail as findAuthUserByEmailFromAuth,
   getAppUserEmail as getAppUserEmailFromSync,
   loadAllAppUserCatalog,
@@ -38,13 +38,10 @@ function clearStoredSessionToken() {
 }
 
 let viewerAdminCache: boolean | null = null;
-let adminOwnershipSyncRan = false;
-
 function clearAuthState() {
   clearStoredSessionToken();
   clearBackendToken();
   viewerAdminCache = null;
-  adminOwnershipSyncRan = false;
 }
 
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
@@ -132,7 +129,7 @@ async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<
   return adminScoped.length ? mergeRecordsById(owned, adminScoped) : owned;
 }
 
-async function runReconcileAppUsers(): Promise<ReconcileAppUsersResult | null> {
+async function adminRepairUsers(): Promise<ReconcileAppUsersResult | null> {
   if (!getBackendToken() || !(await resolveViewerUsesAdminRecords())) return null;
   return reconcileAppUsersAndAuthUsers({
     updateAppUserRecord,
@@ -141,11 +138,21 @@ async function runReconcileAppUsers(): Promise<ReconcileAppUsersResult | null> {
   });
 }
 
-async function ensureAdminOwnershipSyncOnce() {
-  if (adminOwnershipSyncRan) return;
-  if (!await resolveViewerUsesAdminRecords()) return;
-  adminOwnershipSyncRan = true;
-  void runReconcileAppUsers().catch(() => null);
+function logLoginFlowStop(payload: {
+  email: string;
+  reason: string;
+  authUserFound: boolean;
+  appUserFound: boolean;
+  attemptedAdminRepair?: boolean;
+  adminRepairStatus?: string | null;
+  attemptedRegister?: boolean;
+  registerStatus?: string | null;
+}) {
+  console.warn("[TEDRIS_LOGIN_FLOW_STOP]", payload);
+}
+
+function logLoginLoadingFinalized(email: string, success: boolean, errorCode?: string) {
+  console.log("[TEDRIS_LOGIN_LOADING_FINALIZED]", { email, success, errorCode: errorCode ?? null });
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
@@ -563,7 +570,7 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
       lastLoginAt: currentData.lastLoginAt ?? existing.lastLoginAt ?? null,
     });
     const linked = appUserFromRecord(record);
-    if (authUser.id && String(record.userId ?? "") !== String(authUser.id)) {
+    if (authUser.id && String(record.userId ?? "") !== String(authUser.id) && (await resolveViewerUsesAdminRecords())) {
       await backendApi.assignRecordOwner(record.id, authUser.id, { recordType: "app_user", data: record.data ?? {} }).catch(() => null);
     }
     console.log("[TEDRIS_AUTH_APPUSER_LINK]", {
@@ -744,30 +751,34 @@ function selectBestAppUser(users: AdminKullanici[], authUserId?: string): AdminK
     )[0] ?? null;
 }
 
-async function appUsersByEmail(email: string, authUser?: KullaniciBilgisi | null): Promise<AdminKullanici[]> {
+async function appUsersByEmail(
+  email: string,
+  authUser?: KullaniciBilgisi | null,
+  opts?: { loginLookup?: boolean },
+): Promise<AdminKullanici[]> {
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
-  const records = authUser
-    ? await findAppUserRecordsForLogin(
-        { id: authUser.id, email: authUser.email, name: authUser.name },
-        updateAppUserRecord,
-      )
-    : await loadAppUserRawRecords();
-  const matches = await Promise.all(
-    records
-      .filter((record) => {
-        const computed = getAppUserEmail(record);
-        if (computed === normalized) return true;
-        if (authUser?.id && String(record.data?.authUserId ?? "") === authUser.id) return true;
-        return false;
-      })
-      .map((record) => (appUserRecordNeedsEmailRepair(record) ? repairAppUserRecordEmail(record) : record)),
-  );
+  const records = authUser && opts?.loginLookup
+    ? await findAppUserRecordsForLoginReadOnly({ id: authUser.id, email: authUser.email, name: authUser.name })
+    : authUser
+      ? await loadAllAppUserCatalog()
+      : await loadAppUserRawRecords();
+  const filtered = records.filter((record) => {
+    const computed = getAppUserEmail(record);
+    if (computed === normalized) return true;
+    if (authUser?.id && String(record.data?.authUserId ?? "") === authUser.id) return true;
+    return false;
+  });
+  const matches = opts?.loginLookup
+    ? filtered
+    : await Promise.all(
+        filtered.map((record) => (appUserRecordNeedsEmailRepair(record) ? repairAppUserRecordEmail(record) : record)),
+      );
   const users = matches.map(appUserFromRecord);
   console.log("[TEDRIS_LOGIN_APP_USER_CANDIDATES]", {
     loginEmail: normalized,
     candidateCount: users.length,
-    lookupSource: authUser ? "login_catalog_and_owned" : "admin_catalog",
+    lookupSource: authUser && opts?.loginLookup ? "login_owned_readonly" : authUser ? "admin_catalog" : "admin_catalog",
     candidates: users.map((user) => {
       const raw = matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined;
       return {
@@ -917,12 +928,22 @@ async function registerAuthUserSafely(data: { email: string; password: string; n
   const currentToken = getBackendToken();
   try {
     return await backendApi.register(data);
-  } catch {
+  } catch (error) {
+    const msg = (error instanceof Error ? error.message : String(error)).toLocaleLowerCase("tr-TR");
+    if (msg.includes("409") || msg.includes("conflict") || msg.includes("zaten") || msg.includes("already")) {
+      const existing = await findAuthUserByEmailFromAuth(data.email).catch(() => null);
+      if (existing) return { user: existing };
+    }
     return null;
   } finally {
     if (currentToken) setBackendToken(currentToken);
     else clearBackendToken();
   }
+}
+
+async function resolveAppUserForLogin(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {
+  const matches = await appUsersByEmail(authUser.email, authUser, { loginLookup: true });
+  return selectBestAppUser(matches, authUser.id);
 }
 
 function tarihAraligi(params: Record<string, string | undefined> = {}): AdminRange {
@@ -1761,54 +1782,88 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
-    void ensureAdminOwnershipSyncOnce();
     const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
   girisYap: async (email: string, password: string) => {
+    const loginEmail = normalizeEmail(email);
     clearAuthState();
+    let authUserFound = false;
+    let appUserFound = false;
     try {
       const r = await backendApi.login({ email, password });
       const user = kullaniciFromBackend(r.user);
       if (!user) {
         throw new Error("Kullanıcı bilgisi alınamadı.");
       }
-      if (isVpsAdminUser(user)) {
-        await runReconcileAppUsers().catch(() => null);
-      } else {
-        void ensureAdminOwnershipSyncOnce();
+      authUserFound = true;
+
+      const appUser = await resolveAppUserForLogin(user);
+      appUserFound = Boolean(appUser);
+
+      if (!appUser) {
+        logLoginFlowStop({
+          email: loginEmail,
+          reason: "auth_ok_app_user_missing",
+          authUserFound: true,
+          appUserFound: false,
+          attemptedAdminRepair: false,
+          adminRepairStatus: "skipped_login",
+          attemptedRegister: false,
+          registerStatus: "skipped_login",
+        });
+        throw new Error(
+          "Bu giriş hesabı auth sisteminde var ama uygulama kullanıcı kaydı bulunamadı. Yönetici veri onarımı yapmalı.",
+        );
       }
-      const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
-      const activeAppUser = zorunluAktifAppUser(user, appUser);
-      await updateAppUserRecord(activeAppUser.id, {
-      authUserId: activeAppUser.authUserId ?? user.id,
-      email: activeAppUser.email,
-      loginEmail: activeAppUser.email,
-      generatedEmail: activeAppUser.email,
-      name: activeAppUser.name,
-      role: activeAppUser.role,
-      isAdmin: activeAppUser.isAdmin,
-      isActive: activeAppUser.isActive,
-      status: activeAppUser.status ?? "active",
-      district: activeAppUser.district,
-      province: activeAppUser.province,
-      institutionName: activeAppUser.institutionName,
-      institutionCode: activeAppUser.institutionCode,
-      institutionId: activeAppUser.institutionId,
-      allowedDistricts: activeAppUser.allowedDistricts,
-      allowedCities: activeAppUser.allowedCities,
-      allowedInstitutions: activeAppUser.allowedInstitutions,
-      reportPermissions: activeAppUser.reportPermissions,
-      createdAt: activeAppUser.createdAt,
-      updatedAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      deletedAt: activeAppUser.deletedAt ?? null,
-    }).catch(() => null);
+
+      if (!appUserAktifMi(appUser)) {
+        logLoginFlowStop({
+          email: loginEmail,
+          reason: "app_user_inactive",
+          authUserFound: true,
+          appUserFound: true,
+          attemptedAdminRepair: false,
+          adminRepairStatus: "skipped_login",
+          attemptedRegister: false,
+          registerStatus: "skipped_login",
+        });
+        throw new Error("Hesabınız pasif durumda. Lütfen yöneticinizle iletişime geçin.");
+      }
+
+      logLoginDiag(user, appUser);
+      await updateAppUserRecord(appUser.id, {
+        authUserId: appUser.authUserId ?? user.id,
+        email: appUser.email,
+        loginEmail: appUser.email,
+        generatedEmail: appUser.email,
+        name: appUser.name,
+        role: appUser.role,
+        isAdmin: appUser.isAdmin,
+        isActive: appUser.isActive,
+        status: appUser.status ?? "active",
+        district: appUser.district,
+        province: appUser.province,
+        institutionName: appUser.institutionName,
+        institutionCode: appUser.institutionCode,
+        institutionId: appUser.institutionId,
+        allowedDistricts: appUser.allowedDistricts,
+        allowedCities: appUser.allowedCities,
+        allowedInstitutions: appUser.allowedInstitutions,
+        reportPermissions: appUser.reportPermissions,
+        createdAt: appUser.createdAt,
+        updatedAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+        deletedAt: appUser.deletedAt ?? null,
+      }).catch(() => null);
       await activityRecordOlustur("login", { source: "auth_login" }).catch(() => null);
-      return { user: mergeKullaniciWithAppUser(user, activeAppUser) };
+      logLoginLoadingFinalized(loginEmail, true);
+      return { user: mergeKullaniciWithAppUser(user, appUser) };
     } catch (error) {
       clearAuthState();
+      const errorCode = error instanceof Error ? error.message : "login_failed";
+      logLoginLoadingFinalized(loginEmail, false, errorCode);
       throw error;
     }
   },
@@ -2511,7 +2566,8 @@ export const api = {
     };
   },
 
-  reconcileAppUsersAndAuthUsers: () => runReconcileAppUsers(),
+  adminRepairUsers,
+  reconcileAppUsersAndAuthUsers: () => adminRepairUsers(),
 
   adminVeriSagligi: () => veriSagligiUret(),
 
@@ -2622,7 +2678,7 @@ export const api = {
   },
 
   adminReconcile: async () => {
-    const reconcile = await runReconcileAppUsers();
+    const reconcile = await adminRepairUsers();
     const [rawUserRecords, institutions] = await Promise.all([
       loadAppUserRawRecords(),
       institutionRecords(),

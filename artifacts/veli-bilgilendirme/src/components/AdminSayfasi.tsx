@@ -854,7 +854,7 @@ export default function AdminSayfasi() {
                 type="button"
                 onClick={async () => {
                   try {
-                    const r = await api.reconcileAppUsersAndAuthUsers();
+                    const r = await api.adminRepairUsers();
                     if (!r) {
                       alert("Onarım için admin oturumu gerekli.");
                       return;
