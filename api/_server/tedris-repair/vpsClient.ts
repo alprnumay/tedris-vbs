@@ -2,6 +2,13 @@ import type { AppUserRecordData, BackendRecord, BackendUser } from "./types";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
+/** Fetch yanıtı — Vercel TS ortamında global `Response` DOM/undici ile uyuşmayabiliyor. */
+interface FetchHttpResponse {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+}
+
 function normalizeRecords<T>(payload: unknown): BackendRecord<T>[] {
   if (Array.isArray(payload)) return payload as BackendRecord<T>[];
   const p = payload as { records?: unknown; data?: unknown; items?: unknown; record?: unknown };
@@ -62,11 +69,11 @@ export class VpsApiClient {
   }
 
   private async request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl.replace(/\/+$/, "")}${path}`, {
+    const res = (await fetch(`${this.baseUrl.replace(/\/+$/, "")}${path}`, {
       method,
       headers: this.headers(body !== undefined),
       body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    })) as FetchHttpResponse;
     const text = await res.text();
     let data: unknown = {};
     try {
