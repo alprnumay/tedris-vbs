@@ -40,10 +40,36 @@ function clearStoredSessionToken() {
 }
 
 let viewerAdminCache: boolean | null = null;
+let adminRecordsApiAvailable: boolean | null = null;
+
 function clearAuthState() {
   clearStoredSessionToken();
   clearBackendToken();
   viewerAdminCache = null;
+  adminRecordsApiAvailable = null;
+}
+
+function isHttpForbiddenError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error)).toLocaleLowerCase("tr-TR");
+  return msg.includes("403") || msg.includes("forbidden");
+}
+
+async function resolveAdminRecordsApiAvailable(): Promise<boolean> {
+  if (adminRecordsApiAvailable != null) return adminRecordsApiAvailable;
+  if (!(await resolveViewerUsesAdminRecords())) {
+    adminRecordsApiAvailable = false;
+    return false;
+  }
+  try {
+    await backendApi.fetchAllRecordsFromPath<AppUserRecordData>("/admin/records", "app_user", {
+      limit: 1,
+      maxPages: 1,
+    });
+    adminRecordsApiAvailable = true;
+  } catch (error) {
+    adminRecordsApiAvailable = !isHttpForbiddenError(error);
+  }
+  return adminRecordsApiAvailable;
 }
 
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
@@ -126,7 +152,7 @@ async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<
     throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
   }
   const owned = await backendApi.fetchAllRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
-  if (!(await resolveViewerUsesAdminRecords())) return owned;
+  if (!(await resolveAdminRecordsApiAvailable())) return owned;
   const adminScoped = await backendApi.fetchAllAdminRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
   return adminScoped.length ? mergeRecordsById(owned, adminScoped) : owned;
 }
@@ -154,39 +180,47 @@ async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<Re
     throw new Error("Bu işlem için admin yetkisi gerekiyor.");
   }
 
-  try {
-    const remote = await backendApi.repairAppUserAuthLinks(opts?.userIds?.length ? { userIds: opts.userIds } : undefined);
-    if (remote && typeof remote.totalAppUsers === "number") {
-      return {
-        ok: remote.ok ?? true,
-        source: "backend",
-        totalAppUsers: remote.totalAppUsers ?? 0,
-        alreadyLinked: remote.alreadyLinked ?? 0,
-        authFoundAndLinked: remote.authFoundAndLinked ?? 0,
-        authCreatedAndLinked: remote.authCreatedAndLinked ?? 0,
-        failed: remote.failed ?? 0,
-        errors: remote.errors ?? [],
-        createdCredentials: remote.createdCredentials ?? [],
-      };
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    const isMissingEndpoint =
-      msg.includes("404") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("cannot post");
-    if (!isMissingEndpoint) {
-      if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
-        throw new Error("Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
+  const useBackendRepair = import.meta.env.VITE_BACKEND_AUTH_REPAIR === "true";
+  if (useBackendRepair) {
+    try {
+      const remote = await backendApi.repairAppUserAuthLinks(opts?.userIds?.length ? { userIds: opts.userIds } : undefined);
+      if (remote && typeof remote.totalAppUsers === "number") {
+        return {
+          ok: remote.ok ?? true,
+          source: "backend",
+          totalAppUsers: remote.totalAppUsers ?? 0,
+          alreadyLinked: remote.alreadyLinked ?? 0,
+          authFoundAndLinked: remote.authFoundAndLinked ?? 0,
+          authCreatedAndLinked: remote.authCreatedAndLinked ?? 0,
+          failed: remote.failed ?? 0,
+          errors: remote.errors ?? [],
+          createdCredentials: remote.createdCredentials ?? [],
+        };
       }
-      throw error instanceof Error ? error : new Error(msg);
+    } catch (error) {
+      if (!isHttpForbiddenError(error) && !String(error).includes("404")) {
+        console.warn("[TEDRIS_REPAIR_AUTH_LINKS_BACKEND_SKIP]", error);
+      }
     }
   }
 
-  return repairAppUserAuthLinksCore({
+  const report = await repairAppUserAuthLinksCore({
     updateAppUserRecord,
-    registerAuthUser: (data) => registerAuthUserSafely(data),
+    registerAuthUser: (data) => registerOrResolveAuthUser(data),
     passwordForRecord: appUserPasswordForAuth,
     recordIds: opts?.userIds,
   });
+
+  if (report.failed > 0 && report.authFoundAndLinked + report.authCreatedAndLinked === 0) {
+    const forbidden = report.errors.some((e) => isHttpForbiddenError(new Error(e.reason)));
+    if (forbidden) {
+      throw new Error(
+        "Kayıtlar güncellenemedi (403). VPS admin/records yetkisi yok; app_user kayıtlarının admin hesabına ait olduğundan emin olun.",
+      );
+    }
+  }
+
+  return report;
 }
 
 function logLoginFlowStop(payload: {
@@ -210,7 +244,7 @@ async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppU
   try {
     return await backendApi.getRecord<AppUserRecordData>(id);
   } catch (ownedError) {
-    if (await resolveViewerUsesAdminRecords()) {
+    if (await resolveAdminRecordsApiAvailable()) {
       try {
         return await backendApi.getAdminRecord<AppUserRecordData>(id);
       } catch {
@@ -225,7 +259,7 @@ async function updateAppUserRecord(id: string | number, data: AppUserRecordData)
   try {
     return await backendApi.updateRecord<AppUserRecordData>(id, "app_user", data);
   } catch (ownedError) {
-    if (!(await resolveViewerUsesAdminRecords())) throw ownedError;
+    if (!(await resolveAdminRecordsApiAvailable())) throw ownedError;
     return backendApi.updateAdminRecord<AppUserRecordData>(id, "app_user", data);
   }
 }
@@ -996,6 +1030,29 @@ async function registerAuthUserSafely(data: { email: string; password: string; n
     if (currentToken) setBackendToken(currentToken);
     else clearBackendToken();
   }
+}
+
+/** 409 veya admin/users 403 sonrası auth id çözümlemesi (login dene, sonra liste). */
+async function registerOrResolveAuthUser(data: { email: string; password: string; name: string }) {
+  const registered = await registerAuthUserSafely(data);
+  if (registered?.user?.id) return registered;
+
+  const currentToken = getBackendToken();
+  try {
+    const loginRes = await backendApi.login({ email: data.email, password: data.password });
+    const loginUser = loginRes?.user;
+    if (loginUser?.id) return { user: loginUser };
+  } catch {
+    /* mevcut hesap farklı şifreyle olabilir */
+  } finally {
+    if (currentToken) setBackendToken(currentToken);
+    else clearBackendToken();
+  }
+
+  const existing = await findAuthUserByEmailFromAuth(data.email).catch(() => null);
+  if (existing?.id) return { user: existing };
+
+  return null;
 }
 
 async function resolveAppUserForLogin(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {

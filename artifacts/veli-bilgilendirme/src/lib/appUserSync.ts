@@ -221,15 +221,16 @@ export async function repairAppUserAuthLinks(deps: RepairAuthLinksDeps): Promise
     if (!authUser) {
       const password = deps.passwordForRecord(data);
       const name = String(data.name ?? data.institutionName ?? email);
+      const hadAuthBefore = authByEmail.has(email);
       try {
         const registered = await deps.registerAuthUser({ email, password, name });
         const createdId = registered?.user?.id;
         if (createdId) {
           authUser = registered.user as BackendUser;
           authByEmail.set(email, authUser);
-          createdNew = true;
+          createdNew = !hadAuthBefore && !authUsers.some((a) => normalizeEmail(String(a.email ?? "")) === email);
         } else {
-          authUser = await findAuthUserByEmail(email, authUsers);
+          authUser = await findAuthUserByEmail(email, [...authUsers, ...authByEmail.values()]);
           if (authUser?.id) authByEmail.set(email, authUser);
         }
       } catch (error) {
