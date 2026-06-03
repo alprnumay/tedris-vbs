@@ -1,5 +1,6 @@
 import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
 import { kurumKoduOner } from "./kurumSlug";
+import { normalizeRole } from "./admin/adminRol";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
 import { epostaAlternatif, epostaUret, kurumKoduUret, sifreUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
 import {
@@ -365,6 +366,14 @@ export type { ReconcileAppUsersResult } from "./appUserSync";
 export type KullaniciRol = "user" | "admin";
 export type AktiviteDurum = "today" | "week" | "inactive" | "never";
 
+export interface AdminKullanicilarListResponse {
+  users: AdminKullanici[];
+  rawCount: number;
+  normalizedCount: number;
+  filteredCount: number;
+  loadError: string | null;
+}
+
 export interface AdminKullanici {
   id: string;
   authUserId?: string | null;
@@ -715,7 +724,7 @@ function appUserRawDiag(record: BackendRecord<AppUserRecordData>) {
 function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKullanici {
   const data = appUserDataFromRecord(record);
   const email = getAppUserEmail(record);
-  const role = data.role ?? (data.isAdmin ? "admin" : "user");
+  const role = normalizeRole(data.role ?? null, data.isAdmin);
   const status = String(data.status ?? "").trim().toLocaleLowerCase("tr-TR");
   const isActive = data.isActive ?? (!data.deletedAt && status !== "inactive" && status !== "deleted");
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
@@ -733,7 +742,7 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
     role,
     isActive,
     status: data.status ?? null,
-    isAdmin: Boolean(data.isAdmin) || role === "admin" || role === "super_admin",
+    isAdmin: role === "admin",
     lastLoginAt: data.lastLoginAt ?? null,
     deletedAt: data.deletedAt ?? null,
     createdAt,
@@ -818,13 +827,25 @@ async function appUsersByEmail(
 
 function filterAppUsers(users: AdminKullanici[], params: Record<string, string | undefined>): AdminKullanici[] {
   const search = params.search?.trim().toLocaleLowerCase("tr-TR");
+  const activeMode = params.active ?? "all";
+  const roleFilter = params.role?.trim();
+  const districtFilter = params.district?.trim();
+  const institutionFilter = params.institutionCode?.trim();
+
   return users.filter((user) => {
-    if (!params.active && (user.deletedAt || !user.isActive)) return false;
-    if (params.district && user.district !== params.district) return false;
-    if (params.institutionCode && user.institutionCode !== params.institutionCode) return false;
-    if (params.role && user.role !== params.role) return false;
-    if (params.active === "active" && (user.deletedAt || !user.isActive)) return false;
-    if (params.active === "inactive" && !user.deletedAt && user.isActive) return false;
+    if (activeMode === "active" && (user.deletedAt || !user.isActive)) return false;
+    if (activeMode === "inactive" && appUserAktifMi(user)) return false;
+
+    if (districtFilter && (user.district ?? "").trim() !== districtFilter) return false;
+
+    if (institutionFilter) {
+      const want = normalizeImportKey(institutionFilter);
+      const have = normalizeImportKey(user.institutionCode);
+      if (want && have !== want) return false;
+    }
+
+    if (roleFilter && normalizeRole(user.role, user.isAdmin) !== roleFilter) return false;
+
     if (search) {
       const haystack = [user.name, user.email, user.institutionName, user.district, user.institutionCode]
         .filter(Boolean)
@@ -834,6 +855,66 @@ function filterAppUsers(users: AdminKullanici[], params: Record<string, string |
     }
     return true;
   });
+}
+
+async function loadAppUserRawRecordsForList(): Promise<BackendRecord<AppUserRecordData>[]> {
+  if (!getBackendToken()) {
+    throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
+  }
+  return backendApi.fetchAllRecords<AppUserRecordData>("app_user", { maxPages: 100 });
+}
+
+async function listAdminKullanicilarForPanel(
+  params: Record<string, string | undefined> = {},
+): Promise<AdminKullanicilarListResponse> {
+  const filters = {
+    district: params.district?.trim() || undefined,
+    institutionCode: params.institutionCode?.trim() || undefined,
+    search: params.search?.trim() || undefined,
+    role: params.role?.trim() || undefined,
+    active: params.active?.trim() || "all",
+  };
+
+  try {
+    const records = await loadAppUserRawRecordsForList();
+    const rawCount = records.length;
+    const normalized = records
+      .map(appUserFromRecord)
+      .sort((a, b) => a.name.localeCompare(b.name, "tr") || a.email.localeCompare(b.email, "tr"));
+    const filtered = filterAppUsers(normalized, filters);
+
+    console.log("[TEDRIS_USERS_LIST_DIAG]", {
+      rawCount,
+      normalizedCount: normalized.length,
+      filteredCount: filtered.length,
+      filters,
+      error: null,
+    });
+
+    return {
+      users: filtered,
+      rawCount,
+      normalizedCount: normalized.length,
+      filteredCount: filtered.length,
+      loadError: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Kullanıcı verisi okunamadı";
+    console.log("[TEDRIS_USERS_LIST_DIAG]", {
+      rawCount: 0,
+      normalizedCount: 0,
+      filteredCount: 0,
+      filters,
+      error: message,
+    });
+    return {
+      users: [],
+      rawCount: 0,
+      normalizedCount: 0,
+      filteredCount: 0,
+      loadError: message,
+    };
+  }
 }
 
 function isActiveRecord(data?: { isActive?: boolean; status?: string | null; deletedAt?: string | null } | null): boolean {
@@ -1312,7 +1393,9 @@ async function raporVerisi(params: Record<string, string | undefined> = {}) {
   const range = tarihAraligi(params);
   const viewer = await aktifKullaniciBaglami();
   const institutions = (await institutionRecords(params)).filter((institution) => scopeInstitutionAllowed(institution, viewer));
-  const users = (await appUserRecords(params)).filter((user) => scopeUserAllowed(user, viewer));
+  const users = (await appUserRecords({ ...params, active: params.active ?? "active" })).filter((user) =>
+    scopeUserAllowed(user, viewer),
+  );
   const usersByEmail = appUserByEmailMap(users);
   const institutionsByCode = institutionByCodeMap(institutions);
   const scopedInstitutionCodes = new Set(institutions.map((institution) => institution.institutionCode));
@@ -2041,9 +2124,7 @@ export const api = {
     };
   },
 
-  adminKullanicilar: async (params: Record<string, string | undefined> = {}) => ({
-    users: await appUserRecords(params),
-  }),
+  adminKullanicilar: (params: Record<string, string | undefined> = {}) => listAdminKullanicilarForPanel(params),
 
   adminKullaniciOlustur: async (data: {
     email: string;

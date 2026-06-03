@@ -80,11 +80,16 @@ export default function AdminSayfasi() {
   const [aktivite, setAktivite] = useState<AdminAktiviteResponse | null>(null);
   const [bugunGirisler, setBugunGirisler] = useState<AdminKullanici[]>([]);
   const [kullanicilar, setKullanicilar] = useState<AdminKullanici[]>([]);
+  const [kullaniciListeHata, setKullaniciListeHata] = useState<string | null>(null);
+  const [kullaniciListeOzet, setKullaniciListeOzet] = useState<{ rawCount: number; filteredCount: number } | null>(null);
   const [destekler, setDestekler] = useState<AdminDestek[]>([]);
 
   const [arama, setArama] = useState("");
   const [rolFiltre, setRolFiltre] = useState("");
-  const [aktifFiltre, setAktifFiltre] = useState("");
+  /** Kullanıcılar sekmesi: "" = tümü, active, inactive (varsayılan aktif = Genel Bakış ile uyumlu) */
+  const [aktifFiltre, setAktifFiltre] = useState("active");
+  const [kullaniciMintika, setKullaniciMintika] = useState("");
+  const [kullaniciKurum, setKullaniciKurum] = useState("");
   const [destekFiltre, setDestekFiltre] = useState("");
   const [aktiviteAction, setAktiviteAction] = useState("");
   const [donemBaslangic, setDonemBaslangic] = useState("");
@@ -117,13 +122,19 @@ export default function AdminSayfasi() {
         api.adminDashboard(fp).then(setDashboard),
         api.adminBugunGirisler(fp).then((r) => setBugunGirisler(r.logins)),
         api.adminYurtKayitlari().then((r) => setKurumKayitlari(r.institutions)),
-        api.adminKullanicilar({
-          district: fp.district,
-          institutionCode: fp.institutionCode,
-          search: arama || undefined,
-          role: rolFiltre || undefined,
-          active: aktifFiltre || undefined,
-        }).then((r) => setKullanicilar(r.users)),
+        api
+          .adminKullanicilar({
+            district: kullaniciMintika || undefined,
+            institutionCode: kullaniciKurum || undefined,
+            search: arama || undefined,
+            role: rolFiltre || undefined,
+            active: aktifFiltre === "active" || aktifFiltre === "inactive" ? aktifFiltre : "all",
+          })
+          .then((r) => {
+            setKullanicilar(r.users);
+            setKullaniciListeHata(r.loadError);
+            setKullaniciListeOzet({ rawCount: r.rawCount, filteredCount: r.filteredCount });
+          }),
         api.adminDestek().then((r) => setDestekler(r.requests)),
       ];
 
@@ -158,7 +169,7 @@ export default function AdminSayfasi() {
     } finally {
       setYukleniyor(false);
     }
-  }, [filtreParams, arama, rolFiltre, aktifFiltre, aktifSekme, aktiviteAction]);
+  }, [filtreParams, arama, rolFiltre, aktifFiltre, kullaniciMintika, kullaniciKurum, aktifSekme, aktiviteAction]);
 
   useEffect(() => {
     veriYukle();
@@ -169,8 +180,12 @@ export default function AdminSayfasi() {
   }, [aktifSekme, tarihAralik, yurtPreset, aktiviteAction]);
 
   const kurumSec = (code: string, district?: string) => {
-    if (district) setMintika(district);
+    if (district) {
+      setMintika(district);
+      setKullaniciMintika(district);
+    }
     setKurum(code);
+    setKullaniciKurum(code);
     setAktifSekme("kullanicilar");
   };
 
@@ -494,15 +509,56 @@ export default function AdminSayfasi() {
               </p>
             </div>
             <FiltreSatir>
-              <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta" /></FiltreAlan>
+              <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta, kurum" /></FiltreAlan>
+              <FiltreAlan label="Mıntıka">
+                <select style={selectStyle} value={kullaniciMintika} onChange={(e) => { setKullaniciMintika(e.target.value); setKullaniciKurum(""); }}>
+                  <option value="">Tümü</option>
+                  {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </FiltreAlan>
+              <FiltreAlan label="Kurum">
+                <select style={selectStyle} value={kullaniciKurum} onChange={(e) => setKullaniciKurum(e.target.value)}>
+                  <option value="">Tümü</option>
+                  {(kullaniciMintika ? kurumSecenekleri : kurumSecenekleriTum).map((y) => (
+                    <option key={y.institutionCode} value={y.institutionCode}>{y.institutionName}</option>
+                  ))}
+                </select>
+              </FiltreAlan>
               <FiltreAlan label="Rol">
                 <select style={selectStyle} value={rolFiltre} onChange={(e) => setRolFiltre(e.target.value)}>
                   <option value="">Tümü</option><option value="user">Kullanıcı</option><option value="admin">Admin</option>
                 </select>
               </FiltreAlan>
+              <FiltreAlan label="Durum">
+                <select style={selectStyle} value={aktifFiltre} onChange={(e) => setAktifFiltre(e.target.value)}>
+                  <option value="">Tümü</option>
+                  <option value="active">Aktif</option>
+                  <option value="inactive">Pasif / silinmiş</option>
+                </select>
+              </FiltreAlan>
               <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
-            <RaporTablo kullanicilar={kullanicilar} showRol />
+            {kullaniciListeHata && (
+              <div style={{ padding: 12, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", fontSize: 12, fontWeight: 600 }}>
+                Kullanıcı verisi okunamadı: {kullaniciListeHata}
+              </div>
+            )}
+            {kullaniciListeOzet && !kullaniciListeHata && (
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {kullaniciListeOzet.filteredCount} kayıt listeleniyor
+                {aktifFiltre === "active" ? " (yalnızca aktif)" : aktifFiltre === "inactive" ? " (pasif/silinmiş)" : ` (ham ${kullaniciListeOzet.rawCount} kayıt)`}
+              </div>
+            )}
+            <RaporTablo
+              kullanicilar={kullanicilar}
+              showRol
+              showDurum
+              bosMesaj={
+                kullaniciListeOzet && kullaniciListeOzet.rawCount > 0 && kullanicilar.length === 0
+                  ? "Filtreye uyan kullanıcı yok. Durum: Aktif veya filtreleri Tümü yapmayı deneyin."
+                  : "Veri yok"
+              }
+            />
           </div>
         )}
 
@@ -657,6 +713,8 @@ function RaporTablo({
   onSil,
   showActions,
   showRol,
+  showDurum,
+  bosMesaj,
   seciliIds,
   onSec,
 }: {
@@ -666,6 +724,8 @@ function RaporTablo({
   onSil?: (u: AdminKullanici) => void;
   showActions?: boolean;
   showRol?: boolean;
+  showDurum?: boolean;
+  bosMesaj?: string;
   seciliIds?: string[];
   onSec?: (id: string, checked: boolean) => void;
 }) {
@@ -703,7 +763,17 @@ function RaporTablo({
               <td>{u.district || "—"}</td>
               {showRol && <td>{ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}</td>}
               <td>{formatTarih(u.lastLoginAt)}</td>
-              <td>{u.activityStatus && <DurumRozet durum={u.activityStatus} />}</td>
+              <td>
+                {showDurum ? (
+                  !u.deletedAt && u.isActive !== false && u.status !== "inactive" && u.status !== "deleted" ? (
+                    u.activityStatus ? <DurumRozet durum={u.activityStatus} /> : <span style={{ fontSize: 10, color: "#16a34a" }}>Aktif</span>
+                  ) : (
+                    <span style={{ fontSize: 10, color: "#b45309", fontWeight: 700 }}>{u.deletedAt ? "Silinmiş" : "Pasif"}</span>
+                  )
+                ) : (
+                  u.activityStatus && <DurumRozet durum={u.activityStatus} />
+                )}
+              </td>
               {showActions && (
                 <td style={{ padding: 8 }}>
                   {onPasif && <button type="button" onClick={() => onPasif(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>{u.isActive ? "Pasif" : "Aktif"}</button>}
@@ -717,7 +787,7 @@ function RaporTablo({
           ))}
         </tbody>
       </table>
-      {kullanicilar.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Veri yok</p>}
+      {kullanicilar.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{bosMesaj ?? "Veri yok"}</p>}
     </div>
   );
 }
