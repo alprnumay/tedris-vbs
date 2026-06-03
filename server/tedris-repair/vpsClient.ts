@@ -1,3 +1,4 @@
+import { parseMeUser } from "./adminAuth";
 import { getAppUserEmail, normalizeEmail } from "./email";
 import type { AppUserRecordData, BackendRecord, BackendUser } from "./types";
 
@@ -103,12 +104,106 @@ export class VpsApiClient {
     return this.request<unknown>("GET", "/auth/me");
   }
 
-  async listAuthUsers(): Promise<BackendUser[]> {
-    const payload = await this.request<unknown>("GET", "/admin/users");
+  private parseAdminUsersPayload(payload: unknown): BackendUser[] {
     const users = normalizeRecords<BackendUser>(payload);
     if (users.length) return users;
-    const p = payload as { users?: BackendUser[] };
-    return Array.isArray(p.users) ? p.users : [];
+    const p = payload as { users?: BackendUser[]; data?: BackendUser[] | { users?: BackendUser[] } };
+    if (Array.isArray(p.users)) return p.users;
+    if (Array.isArray(p.data)) return p.data;
+    if (p.data && typeof p.data === "object" && Array.isArray((p.data as { users?: BackendUser[] }).users)) {
+      return (p.data as { users: BackendUser[] }).users;
+    }
+    return [];
+  }
+
+  /** GET /admin/users — VPS'te auth veya app_user kataloğu dönebilir; meta ile birlikte. */
+  async fetchAdminUsersCatalog(search?: string): Promise<{
+    ok: boolean;
+    status?: number;
+    users: BackendUser[];
+    error?: string;
+  }> {
+    const path = search
+      ? `/admin/users?search=${encodeURIComponent(search.trim().toLocaleLowerCase("tr-TR"))}`
+      : "/admin/users";
+    const baseUrl = this.baseUrl.replace(/\/+$/, "");
+    const res = (await fetch(`${baseUrl}${path}`, {
+      method: "GET",
+      headers: this.headers(false),
+    })) as FetchHttpResponse;
+    const text = await res.text();
+    let data: unknown = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text };
+    }
+    if (!res.ok) {
+      const err = data as { message?: unknown; error?: unknown };
+      const message =
+        typeof err.message === "string"
+          ? err.message
+          : typeof err.error === "string"
+            ? err.error
+            : text || "request_failed";
+      return { ok: false, status: res.status, users: [], error: `${res.status} ${message}` };
+    }
+    return { ok: true, status: res.status, users: this.parseAdminUsersPayload(data) };
+  }
+
+  async listAuthUsers(): Promise<BackendUser[]> {
+    const result = await this.fetchAdminUsersCatalog();
+    return result.users;
+  }
+
+  /**
+   * Teşhis: hedef e-posta için auth id (login tablosu). Admin bearer geri yüklenir.
+   * Register/PUT yok; yalnızca okuma amaçlı kimlik doğrulama.
+   */
+  async probeAuthLogin(
+    email: string,
+    password: string,
+  ): Promise<{ user: BackendUser | null; status?: number; error?: string }> {
+    const saved = this.bearerToken;
+    try {
+      const baseUrl = this.baseUrl.replace(/\/+$/, "");
+      const res = (await fetch(`${baseUrl}/auth/login`, {
+        method: "POST",
+        headers: this.headers(true),
+        body: JSON.stringify({ email, password }),
+      })) as FetchHttpResponse;
+      const text = await res.text();
+      let data: unknown = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text };
+      }
+      if (!res.ok) {
+        const err = data as { message?: unknown; error?: unknown };
+        const message =
+          typeof err.message === "string"
+            ? err.message
+            : typeof err.error === "string"
+              ? err.error
+              : text || "login_failed";
+        return { user: null, status: res.status, error: message };
+      }
+      let user = parseMeUser(data);
+      if (!user?.id && data && typeof data === "object") {
+        const raw = data as Record<string, unknown>;
+        if (raw.id != null || typeof raw.email === "string") {
+          user = {
+            id: raw.id as string | number,
+            email: typeof raw.email === "string" ? raw.email : undefined,
+            role: typeof raw.role === "string" ? raw.role : undefined,
+          };
+        }
+      }
+      return { user, status: res.status };
+    } finally {
+      this.bearerToken = saved;
+    }
   }
 
   async fetchAllFromPath<T>(path: "/records" | "/admin/records", recordType: string, maxPages = 100): Promise<BackendRecord<T>[]> {

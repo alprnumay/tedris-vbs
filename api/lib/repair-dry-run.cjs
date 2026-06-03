@@ -136,108 +136,6 @@ function selectPrimaryAppUserRecord(records, authUserId) {
   )[0] ?? null;
 }
 
-// server/tedris-repair/diagnoseDryRun.ts
-function recordOwnerId(record) {
-  const raw = record;
-  const nested = raw.data ?? raw.payload ?? {};
-  const nestedOwner = nested.userId;
-  const id = record.userId ?? nestedOwner ?? raw.userId;
-  return id != null && String(id).trim() !== "" ? String(id) : null;
-}
-function buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId) {
-  const tags = [];
-  if (!group.length) {
-    tags.push("appUserMissing");
-    return tags;
-  }
-  if (group.length > 1) tags.push("duplicateEmail");
-  if (!primary) return tags;
-  const data = appUserDataFromRecord(primary);
-  if (isDeletedOrInactive(data)) tags.push("inactiveDeleted");
-  const ownerId = recordOwnerId(primary);
-  if (authUserId && ownerId && ownerId !== authUserId) tags.push("appUserOwnerMismatch");
-  if (authUserId && recordAuthId && recordAuthId !== authUserId) tags.push("authUserIdMismatch");
-  if (authUserId && (!recordAuthId || recordAuthId !== authUserId)) tags.push("authFoundWouldLink");
-  return [...new Set(tags)];
-}
-function emailFieldsFromRecord(record) {
-  const raw = record;
-  const nested = raw.data ?? raw.payload ?? {};
-  return {
-    topLevel: raw.email ?? null,
-    dataEmail: nested.email ?? null,
-    loginEmail: nested.loginEmail ?? raw.loginEmail ?? null,
-    generatedEmail: nested.generatedEmail ?? raw.generatedEmail ?? null,
-    username: nested.username ?? raw.username ?? null,
-    computed: getAppUserEmail(record) || null
-  };
-}
-function resolveEmailCategory(email, group, authUser, primary) {
-  if (!group.length) {
-    return authUser ? "appUserMissing" : "failed";
-  }
-  if (group.length > 1) return "duplicateEmails";
-  if (!primary) return "failed";
-  const data = appUserDataFromRecord(primary);
-  if (isDeletedOrInactive(data)) return "inactiveOrDeleted";
-  const computed = getAppUserEmail(primary);
-  if (!computed) return "missingEmail";
-  const authId = authUser?.id != null ? String(authUser.id) : null;
-  const recordAuthId = data.authUserId ? String(data.authUserId) : null;
-  if (authId && recordAuthId && recordAuthId === authId) {
-    const authEmail = typeof authUser?.email === "string" ? normalizeEmail2(authUser.email) : "";
-    if (authEmail === email) return "alreadyLinked";
-  }
-  if (authUser?.id && !recordAuthId) return "authFoundWouldLink";
-  if (authUser?.id && recordAuthId && recordAuthId !== authId) return "authFoundWouldLink";
-  if (!authUser?.id) return "authWouldCreate";
-  return "failed";
-}
-function diagnoseRepairEmail(email, records, authUsers) {
-  const normalized = normalizeEmail2(email);
-  const authUser = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail2(a.email) : "") === normalized) ?? null;
-  const authUserId = authUser?.id != null ? String(authUser.id) : null;
-  const group = records.filter((record) => {
-    const computed = getAppUserEmail(record);
-    if (computed === normalized) return true;
-    if (authUserId && String(record.data?.authUserId ?? "") === authUserId) return true;
-    return false;
-  });
-  const byEmailOnly = records.filter((r) => getAppUserEmail(r) === normalized);
-  const byAuthIdOnly = authUserId ? records.filter((r) => String(r.data?.authUserId ?? "") === authUserId) : [];
-  const primary = selectPrimaryAppUserRecord(group, authUserId ?? void 0) ?? group[0] ?? null;
-  const data = primary ? appUserDataFromRecord(primary) : null;
-  const fields = primary ? emailFieldsFromRecord(primary) : emailFieldsFromRecord({ id: "", data: {} });
-  const recordAuthId = data?.authUserId ? String(data.authUserId) : null;
-  const category = resolveEmailCategory(normalized, group, authUser, primary);
-  const recordUserId = primary ? recordOwnerId(primary) : null;
-  const diagnosticTags = buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId);
-  return {
-    email: normalized,
-    category,
-    authUserId,
-    authUserExists: Boolean(authUser?.id),
-    appUserId: primary ? String(primary.id) : null,
-    recordUserId,
-    recordOwnerMatchesAuth: Boolean(authUserId && recordUserId && recordUserId === authUserId),
-    institutionName: data?.institutionName ?? null,
-    diagnosticTags,
-    emailFields: fields,
-    authUserIdOnRecord: recordAuthId,
-    authUserIdMatchesAuth: Boolean(authUserId && recordAuthId && recordAuthId === authUserId),
-    institutionCode: data?.institutionCode ?? null,
-    district: data?.district ?? null,
-    province: data?.province ?? null,
-    status: data?.status ?? null,
-    isActive: data?.isActive ?? null,
-    deletedAt: data?.deletedAt ?? null,
-    duplicateAppUserIds: group.length > 1 ? group.map((r) => String(r.id)) : [],
-    adminCatalogCandidatesByEmail: byEmailOnly.length,
-    adminCatalogCandidatesByAuthId: byAuthIdOnly.length,
-    loginScopedRecordsNote: "Yurt JWT ile GET /records?record_type=app_user yaln\u0131zca sahibine ait kay\u0131tlar\u0131 d\xF6nd\xFCr\xFCr; admin katalogda kay\u0131t olsa bile login an\u0131nda ownedCount 0 olabilir. authUserId ba\u011Flama tek ba\u015F\u0131na yetmeyebilir \u2014 login lookup veya GET /me/app-user gerekir."
-  };
-}
-
 // server/tedris-repair/vpsClient.ts
 function normalizeRecords(payload) {
   if (Array.isArray(payload)) return payload;
@@ -315,12 +213,83 @@ var VpsApiClient = class {
   async me() {
     return this.request("GET", "/auth/me");
   }
-  async listAuthUsers() {
-    const payload = await this.request("GET", "/admin/users");
+  parseAdminUsersPayload(payload) {
     const users = normalizeRecords(payload);
     if (users.length) return users;
     const p = payload;
-    return Array.isArray(p.users) ? p.users : [];
+    if (Array.isArray(p.users)) return p.users;
+    if (Array.isArray(p.data)) return p.data;
+    if (p.data && typeof p.data === "object" && Array.isArray(p.data.users)) {
+      return p.data.users;
+    }
+    return [];
+  }
+  /** GET /admin/users — VPS'te auth veya app_user kataloğu dönebilir; meta ile birlikte. */
+  async fetchAdminUsersCatalog(search) {
+    const path = search ? `/admin/users?search=${encodeURIComponent(search.trim().toLocaleLowerCase("tr-TR"))}` : "/admin/users";
+    const baseUrl = this.baseUrl.replace(/\/+$/, "");
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: "GET",
+      headers: this.headers(false)
+    });
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text };
+    }
+    if (!res.ok) {
+      const err = data;
+      const message = typeof err.message === "string" ? err.message : typeof err.error === "string" ? err.error : text || "request_failed";
+      return { ok: false, status: res.status, users: [], error: `${res.status} ${message}` };
+    }
+    return { ok: true, status: res.status, users: this.parseAdminUsersPayload(data) };
+  }
+  async listAuthUsers() {
+    const result = await this.fetchAdminUsersCatalog();
+    return result.users;
+  }
+  /**
+   * Teşhis: hedef e-posta için auth id (login tablosu). Admin bearer geri yüklenir.
+   * Register/PUT yok; yalnızca okuma amaçlı kimlik doğrulama.
+   */
+  async probeAuthLogin(email, password) {
+    const saved = this.bearerToken;
+    try {
+      const baseUrl = this.baseUrl.replace(/\/+$/, "");
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: "POST",
+        headers: this.headers(true),
+        body: JSON.stringify({ email, password })
+      });
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: text };
+      }
+      if (!res.ok) {
+        const err = data;
+        const message = typeof err.message === "string" ? err.message : typeof err.error === "string" ? err.error : text || "login_failed";
+        return { user: null, status: res.status, error: message };
+      }
+      let user = parseMeUser(data);
+      if (!user?.id && data && typeof data === "object") {
+        const raw = data;
+        if (raw.id != null || typeof raw.email === "string") {
+          user = {
+            id: raw.id,
+            email: typeof raw.email === "string" ? raw.email : void 0,
+            role: typeof raw.role === "string" ? raw.role : void 0
+          };
+        }
+      }
+      return { user, status: res.status };
+    } finally {
+      this.bearerToken = saved;
+    }
   }
   async fetchAllFromPath(path, recordType, maxPages = 100) {
     const limit = 100;
@@ -475,17 +444,281 @@ var VpsApiClient = class {
     return authUsers.find((u) => (typeof u.email === "string" ? u.email.trim().toLocaleLowerCase("tr-TR") : "") === normalized) ?? null;
   }
 };
+function passwordForDistrict(district) {
+  const codes = {
+    burdur: "153415",
+    merkez: "153415",
+    alanya: "073407",
+    kemer: "073407",
+    manavgat: "073407",
+    isparta: "323432",
+    aglasun: "153415",
+    yesilova: "153415"
+  };
+  const key = String(district ?? "").trim().toLowerCase();
+  if (codes[key]) return codes[key];
+  const partial = Object.entries(codes).find(([k]) => key.includes(k));
+  return partial?.[1] ?? "tedris2026";
+}
+
+// server/tedris-repair/authLookup.ts
+function emptyMeta() {
+  return {
+    source: "GET /admin/users",
+    catalogKind: "empty",
+    trustedForAuthIdentity: false,
+    resolvedVia: "none",
+    loginProbeUsed: false,
+    loginProbeSideEffects: [],
+    attempts: [],
+    listUserCount: 0
+  };
+}
+function userEmail(u) {
+  const raw = u;
+  return normalizeEmail2(
+    typeof raw.email === "string" ? raw.email : typeof raw.data?.email === "string" ? raw.data.email : getAppUserEmail(raw)
+  );
+}
+function userLooksLikeAppUserRecord(u) {
+  const raw = u;
+  const data = raw.data ?? {};
+  if (raw.recordType === "app_user" || raw.record_type === "app_user") return true;
+  if (data.institutionCode || data.institutionName || raw.institutionCode || raw.institutionName) return true;
+  return false;
+}
+function detectAuthCatalogKind(users) {
+  if (!users.length) return "empty";
+  const appLike = users.filter(userLooksLikeAppUserRecord).length;
+  if (appLike === 0) return "auth";
+  if (appLike >= users.length * 0.5) return "app_user";
+  return "mixed";
+}
+function findAuthUserInList(users, email, catalogKind) {
+  const normalized = normalizeEmail2(email);
+  if (!normalized || catalogKind === "app_user") return null;
+  return users.find((u) => userEmail(u) === normalized) ?? null;
+}
+function loginProbePasswords(district, province) {
+  const out = [];
+  for (const part of [district, province]) {
+    const pw = passwordForDistrict(part);
+    if (pw && !out.includes(pw)) out.push(pw);
+  }
+  if (!out.includes("tedris2026")) out.push("tedris2026");
+  return out;
+}
+async function resolveAuthUserForDiagnosis(client, email, opts) {
+  const meta = emptyMeta();
+  const normalized = normalizeEmail2(email);
+  if (!normalized) return { user: null, meta };
+  const listResult = await client.fetchAdminUsersCatalog();
+  meta.attempts.push({
+    endpoint: "GET /admin/users",
+    ok: listResult.ok,
+    status: listResult.status,
+    userCount: listResult.users.length,
+    error: listResult.error
+  });
+  meta.listUserCount = listResult.users.length;
+  meta.catalogKind = detectAuthCatalogKind(listResult.users);
+  if (listResult.ok && meta.catalogKind !== "app_user") {
+    const fromList = findAuthUserInList(listResult.users, normalized, meta.catalogKind);
+    if (fromList?.id != null) {
+      meta.trustedForAuthIdentity = true;
+      meta.resolvedVia = "admin_users_list";
+      meta.source = "GET /admin/users";
+      return { user: fromList, meta };
+    }
+  }
+  if (listResult.ok) {
+    const searchResult = await client.fetchAdminUsersCatalog(normalized);
+    meta.attempts.push({
+      endpoint: `GET /admin/users?search=${encodeURIComponent(normalized)}`,
+      ok: searchResult.ok,
+      status: searchResult.status,
+      userCount: searchResult.users.length,
+      error: searchResult.error,
+      note: meta.catalogKind === "app_user" ? "catalog_is_app_user_records_not_auth" : void 0
+    });
+    const searchKind = detectAuthCatalogKind(searchResult.users);
+    if (searchResult.ok && searchKind !== "app_user") {
+      const fromSearch = findAuthUserInList(searchResult.users, normalized, searchKind);
+      if (fromSearch?.id != null) {
+        meta.trustedForAuthIdentity = true;
+        meta.resolvedVia = "admin_users_search";
+        meta.source = meta.attempts[meta.attempts.length - 1].endpoint;
+        return { user: fromSearch, meta };
+      }
+    }
+  }
+  if (opts?.appUserRecordExists !== false) {
+    const passwords = loginProbePasswords(opts?.district, opts?.province);
+    for (const password of passwords) {
+      const probe = await client.probeAuthLogin(normalized, password);
+      meta.attempts.push({
+        endpoint: "POST /auth/login",
+        ok: Boolean(probe.user?.id),
+        note: "diagnosis_probe_restores_admin_bearer"
+      });
+      if (probe.user?.id != null) {
+        meta.loginProbeUsed = true;
+        meta.loginProbeSideEffects = [
+          "POST /auth/login ba\u015Far\u0131l\u0131 olursa VPS auth.lastLoginAt g\xFCncellenebilir; veri onar\u0131m\u0131 yap\u0131lmaz."
+        ];
+        meta.trustedForAuthIdentity = true;
+        meta.resolvedVia = "login_probe";
+        meta.source = "POST /auth/login";
+        return { user: probe.user, meta };
+      }
+    }
+  }
+  if (!listResult.ok) {
+    meta.catalogKind = "unknown";
+  } else if (meta.catalogKind === "app_user") {
+    meta.source = "GET /admin/users (app_user catalog \u2014 auth id listesi de\u011Fil)";
+  }
+  return { user: null, meta };
+}
+
+// server/tedris-repair/diagnoseDryRun.ts
+function recordOwnerId(record) {
+  const raw = record;
+  const nested = raw.data ?? raw.payload ?? {};
+  const nestedOwner = nested.userId;
+  const id = record.userId ?? nestedOwner ?? raw.userId;
+  return id != null && String(id).trim() !== "" ? String(id) : null;
+}
+function buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId) {
+  const tags = [];
+  if (!group.length) {
+    tags.push("appUserMissing");
+    return tags;
+  }
+  if (group.length > 1) tags.push("duplicateEmail");
+  if (!primary) return tags;
+  const data = appUserDataFromRecord(primary);
+  if (isDeletedOrInactive(data)) tags.push("inactiveDeleted");
+  const ownerId = recordOwnerId(primary);
+  if (authUserId && ownerId && ownerId !== authUserId) tags.push("appUserOwnerMismatch");
+  if (authUserId && recordAuthId && recordAuthId !== authUserId) tags.push("authUserIdMismatch");
+  if (authUserId && (!recordAuthId || recordAuthId !== authUserId)) tags.push("authFoundWouldLink");
+  return [...new Set(tags)];
+}
+function emailFieldsFromRecord(record) {
+  const raw = record;
+  const nested = raw.data ?? raw.payload ?? {};
+  return {
+    topLevel: raw.email ?? null,
+    dataEmail: nested.email ?? null,
+    loginEmail: nested.loginEmail ?? raw.loginEmail ?? null,
+    generatedEmail: nested.generatedEmail ?? raw.generatedEmail ?? null,
+    username: nested.username ?? raw.username ?? null,
+    computed: getAppUserEmail(record) || null
+  };
+}
+function resolveEmailCategory(email, group, authUser, primary, authLookup) {
+  if (!group.length) {
+    if (authUser?.id && authLookup.trustedForAuthIdentity) return "appUserMissing";
+    if (authUser?.id) return "authExistsButNotResolved";
+    return authLookup.trustedForAuthIdentity ? "failed" : "authLookupUnavailable";
+  }
+  if (group.length > 1) return "duplicateEmails";
+  if (!primary) return "failed";
+  const data = appUserDataFromRecord(primary);
+  if (isDeletedOrInactive(data)) return "inactiveOrDeleted";
+  const computed = getAppUserEmail(primary);
+  if (!computed) return "missingEmail";
+  const authId = authUser?.id != null ? String(authUser.id) : null;
+  const recordAuthId = data.authUserId ? String(data.authUserId) : null;
+  if (!authLookup.trustedForAuthIdentity || !authId) {
+    return "authExistsButNotResolved";
+  }
+  if (recordAuthId && recordAuthId === authId) {
+    const authEmail = typeof authUser?.email === "string" ? normalizeEmail2(authUser.email) : "";
+    if (authEmail === email) return "alreadyLinked";
+  }
+  if (!recordAuthId || recordAuthId !== authId) return "authFoundWouldLink";
+  return "failed";
+}
+function diagnoseRepairEmail(email, records, authUser, authLookup) {
+  const normalized = normalizeEmail2(email);
+  const authUserId = authUser?.id != null && authLookup.trustedForAuthIdentity ? String(authUser.id) : null;
+  const group = records.filter((record) => {
+    const computed = getAppUserEmail(record);
+    if (computed === normalized) return true;
+    if (authUserId && String(record.data?.authUserId ?? "") === authUserId) return true;
+    return false;
+  });
+  const byEmailOnly = records.filter((r) => getAppUserEmail(r) === normalized);
+  const byAuthIdOnly = authUserId ? records.filter((r) => String(r.data?.authUserId ?? "") === authUserId) : [];
+  const primary = selectPrimaryAppUserRecord(group, authUserId ?? void 0) ?? group[0] ?? null;
+  const data = primary ? appUserDataFromRecord(primary) : null;
+  const fields = primary ? emailFieldsFromRecord(primary) : emailFieldsFromRecord({ id: "", data: {} });
+  const recordAuthId = data?.authUserId ? String(data.authUserId) : null;
+  const category = resolveEmailCategory(normalized, group, authUser, primary, authLookup);
+  const recordUserId = primary ? recordOwnerId(primary) : null;
+  const diagnosticTags = buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId);
+  const expectedAuthUserId = authUserId;
+  const ownerMismatch = Boolean(expectedAuthUserId && recordUserId && recordUserId !== expectedAuthUserId);
+  const authLinkMissing = Boolean(primary && !recordAuthId);
+  return {
+    email: normalized,
+    category,
+    authUserId,
+    authUserExists: Boolean(authUserId),
+    expectedAuthUserId,
+    ownerMismatch,
+    authLinkMissing,
+    authLookup: {
+      source: authLookup.source,
+      catalogKind: authLookup.catalogKind,
+      trustedForAuthIdentity: authLookup.trustedForAuthIdentity,
+      resolvedVia: authLookup.resolvedVia,
+      loginProbeUsed: authLookup.loginProbeUsed,
+      loginProbeSideEffects: authLookup.loginProbeSideEffects,
+      listUserCount: authLookup.listUserCount,
+      attempts: authLookup.attempts
+    },
+    appUserId: primary ? String(primary.id) : null,
+    recordUserId,
+    recordOwnerMatchesAuth: Boolean(authUserId && recordUserId && recordUserId === authUserId),
+    institutionName: data?.institutionName ?? null,
+    diagnosticTags,
+    emailFields: fields,
+    authUserIdOnRecord: recordAuthId,
+    authUserIdMatchesAuth: Boolean(authUserId && recordAuthId && recordAuthId === authUserId),
+    institutionCode: data?.institutionCode ?? null,
+    district: data?.district ?? null,
+    province: data?.province ?? null,
+    status: data?.status ?? null,
+    isActive: data?.isActive ?? null,
+    deletedAt: data?.deletedAt ?? null,
+    duplicateAppUserIds: group.length > 1 ? group.map((r) => String(r.id)) : [],
+    adminCatalogCandidatesByEmail: byEmailOnly.length,
+    adminCatalogCandidatesByAuthId: byAuthIdOnly.length,
+    loginScopedRecordsNote: "Yurt JWT ile GET /records?record_type=app_user yaln\u0131zca sahibine ait kay\u0131tlar\u0131 d\xF6nd\xFCr\xFCr; admin katalogda kay\u0131t olsa bile login an\u0131nda ownedCount 0 olabilir. authUserId ba\u011Flama tek ba\u015F\u0131na yetmeyebilir \u2014 recordUserId (owner) auth id ile e\u015Fle\u015Fmelidir."
+  };
+}
 
 // server/tedris-repair/repairAppUserAuthLinks.ts
 async function runDiagnoseEmailsOnly(client, diagnoseEmails) {
   const emails = diagnoseEmails.map((e) => normalizeEmail2(e)).filter(Boolean);
-  const authUsers = await client.listAuthUsers().catch(() => []);
-  const authIds = emails.map((email) => {
-    const auth = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail2(a.email) : "") === email);
-    return auth?.id != null ? String(auth.id) : null;
-  }).filter((id) => Boolean(id));
-  const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, authIds);
-  const emailDiagnosis = emails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+  const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, []);
+  const emailDiagnosis = [];
+  for (const email of emails) {
+    const group = records.filter((r) => getAppUserEmail(r) === email);
+    const primary = group[0] ?? null;
+    const data = primary ? appUserDataFromRecord(primary) : null;
+    const authResolution = await resolveAuthUserForDiagnosis(client, email, {
+      district: data?.district,
+      province: data?.province,
+      appUserRecordExists: Boolean(primary)
+    });
+    emailDiagnosis.push(
+      diagnoseRepairEmail(email, records, authResolution.user, authResolution.meta)
+    );
+  }
   console.log("[TEDRIS_REPAIR_DRY_RUN]", {
     dryRun: true,
     mode: "diagnose_emails_only",
@@ -508,7 +741,8 @@ async function runDiagnoseEmailsOnly(client, diagnoseEmails) {
       pagesFetched,
       recordsLoaded: records.length,
       stoppedEarly,
-      targetEmailCount: emails.length
+      targetEmailCount: emails.length,
+      authLookupNote: "Auth kimli\u011Fi: \xF6nce GET /admin/users (VPS \xE7o\u011Fu zaman app_user katalo\u011Fu d\xF6ner, auth id de\u011Fil); g\xFCvenilir de\u011Filse POST /auth/login te\u015Fhis probesi (district/tedris2026 \u015Fifreleri). authWouldCreate dry-run'da kullan\u0131lmaz."
     }
   };
 }

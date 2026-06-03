@@ -5,6 +5,7 @@ import {
   normalizeEmail,
   selectPrimaryAppUserRecord,
 } from "./email";
+import type { AuthLookupMeta } from "./authLookup";
 import type {
   AppUserRecordData,
   BackendRecord,
@@ -132,9 +133,12 @@ function resolveEmailCategory(
   group: BackendRecord<AppUserRecordData>[],
   authUser: BackendUser | null,
   primary: BackendRecord<AppUserRecordData> | null,
+  authLookup: AuthLookupMeta,
 ): RepairEmailCategory {
   if (!group.length) {
-    return authUser ? "appUserMissing" : "failed";
+    if (authUser?.id && authLookup.trustedForAuthIdentity) return "appUserMissing";
+    if (authUser?.id) return "authExistsButNotResolved";
+    return authLookup.trustedForAuthIdentity ? "failed" : "authLookupUnavailable";
   }
   if (group.length > 1) return "duplicateEmails";
   if (!primary) return "failed";
@@ -146,15 +150,16 @@ function resolveEmailCategory(
   const authId = authUser?.id != null ? String(authUser.id) : null;
   const recordAuthId = data.authUserId ? String(data.authUserId) : null;
 
-  if (authId && recordAuthId && recordAuthId === authId) {
+  if (!authLookup.trustedForAuthIdentity || !authId) {
+    return "authExistsButNotResolved";
+  }
+
+  if (recordAuthId && recordAuthId === authId) {
     const authEmail = typeof authUser?.email === "string" ? normalizeEmail(authUser.email) : "";
     if (authEmail === email) return "alreadyLinked";
   }
 
-  if (authUser?.id && !recordAuthId) return "authFoundWouldLink";
-  if (authUser?.id && recordAuthId && recordAuthId !== authId) return "authFoundWouldLink";
-
-  if (!authUser?.id) return "authWouldCreate";
+  if (!recordAuthId || recordAuthId !== authId) return "authFoundWouldLink";
 
   return "failed";
 }
@@ -162,12 +167,12 @@ function resolveEmailCategory(
 export function diagnoseRepairEmail(
   email: string,
   records: BackendRecord<AppUserRecordData>[],
-  authUsers: BackendUser[],
+  authUser: BackendUser | null,
+  authLookup: AuthLookupMeta,
 ): RepairEmailDiagnosis {
   const normalized = normalizeEmail(email);
-  const authUser =
-    authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail(a.email) : "") === normalized) ?? null;
-  const authUserId = authUser?.id != null ? String(authUser.id) : null;
+  const authUserId =
+    authUser?.id != null && authLookup.trustedForAuthIdentity ? String(authUser.id) : null;
 
   const group = records.filter((record) => {
     const computed = getAppUserEmail(record);
@@ -185,15 +190,31 @@ export function diagnoseRepairEmail(
   const data = primary ? appUserDataFromRecord(primary) : null;
   const fields = primary ? emailFieldsFromRecord(primary) : emailFieldsFromRecord({ id: "", data: {} });
   const recordAuthId = data?.authUserId ? String(data.authUserId) : null;
-  const category = resolveEmailCategory(normalized, group, authUser, primary);
+  const category = resolveEmailCategory(normalized, group, authUser, primary, authLookup);
   const recordUserId = primary ? recordOwnerId(primary) : null;
   const diagnosticTags = buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId);
+  const expectedAuthUserId = authUserId;
+  const ownerMismatch = Boolean(expectedAuthUserId && recordUserId && recordUserId !== expectedAuthUserId);
+  const authLinkMissing = Boolean(primary && !recordAuthId);
 
   return {
     email: normalized,
     category,
     authUserId,
-    authUserExists: Boolean(authUser?.id),
+    authUserExists: Boolean(authUserId),
+    expectedAuthUserId,
+    ownerMismatch,
+    authLinkMissing,
+    authLookup: {
+      source: authLookup.source,
+      catalogKind: authLookup.catalogKind,
+      trustedForAuthIdentity: authLookup.trustedForAuthIdentity,
+      resolvedVia: authLookup.resolvedVia,
+      loginProbeUsed: authLookup.loginProbeUsed,
+      loginProbeSideEffects: authLookup.loginProbeSideEffects,
+      listUserCount: authLookup.listUserCount,
+      attempts: authLookup.attempts,
+    },
     appUserId: primary ? String(primary.id) : null,
     recordUserId,
     recordOwnerMatchesAuth: Boolean(authUserId && recordUserId && recordUserId === authUserId),
@@ -212,6 +233,6 @@ export function diagnoseRepairEmail(
     adminCatalogCandidatesByEmail: byEmailOnly.length,
     adminCatalogCandidatesByAuthId: byAuthIdOnly.length,
     loginScopedRecordsNote:
-      "Yurt JWT ile GET /records?record_type=app_user yalnızca sahibine ait kayıtları döndürür; admin katalogda kayıt olsa bile login anında ownedCount 0 olabilir. authUserId bağlama tek başına yetmeyebilir — login lookup veya GET /me/app-user gerekir.",
+      "Yurt JWT ile GET /records?record_type=app_user yalnızca sahibine ait kayıtları döndürür; admin katalogda kayıt olsa bile login anında ownedCount 0 olabilir. authUserId bağlama tek başına yetmeyebilir — recordUserId (owner) auth id ile eşleşmelidir.",
   };
 }

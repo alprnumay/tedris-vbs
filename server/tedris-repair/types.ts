@@ -46,6 +46,8 @@ export type RepairEmailCategory =
   | "alreadyLinked"
   | "authFoundWouldLink"
   | "authWouldCreate"
+  | "authLookupUnavailable"
+  | "authExistsButNotResolved"
   | "appUserMissing"
   | "duplicateEmails"
   | "inactiveOrDeleted"
@@ -65,7 +67,21 @@ export interface RepairEmailDiagnosis {
   email: string;
   category: RepairEmailCategory;
   authUserId: string | null;
+  /** Auth kimliği güvenilir şekilde çözüldü mü (liste veya login_probe) */
   authUserExists: boolean;
+  expectedAuthUserId: string | null;
+  ownerMismatch: boolean;
+  authLinkMissing: boolean;
+  authLookup: {
+    source: string;
+    catalogKind: string;
+    trustedForAuthIdentity: boolean;
+    resolvedVia: string;
+    loginProbeUsed: boolean;
+    loginProbeSideEffects: string[];
+    listUserCount: number;
+    attempts: { endpoint: string; ok: boolean; status?: number; userCount?: number; error?: string; note?: string }[];
+  };
   appUserId: string | null;
   recordUserId: string | null;
   recordOwnerMatchesAuth: boolean;
@@ -141,6 +157,7 @@ export interface DiagnoseOnlyReport {
     recordsLoaded: number;
     stoppedEarly: boolean;
     targetEmailCount: number;
+    authLookupNote: string;
   };
 }
 

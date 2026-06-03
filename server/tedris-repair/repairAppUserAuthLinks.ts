@@ -1,4 +1,5 @@
 import { isAdminUser, resolveAdminUser, userFromJwtPayload } from "./adminAuth";
+import { resolveAuthUserForDiagnosis } from "./authLookup";
 import { buildDryRunSummary, diagnoseRepairEmail } from "./diagnoseDryRun";
 import {
   appUserDataFromRecord,
@@ -13,6 +14,7 @@ import type {
   BackendUser,
   DiagnoseOnlyReport,
   RepairAppUserAuthLinksReport,
+  RepairEmailDiagnosis,
   RepairOptions,
 } from "./types";
 import { passwordForDistrict, VpsApiClient } from "./vpsClient";
@@ -51,16 +53,23 @@ export async function runDiagnoseEmailsOnly(
   diagnoseEmails: string[],
 ): Promise<DiagnoseOnlyReport> {
   const emails = diagnoseEmails.map((e) => normalizeEmail(e)).filter(Boolean);
-  const authUsers = await client.listAuthUsers().catch(() => []);
-  const authIds = emails
-    .map((email) => {
-      const auth = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail(a.email) : "") === email);
-      return auth?.id != null ? String(auth.id) : null;
-    })
-    .filter((id): id is string => Boolean(id));
 
-  const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, authIds);
-  const emailDiagnosis = emails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+  const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, []);
+
+  const emailDiagnosis: RepairEmailDiagnosis[] = [];
+  for (const email of emails) {
+    const group = records.filter((r) => getAppUserEmail(r) === email);
+    const primary = group[0] ?? null;
+    const data = primary ? appUserDataFromRecord(primary) : null;
+    const authResolution = await resolveAuthUserForDiagnosis(client, email, {
+      district: data?.district,
+      province: data?.province,
+      appUserRecordExists: Boolean(primary),
+    });
+    emailDiagnosis.push(
+      diagnoseRepairEmail(email, records, authResolution.user, authResolution.meta),
+    );
+  }
 
   console.log("[TEDRIS_REPAIR_DRY_RUN]", {
     dryRun: true,
@@ -86,6 +95,8 @@ export async function runDiagnoseEmailsOnly(
       recordsLoaded: records.length,
       stoppedEarly,
       targetEmailCount: emails.length,
+      authLookupNote:
+        "Auth kimliği: önce GET /admin/users (VPS çoğu zaman app_user kataloğu döner, auth id değil); güvenilir değilse POST /auth/login teşhis probesi (district/tedris2026 şifreleri). authWouldCreate dry-run'da kullanılmaz.",
     },
   };
 }
@@ -243,7 +254,19 @@ export async function runRepairAppUserAuthLinks(
       alreadyLinked: report.alreadyLinked,
     });
     if (diagnoseEmails.length) {
-      report.emailDiagnosis = diagnoseEmails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+      const rows: RepairEmailDiagnosis[] = [];
+      for (const email of diagnoseEmails) {
+        const group = records.filter((r) => getAppUserEmail(r) === email);
+        const primary = group[0] ?? null;
+        const data = primary ? appUserDataFromRecord(primary) : null;
+        const authResolution = await resolveAuthUserForDiagnosis(client, email, {
+          district: data?.district,
+          province: data?.province,
+          appUserRecordExists: Boolean(primary),
+        });
+        rows.push(diagnoseRepairEmail(email, records, authResolution.user, authResolution.meta));
+      }
+      report.emailDiagnosis = rows;
     }
     console.log("[TEDRIS_REPAIR_DRY_RUN]", {
       dryRun: true,
