@@ -1,7 +1,8 @@
 /**
- * Auth ↔ app_user ↔ institution veri bütünlüğü onarımı ve login eşleştirmesi.
+ * Auth ↔ app_user okuma yardımcıları (login). Client-side onarım kapalı.
  */
 import { backendApi, type BackendRecord, type BackendUser } from "./backendApi";
+import { rejectClientSideRepair } from "./repairPolicy";
 
 export interface AppUserRecordData {
   id?: string;
@@ -152,9 +153,7 @@ export function mergeRecordsById<T>(...groups: BackendRecord<T>[][]): BackendRec
 }
 
 export async function loadAllAppUserCatalog(): Promise<BackendRecord<AppUserRecordData>[]> {
-  const owned = await backendApi.fetchAllRecords<AppUserRecordData>("app_user").catch(() => []);
-  const adminScoped = await backendApi.fetchAllAdminRecords<AppUserRecordData>("app_user").catch(() => []);
-  return mergeRecordsById(owned, adminScoped);
+  return backendApi.fetchAllRecords<AppUserRecordData>("app_user", { maxPages: 100 }).catch(() => []);
 }
 
 /** Auth onarımı: yalnızca /records (admin/records 403 üretmez). */
@@ -169,7 +168,8 @@ export interface RepairAuthLinksDeps {
   recordIds?: string[];
 }
 
-export async function repairAppUserAuthLinks(deps: RepairAuthLinksDeps): Promise<RepairAppUserAuthLinksResult> {
+export async function repairAppUserAuthLinks(_deps: RepairAuthLinksDeps): Promise<RepairAppUserAuthLinksResult> {
+  rejectClientSideRepair("appUserSync.repairAppUserAuthLinks");
   const result: RepairAppUserAuthLinksResult = {
     ok: true,
     source: "frontend",
@@ -299,10 +299,17 @@ export async function repairAppUserAuthLinks(deps: RepairAuthLinksDeps): Promise
 export async function findAuthUserByEmail(
   email: string,
   authUsers?: BackendUser[],
+  opts?: { allowAdminUsersList?: boolean },
 ): Promise<BackendUser | null> {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-  const list = authUsers ?? (await backendApi.listAuthUsers().catch(() => [] as BackendUser[]));
+  if (authUsers) {
+    return authUsers.find((u) => normalizeEmail(typeof u.email === "string" ? u.email : "") === normalized) ?? null;
+  }
+  if (!opts?.allowAdminUsersList) {
+    rejectClientSideRepair("appUserSync.findAuthUserByEmail");
+  }
+  const list = await backendApi.listAuthUsers().catch(() => [] as BackendUser[]);
   return list.find((u) => normalizeEmail(typeof u.email === "string" ? u.email : "") === normalized) ?? null;
 }
 
@@ -358,7 +365,8 @@ export interface ReconcileDeps {
   defaultPassword: string;
 }
 
-export async function reconcileAppUsersAndAuthUsers(deps: ReconcileDeps): Promise<ReconcileAppUsersResult> {
+export async function reconcileAppUsersAndAuthUsers(_deps: ReconcileDeps): Promise<ReconcileAppUsersResult> {
+  rejectClientSideRepair("appUserSync.reconcileAppUsersAndAuthUsers");
   const result: ReconcileAppUsersResult = {
     ok: true,
     scanned: 0,

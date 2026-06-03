@@ -2,7 +2,7 @@
 import {
   api,
   REPAIR_MAINTENANCE_MESSAGE,
-  isRepairEnabled,
+  logRepairDisabled,
   type AdminKullanici,
   type AdminDestek,
   type AdminDashboard,
@@ -418,29 +418,13 @@ export default function AdminSayfasi() {
     await veriYukle();
   };
 
-  const repairBakimUyarisi = () => {
+  const repairBakimUyarisi = (caller?: string) => {
+    logRepairDisabled(caller ?? "AdminSayfasi.repairButton");
     alert(REPAIR_MAINTENANCE_MESSAGE);
   };
 
   const eslestir = async () => {
-    if (!isRepairEnabled()) {
-      repairBakimUyarisi();
-      return;
-    }
-    if (!eslemeModal || !eslemeMintika || !eslemeKurum) return;
-    const y = kurumSecenekleriTum.find((k) => k.institutionCode === eslemeKurum);
-    await api.adminVeriSagligiAksiyon({
-      action: "match",
-      userIds: eslemeModal.userIds,
-      district: eslemeMintika,
-      institutionName: y?.institutionName ?? eslemeKurum,
-      institutionCode: y?.institutionCode,
-    });
-    setEslemeModal(null);
-    setEslemeMintika("");
-    setEslemeKurum("");
-    setSeciliIssueIds([]);
-    await veriYukle();
+    repairBakimUyarisi("AdminSayfasi.eslestir");
   };
 
   const aktiviteEtiket = (action: string) =>
@@ -862,42 +846,26 @@ export default function AdminSayfasi() {
             <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button
                 type="button"
-                onClick={() => {
-                  if (!isRepairEnabled()) {
-                    repairBakimUyarisi();
-                    return;
-                  }
-                  void (async () => {
-                    try {
-                      const r = await api.repairAppUserAuthLinks();
-                      alert(
-                        [
-                          "Backend onarım raporu",
-                          `Taranan: ${r.totalAppUsers}`,
-                          `Benzersiz e-posta: ${r.uniqueEmails ?? "—"}`,
-                          `Zaten bağlı: ${r.alreadyLinked}`,
-                          `E-posta normalize: ${r.emailNormalized ?? 0}`,
-                          `Mevcut auth: ${r.authFoundAndLinked}`,
-                          `Yeni auth: ${r.authCreatedAndLinked}`,
-                          `Duplicate: ${r.duplicatesDetected ?? 0}`,
-                          `Pasif atlanan: ${r.skippedDeleted ?? 0}`,
-                          `Başarısız: ${r.failed}`,
-                        ].join("\n"),
-                      );
-                      veriYukle();
-                    } catch (e) {
-                      alert(e instanceof Error ? e.message : "Onarım başarısız");
-                    }
-                  })();
-                }}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                aria-disabled
+                onClick={() => repairBakimUyarisi("AdminSayfasi.authRepair")}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
               >
                 Auth Hesaplarını Oluştur / Eşleştir
               </button>
-              <button type="button" onClick={repairBakimUyarisi} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              <button
+                type="button"
+                aria-disabled
+                onClick={() => repairBakimUyarisi("AdminSayfasi.authAppUserRepair")}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
+              >
                 Auth / App User onarımı (giriş için zorunlu)
               </button>
-              <button type="button" onClick={repairBakimUyarisi} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              <button
+                type="button"
+                aria-disabled
+                onClick={() => repairBakimUyarisi("AdminSayfasi.institutionMatch")}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
+              >
                 Kullanıcıları kurumlara eşleştir
               </button>
               <p style={{ fontSize: 11, color: "#b45309", width: "100%", margin: 0, fontWeight: 600 }}>
@@ -908,7 +876,7 @@ export default function AdminSayfasi() {
             {seciliIssueIds.length > 0 && (
               <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <strong style={{ fontSize: 12, color: "#9a3412" }}>{seciliIssueIds.length} kayıt seçildi</strong>
-                <button type="button" onClick={repairBakimUyarisi} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri eşleştir</button>
+                <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.bulkMatch")} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "not-allowed", opacity: 0.85 }}>Seçilenleri eşleştir</button>
                 <button type="button" onClick={() => { if (confirm("Seçili kayıtlar silinecek veya pasifleştirilecek. Bu işlem raporları etkileyebilir. Devam etmek istiyor musunuz?")) void veriSagligiAksiyon("deactivate"); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri pasifleştir</button>
                 <button type="button" onClick={() => void veriSagligiAksiyon("ignore")} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri yoksay</button>
               </div>
@@ -926,12 +894,12 @@ export default function AdminSayfasi() {
                       <td>{i.suggestion}</td>
                       <td style={{ padding: 8 }}>
                         {i.targetKind === "user" && i.targetId && (i.type === "app_user_no_auth" || i.type === "app_user_auth_unlinked") && (
-                          <button type="button" onClick={repairBakimUyarisi} style={{ fontSize: 10, marginRight: 4, color: "#64748b", fontWeight: 700 }}>
+                          <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.authLink")} style={{ fontSize: 10, marginRight: 4, color: "#64748b", fontWeight: 700, cursor: "not-allowed", opacity: 0.85 }}>
                             Auth bağla
                           </button>
                         )}
                         {i.targetKind === "user" && i.targetId && (
-                          <button type="button" onClick={repairBakimUyarisi} style={{ fontSize: 10, marginRight: 4 }}>
+                          <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.institutionLink")} style={{ fontSize: 10, marginRight: 4, cursor: "not-allowed", opacity: 0.85 }}>
                             Kurum eşleştir
                           </button>
                         )}

@@ -10,7 +10,14 @@ import {
   type ReconcileAppUsersResult,
   type RepairAppUserAuthLinksResult,
 } from "./appUserSync";
-import { assertRepairEnabled, isRepairEnabled, repairApiUrl, REPAIR_MAINTENANCE_MESSAGE } from "./repairPolicy";
+import {
+  assertBackendRepairEndpointAllowed,
+  isRepairEnabled,
+  logRepairDisabled,
+  rejectClientSideRepair,
+  repairApiUrl,
+  REPAIR_MAINTENANCE_MESSAGE,
+} from "./repairPolicy";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
@@ -90,52 +97,6 @@ async function resolveViewerUsesAdminRecords(): Promise<boolean> {
   return viewerAdminCache;
 }
 
-async function syncAppUserRecordOwnership(records: BackendRecord<AppUserRecordData>[]) {
-  const authUsers = await backendApi.listAuthUsers().catch(() => [] as BackendUser[]);
-  const authIdByEmail = new Map<string, string>();
-  for (const user of authUsers) {
-    const email = normalizeEmail(typeof user.email === "string" ? user.email : "");
-    if (email && user.id != null) authIdByEmail.set(email, String(user.id));
-  }
-
-  for (const record of records) {
-    const data = record.data ?? {};
-    let authUserId = data.authUserId ? String(data.authUserId) : "";
-    if (!authUserId) {
-      authUserId = authIdByEmail.get(getAppUserEmail(record)) ?? "";
-    }
-    if (!authUserId) continue;
-
-    const currentOwner = String(record.userId ?? "");
-    if (currentOwner === authUserId) continue;
-
-    const nextData: AppUserRecordData = {
-      ...data,
-      authUserId,
-      email: getAppUserEmail(record) || data.email,
-      loginEmail: data.loginEmail ?? getAppUserEmail(record) ?? data.email,
-      generatedEmail: data.generatedEmail ?? getAppUserEmail(record) ?? data.email,
-      updatedAt: new Date().toISOString(),
-    };
-
-    try {
-      await backendApi.assignRecordOwner(record.id, authUserId, { recordType: "app_user", data: nextData });
-      console.log("[TEDRIS_OWNERSHIP_SYNC_OK]", {
-        recordId: record.id,
-        authUserId,
-        email: getAppUserEmail(record),
-      });
-    } catch (error) {
-      console.warn("[TEDRIS_OWNERSHIP_SYNC_FAIL]", {
-        recordId: record.id,
-        authUserId,
-        email: getAppUserEmail(record),
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-}
-
 function mergeRecordsById<T>(...groups: BackendRecord<T>[][]): BackendRecord<T>[] {
   const byId = new Map<string, BackendRecord<T>>();
   for (const group of groups) {
@@ -150,15 +111,11 @@ async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<
   if (!getBackendToken()) {
     throw new Error("Oturum bulunamadı. Lütfen tekrar giriş yapın.");
   }
-  const owned = await backendApi.fetchAllRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
-  if (!(await resolveAdminRecordsApiAvailable())) return owned;
-  const adminScoped = await backendApi.fetchAllAdminRecords<T>(recordType).catch(() => [] as BackendRecord<T>[]);
-  return adminScoped.length ? mergeRecordsById(owned, adminScoped) : owned;
+  return backendApi.fetchAllRecords<T>(recordType, { maxPages: 100 }).catch(() => [] as BackendRecord<T>[]);
 }
 
 async function adminRepairUsers(): Promise<ReconcileAppUsersResult | null> {
-  assertRepairEnabled();
-  throw new Error(REPAIR_MAINTENANCE_MESSAGE);
+  rejectClientSideRepair("api.adminRepairUsers");
 }
 
 function appUserPasswordForAuth(data: AppUserRecordData): string {
@@ -171,7 +128,7 @@ async function repairAppUserAuthLinks(opts?: {
   userIds?: string[];
   dryRun?: boolean;
 }): Promise<RepairAppUserAuthLinksResult & Record<string, unknown>> {
-  assertRepairEnabled();
+  assertBackendRepairEndpointAllowed("api.repairAppUserAuthLinks");
   const dryRun = opts?.dryRun !== false;
   const token = getBackendToken();
   if (!token) throw new Error("Bu işlem için admin oturumu gerekiyor.");
@@ -231,7 +188,7 @@ async function repairAppUserAuthLinks(opts?: {
   };
 }
 
-export { REPAIR_MAINTENANCE_MESSAGE, isRepairEnabled };
+export { REPAIR_MAINTENANCE_MESSAGE, isRepairEnabled, logRepairDisabled } from "./repairPolicy";
 
 function logLoginFlowStop(payload: {
   email: string;
@@ -251,27 +208,11 @@ function logLoginLoadingFinalized(email: string, success: boolean, errorCode?: s
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
-  try {
-    return await backendApi.getRecord<AppUserRecordData>(id);
-  } catch (ownedError) {
-    if (await resolveAdminRecordsApiAvailable()) {
-      try {
-        return await backendApi.getAdminRecord<AppUserRecordData>(id);
-      } catch {
-        throw ownedError;
-      }
-    }
-    throw ownedError;
-  }
+  return backendApi.getRecord<AppUserRecordData>(id);
 }
 
 async function updateAppUserRecord(id: string | number, data: AppUserRecordData): Promise<BackendRecord<AppUserRecordData>> {
-  try {
-    return await backendApi.updateRecord<AppUserRecordData>(id, "app_user", data);
-  } catch (ownedError) {
-    if (!(await resolveAdminRecordsApiAvailable())) throw ownedError;
-    return backendApi.updateAdminRecord<AppUserRecordData>(id, "app_user", data);
-  }
+  return backendApi.updateRecord<AppUserRecordData>(id, "app_user", data);
 }
 
 async function loadInstitutionRawRecords(): Promise<BackendRecord<InstitutionRecordData>[]> {
@@ -671,9 +612,6 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
       lastLoginAt: currentData.lastLoginAt ?? existing.lastLoginAt ?? null,
     });
     const linked = appUserFromRecord(record);
-    if (authUser.id && String(record.userId ?? "") !== String(authUser.id) && (await resolveViewerUsesAdminRecords())) {
-      await backendApi.assignRecordOwner(record.id, authUser.id, { recordType: "app_user", data: record.data ?? {} }).catch(() => null);
-    }
     console.log("[TEDRIS_AUTH_APPUSER_LINK]", {
       email: linked.email,
       authUserFound: true,
@@ -1028,7 +966,7 @@ async function registerAuthUserSafely(data: { email: string; password: string; n
   } catch (error) {
     const msg = (error instanceof Error ? error.message : String(error)).toLocaleLowerCase("tr-TR");
     if (msg.includes("409") || msg.includes("conflict") || msg.includes("zaten") || msg.includes("already")) {
-      const existing = await findAuthUserByEmailFromAuth(data.email).catch(() => null);
+      const existing = await findAuthUserByEmailFromAuth(data.email, undefined, { allowAdminUsersList: true }).catch(() => null);
       if (existing) return { user: existing };
     }
     return null;
@@ -1055,7 +993,7 @@ async function registerOrResolveAuthUser(data: { email: string; password: string
     else clearBackendToken();
   }
 
-  const existing = await findAuthUserByEmailFromAuth(data.email).catch(() => null);
+  const existing = await findAuthUserByEmailFromAuth(data.email, undefined, { allowAdminUsersList: true }).catch(() => null);
   if (existing?.id) return { user: existing };
 
   return null;
@@ -1482,21 +1420,15 @@ async function adminSettingsRecord() {
 }
 
 async function veriSagligiUret(): Promise<AdminVeriSagligi> {
-  const [users, institutions, rawInstitutionRecords, rawUserRecords, rawLogs, supportRequests, authUsers] = await Promise.all([
+  const [users, institutions, rawInstitutionRecords, rawUserRecords, rawLogs, supportRequests] = await Promise.all([
     appUserRecords(),
     institutionRecords(),
     loadInstitutionRawRecords(),
     loadAppUserRawRecords(),
     backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
     destekKayitlari(),
-    backendApi.listAuthUsers().catch(() => [] as BackendUser[]),
   ]);
   const usersByEmail = appUserByEmailMap(users);
-  const authByEmail = new Map<string, BackendUser>();
-  for (const auth of authUsers) {
-    const email = normalizeEmail(typeof auth.email === "string" ? auth.email : "");
-    if (email) authByEmail.set(email, auth);
-  }
   const institutionsByCodeForLogs = institutionByCodeMap(institutions);
   const logs = rawLogs.map((log) => enrichActivityLog(log, usersByEmail, institutionsByCodeForLogs));
   const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
@@ -1577,39 +1509,15 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       });
     }
 
-    const userEmailKey = getAppUserEmail(user);
-    const linkedAuth = userEmailKey ? authByEmail.get(userEmailKey) : undefined;
-    if (!user.authUserId && linkedAuth?.id) {
-      issues.push({
-        id: `user-unlinked-auth-${user.id}`,
-        type: "app_user_auth_unlinked",
-        targetKind: "user",
-        targetId: user.id,
-        record: `${user.name} (${user.email})`,
-        description: "Auth hesabı var ama app_user.authUserId boş.",
-        suggestion: "Veri Sağlığı > Auth/App User onarımını çalıştırın.",
-      });
-    } else if (!user.authUserId && !linkedAuth) {
+    if (!user.authUserId) {
       issues.push({
         id: `user-missing-auth-${user.id}`,
         type: "app_user_no_auth",
         targetKind: "user",
         targetId: user.id,
         record: `${user.name} (${user.email})`,
-        description: "app_user var fakat auth hesabı yok.",
-        suggestion: "Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırın.",
-      });
-    }
-
-    if (user.isActive && !user.deletedAt && linkedAuth && user.authUserId && user.authUserId !== String(linkedAuth.id)) {
-      issues.push({
-        id: `user-auth-mismatch-${user.id}`,
-        type: "app_user_auth_id_mismatch",
-        targetKind: "user",
-        targetId: user.id,
-        record: `${user.email}`,
-        description: `app_user.authUserId (${user.authUserId}) auth listesindeki id (${linkedAuth.id}) ile uyuşmuyor.`,
-        suggestion: "Auth/App User onarımını çalıştırın.",
+        description: "app_user var fakat authUserId boş (backend onarım gerekir).",
+        suggestion: "Backend repair endpointi hazır olduğunda yönetici onarımı çalıştırılmalıdır.",
       });
     }
 
@@ -1667,22 +1575,6 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       description: "E-posta alanı boş ama loginEmail/generatedEmail/data.email dolu; kayıt onarılabilir.",
       suggestion: "Veri Onar işlemini çalıştırın veya kullanıcı bir kez giriş yaptığında email alanı otomatik tamamlanır.",
     });
-  }
-
-  for (const auth of authUsers) {
-    const email = normalizeEmail(typeof auth.email === "string" ? auth.email : "");
-    if (!email) continue;
-    if (!usersByEmailGroups.has(email)) {
-      issues.push({
-        id: `auth-no-app-user-${email}`,
-        type: "auth_user_no_app_user",
-        targetKind: "user",
-        targetId: String(auth.id ?? ""),
-        record: email,
-        description: "Auth hesabı var fakat app_user kaydı yok.",
-        suggestion: "Kullanıcı oluşturun veya Auth/App User onarımını çalıştırın.",
-      });
-    }
   }
 
   for (const [email, group] of usersByEmailGroups.entries()) {
@@ -1779,8 +1671,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
 
 async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonRequest) {
   if (data.action === "repair_auth" || data.action === "match") {
-    assertRepairEnabled();
-    throw new Error(REPAIR_MAINTENANCE_MESSAGE);
+    rejectClientSideRepair(`api.adminVeriSagligiAksiyon.${data.action}`);
   }
 
   const userIds = data.userIds ?? [];
@@ -2219,7 +2110,7 @@ export const api = {
     let authUserCreated = Boolean(authUser?.id);
 
     if (!authUser?.id) {
-      const authFromList = await findAuthUserByEmailFromAuth(canonicalEmail);
+      const authFromList = await findAuthUserByEmailFromAuth(canonicalEmail, undefined, { allowAdminUsersList: true });
       if (authFromList?.id) {
         authUser = {
           id: String(authFromList.id),
@@ -2822,8 +2713,7 @@ export const api = {
   },
 
   adminReconcile: async () => {
-    assertRepairEnabled();
-    throw new Error(REPAIR_MAINTENANCE_MESSAGE);
+    rejectClientSideRepair("api.adminReconcile");
   },
 };
 

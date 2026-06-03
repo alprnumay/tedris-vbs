@@ -1,4 +1,5 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
+import { rejectClientSideRepair } from "./repairPolicy";
 
 const TOKEN_KEY = "tedris_backend_token";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
@@ -181,8 +182,9 @@ export const backendApi = {
   resetAuthPassword: (id: string, body: { password?: string; generate?: boolean }) =>
     request<{ ok?: boolean; password?: string }>("POST", `/admin/users/${encodeURIComponent(id)}/reset-password`, body),
 
-  repairAppUserAuthLinks: (body?: { userIds?: string[] }) =>
-    request<{
+  repairAppUserAuthLinks: (_body?: { userIds?: string[] }) => {
+    rejectClientSideRepair("backendApi.repairAppUserAuthLinks");
+    return request<{
       ok?: boolean;
       totalAppUsers?: number;
       alreadyLinked?: number;
@@ -191,9 +193,11 @@ export const backendApi = {
       failed?: number;
       errors?: { id: string; email: string; reason: string }[];
       createdCredentials?: { appUserId: string; email: string; name: string; password: string }[];
-    }>("POST", "/admin/repair-app-user-auth-links", body ?? {}),
+    }>("POST", "/admin/repair-app-user-auth-links", {});
+  },
 
   listAuthUsers: async () => {
+    rejectClientSideRepair("backendApi.listAuthUsers");
     const payload = await request<unknown>("GET", "/admin/users");
     const users = normalizeRecords<BackendUser>(payload);
     if (users.length) return users;
@@ -307,6 +311,7 @@ export const backendApi = {
     ownerUserId: string | number,
     opts?: { recordType?: string; data?: unknown },
   ) => {
+    rejectClientSideRepair("backendApi.assignRecordOwner");
     const numericId = typeof ownerUserId === "string" ? Number(ownerUserId) : ownerUserId;
     const userId = Number.isFinite(numericId) ? numericId : ownerUserId;
     const body: Record<string, unknown> = { userId };
