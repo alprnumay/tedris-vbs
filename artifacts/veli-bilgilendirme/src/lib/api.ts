@@ -302,6 +302,69 @@ interface ActivityLogRecordData {
   metadata?: Record<string, unknown> | null;
 }
 
+type ActivityLogRecordLike = BackendRecord<ActivityLogRecordData> &
+  ActivityLogRecordData & { payload?: ActivityLogRecordData };
+
+async function loadActivityLogRecords(): Promise<BackendRecord<ActivityLogRecordData>[]> {
+  if (!getBackendToken()) return [];
+  const useAdmin = await resolveViewerUsesAdminRecords().catch(() => false);
+  const load = () =>
+    useAdmin
+      ? backendApi.fetchAllAdminRecords<ActivityLogRecordData>("activity_log", { maxPages: 200 })
+      : backendApi.fetchAllRecords<ActivityLogRecordData>("activity_log", { maxPages: 200 });
+  try {
+    return await load();
+  } catch {
+    if (useAdmin) {
+      return backendApi.fetchAllRecords<ActivityLogRecordData>("activity_log", { maxPages: 200 }).catch(() => []);
+    }
+    return [];
+  }
+}
+
+function activityLogDataFromRecord(record: BackendRecord<ActivityLogRecordData>): ActivityLogRecordData {
+  const raw = record as ActivityLogRecordLike;
+  let nested = raw.data ?? {};
+  if (typeof nested === "string") {
+    try {
+      nested = JSON.parse(nested) as ActivityLogRecordData;
+    } catch {
+      nested = {};
+    }
+  }
+  const payload = raw.payload ?? {};
+  const recordUserId = record.userId != null ? String(record.userId) : undefined;
+  return {
+    ...payload,
+    ...nested,
+    action: nested.action ?? raw.action,
+    userId: nested.userId ?? raw.userId ?? recordUserId ?? null,
+    appUserId: nested.appUserId ?? raw.appUserId ?? null,
+    authUserId: nested.authUserId ?? raw.authUserId ?? null,
+    userEmail: nested.userEmail ?? raw.userEmail ?? null,
+    userName: nested.userName ?? raw.userName ?? null,
+    institutionId: nested.institutionId ?? raw.institutionId ?? null,
+    institutionCode: nested.institutionCode ?? raw.institutionCode ?? null,
+    institutionName: nested.institutionName ?? raw.institutionName ?? null,
+    district: nested.district ?? raw.district ?? null,
+    province: nested.province ?? raw.province ?? null,
+    createdAt: nested.createdAt ?? raw.createdAt ?? record.createdAt ?? record.created_at,
+    metadata: nested.metadata ?? raw.metadata ?? null,
+  };
+}
+
+function logMatchesGeoFilter(log: AdminAktiviteLog, params: Record<string, string | undefined>): boolean {
+  if (params.district) {
+    const district = normalizeImportKey(log.district);
+    if (!district || district !== normalizeImportKey(params.district)) return false;
+  }
+  if (params.institutionCode) {
+    const code = normalizeImportKey(log.institutionCode);
+    if (!code || code !== normalizeImportKey(params.institutionCode)) return false;
+  }
+  return true;
+}
+
 interface SupportRequestRecordData {
   userId?: string | null;
   appUserId?: string | null;
@@ -1107,17 +1170,18 @@ function tarihAraligi(params: Record<string, string | undefined> = {}): AdminRan
 }
 
 function activityFromRecord(record: BackendRecord<ActivityLogRecordData>): AdminAktiviteLog {
-  const data = record.data ?? {};
+  const data = activityLogDataFromRecord(record);
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
   return {
     id: String(record.id),
     createdAt,
     action: String(data.action ?? ""),
-    userId: data.userId ?? null,
-    appUserId: data.appUserId ?? null,
-    authUserId: data.authUserId ?? null,
+    userId: data.userId != null ? String(data.userId) : null,
+    appUserId: data.appUserId != null ? String(data.appUserId) : null,
+    authUserId: data.authUserId != null ? String(data.authUserId) : null,
     userEmail: data.userEmail ?? null,
     userName: data.userName ?? data.userEmail ?? null,
+    institutionId: data.institutionId != null ? String(data.institutionId) : null,
     institutionCode: data.institutionCode ?? null,
     institutionName: data.institutionName ?? null,
     district: data.district ?? null,
@@ -1141,17 +1205,31 @@ function appUserByEmailMap(users: AdminKullanici[]) {
   return map;
 }
 
+function appUserByIdMap(users: AdminKullanici[]) {
+  const map = new Map<string, AdminKullanici>();
+  for (const user of users) {
+    map.set(String(user.id), user);
+    if (user.authUserId) map.set(String(user.authUserId), user);
+  }
+  return map;
+}
+
 function enrichActivityLog(
   log: AdminAktiviteLog,
   usersByEmail: Map<string, AdminKullanici>,
   institutionsByCode: Map<string, AdminYurtKayit>,
+  usersById: Map<string, AdminKullanici>,
 ): AdminAktiviteLog {
-  const user = log.userEmail ? usersByEmail.get(normalizeEmail(log.userEmail)) : undefined;
+  const user =
+    (log.userEmail ? usersByEmail.get(normalizeEmail(log.userEmail)) : undefined) ??
+    (log.authUserId ? usersById.get(String(log.authUserId)) : undefined) ??
+    (log.appUserId ? usersById.get(String(log.appUserId)) : undefined) ??
+    (log.userId ? usersById.get(String(log.userId)) : undefined);
   const code = log.institutionCode ?? user?.institutionCode ?? null;
   const institution = code ? institutionsByCode.get(normalizeImportKey(code)) : undefined;
   return {
     ...log,
-    userId: log.userId ?? user?.id ?? null,
+    userId: log.userId ?? log.appUserId ?? user?.id ?? null,
     appUserId: log.appUserId ?? user?.id ?? null,
     authUserId: log.authUserId ?? user?.authUserId ?? null,
     userEmail: log.userEmail ?? user?.email ?? null,
@@ -1188,10 +1266,14 @@ function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici 
   const cities = viewer.allowedCities ?? [];
   const districts = viewer.allowedDistricts ?? [];
   const institutions = viewer.allowedInstitutions ?? [];
+  const institutionKeys = new Set(institutions.map((code) => normalizeImportKey(code)));
   return logs.filter((log) => {
     if (cities.length && (!log.province || !cities.includes(log.province))) return false;
     if (districts.length && (!log.district || !districts.includes(log.district))) return false;
-    if (institutions.length && (!log.institutionCode || !institutions.includes(log.institutionCode))) return false;
+    if (institutionKeys.size) {
+      const code = normalizeImportKey(log.institutionCode);
+      if (!code || !institutionKeys.has(code)) return false;
+    }
     return true;
   });
 }
@@ -1287,9 +1369,7 @@ function logFiltrele(logs: AdminAktiviteLog[], params: Record<string, string | u
   return logs.filter((log) => {
     const time = Date.parse(log.createdAt);
     if (!Number.isFinite(time) || time < start || time > end) return false;
-    if (params.district && log.district !== params.district) return false;
-    if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
-    return true;
+    return logMatchesGeoFilter(log, params);
   });
 }
 
@@ -1316,11 +1396,12 @@ function yurtMetrikleriUret(
   const thirtyDaysAgo = Date.now() - 30 * 86_400_000;
 
   const yurts = institutions.map((institution) => {
-    const institutionUsers = users.filter((user) => user.institutionCode === institution.institutionCode);
-    const logs = allLogs.filter((log) => log.institutionCode === institution.institutionCode);
-    const currentLogs = rangeLogs.filter((log) => log.institutionCode === institution.institutionCode);
+    const institutionCodeKey = normalizeImportKey(institution.institutionCode);
+    const institutionUsers = users.filter((user) => normalizeImportKey(user.institutionCode) === institutionCodeKey);
+    const logs = allLogs.filter((log) => normalizeImportKey(log.institutionCode) === institutionCodeKey);
+    const currentLogs = rangeLogs.filter((log) => normalizeImportKey(log.institutionCode) === institutionCodeKey);
     const openSupport = supportRequests.filter((request) => {
-      if (request.institution_code !== institution.institutionCode) return false;
+      if (normalizeImportKey(request.institution_code) !== institutionCodeKey) return false;
       return request.status !== "cozuldu" && request.status !== "closed";
     }).length;
     const loginLogs = logs.filter((log) => log.action === "login");
@@ -1398,25 +1479,24 @@ async function raporVerisi(params: Record<string, string | undefined> = {}) {
     scopeUserAllowed(user, viewer),
   );
   const usersByEmail = appUserByEmailMap(users);
+  const usersById = appUserByIdMap(users);
   const institutionsByCode = institutionByCodeMap(institutions);
-  const scopedInstitutionCodes = new Set(institutions.map((institution) => institution.institutionCode));
+  const scopedInstitutionCodes = new Set(institutions.map((institution) => normalizeImportKey(institution.institutionCode)));
   const allLogs = activityYetkiFiltresi(
-    (await backendApi.listRecords<ActivityLogRecordData>("activity_log"))
+    (await loadActivityLogRecords())
       .map(activityFromRecord)
-      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode)),
+      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode, usersById)),
     viewer,
-  ).filter((log) => {
-    if (params.district && log.district !== params.district) return false;
-    if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
-    return true;
-  });
+  ).filter((log) => logMatchesGeoFilter(log, params));
   const rangeLogs = logFiltrele(allLogs, params, range);
   const supportRequests = (await destekKayitlari()).filter((request) => {
     const time = Date.parse(request.createdAt);
     if (Number.isFinite(time) && (time < Date.parse(range.startIso) || time > Date.parse(range.endIso))) return false;
-    if (params.district && request.district !== params.district) return false;
-    if (params.institutionCode && request.institution_code !== params.institutionCode) return false;
-    if (request.institution_code && !scopedInstitutionCodes.has(request.institution_code)) return false;
+    if (params.district && normalizeImportKey(request.district) !== normalizeImportKey(params.district)) return false;
+    if (params.institutionCode && normalizeImportKey(request.institution_code) !== normalizeImportKey(params.institutionCode)) {
+      return false;
+    }
+    if (request.institution_code && !scopedInstitutionCodes.has(normalizeImportKey(request.institution_code))) return false;
     return true;
   });
   console.log("[TEDRIS_REPORT_COUNTS]", {
@@ -1490,12 +1570,13 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
     institutionRecords(),
     loadInstitutionRawRecords(),
     loadAppUserRawRecords(),
-    backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
+    loadActivityLogRecords().then((records) => records.map(activityFromRecord)),
     destekKayitlari(),
   ]);
   const usersByEmail = appUserByEmailMap(users);
+  const usersById = appUserByIdMap(users);
   const institutionsByCodeForLogs = institutionByCodeMap(institutions);
-  const logs = rawLogs.map((log) => enrichActivityLog(log, usersByEmail, institutionsByCodeForLogs));
+  const logs = rawLogs.map((log) => enrichActivityLog(log, usersByEmail, institutionsByCodeForLogs, usersById));
   const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
   const inactiveInstitutionCodes = new Set(
     rawInstitutionRecords
@@ -1802,8 +1883,15 @@ function filterInstitutions<T extends { districtName: string; institutionCode: s
   params: Record<string, string | undefined>,
 ): T[] {
   return institutions.filter((institution) => {
-    if (params.district && institution.districtName !== params.district) return false;
-    if (params.institutionCode && institution.institutionCode !== params.institutionCode) return false;
+    if (params.district && normalizeImportKey(institution.districtName) !== normalizeImportKey(params.district)) {
+      return false;
+    }
+    if (
+      params.institutionCode &&
+      normalizeImportKey(institution.institutionCode) !== normalizeImportKey(params.institutionCode)
+    ) {
+      return false;
+    }
     if (params.status && institution.status !== params.status) return false;
     return true;
   });
@@ -2064,7 +2152,7 @@ export const api = {
     const [users, support, logs] = await Promise.all([
       appUserRecords(),
       destekKayitlari(),
-      backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
+      loadActivityLogRecords().then((records) => records.map(activityFromRecord)),
     ]);
     return {
       totalUsers: users.length,
@@ -2496,19 +2584,21 @@ export const api = {
   adminBugunGirisler: async (params: Record<string, string | undefined> = {}) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const logs = (await backendApi.listRecords<ActivityLogRecordData>("activity_log"))
+    const users = await appUserRecords();
+    const usersByEmail = appUserByEmailMap(users);
+    const usersById = appUserByIdMap(users);
+    const institutionsByCode = institutionByCodeMap(await institutionRecords());
+    const logs = (await loadActivityLogRecords())
       .map(activityFromRecord)
+      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode, usersById))
       .filter((log) => {
         if (log.action !== "login") return false;
         if (Date.parse(log.createdAt) < todayStart.getTime()) return false;
-        if (params.district && log.district !== params.district) return false;
-        if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
-        return true;
+        return logMatchesGeoFilter(log, params);
       })
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-    const usersByEmail = new Map((await appUserRecords()).map((u) => [u.email.toLocaleLowerCase("tr-TR"), u]));
     const logins = logs.map((log) => {
-      const user = log.userEmail ? usersByEmail.get(log.userEmail.toLocaleLowerCase("tr-TR")) : undefined;
+      const user = log.userEmail ? usersByEmail.get(normalizeEmail(log.userEmail)) : undefined;
       return {
         id: log.userId ?? log.id,
         email: log.userEmail ?? user?.email ?? "",
@@ -2664,27 +2754,26 @@ export const api = {
     const start = Date.parse(range.startIso);
     const end = Date.parse(range.endIso);
     const [records, users, institutions] = await Promise.all([
-      backendApi.listRecords<ActivityLogRecordData>("activity_log"),
+      loadActivityLogRecords(),
       appUserRecords(),
       institutionRecords(),
     ]);
     const usersByEmail = appUserByEmailMap(users);
+    const usersById = appUserByIdMap(users);
     const institutionsByCode = institutionByCodeMap(institutions);
     let logs = records
       .map(activityFromRecord)
-      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode))
+      .map((log) => enrichActivityLog(log, usersByEmail, institutionsByCode, usersById))
       .filter((log) => {
         const time = Date.parse(log.createdAt);
         if (!Number.isFinite(time) || time < start || time > end) return false;
         if (params.action && log.action !== params.action) return false;
-        if (params.district && log.district !== params.district) return false;
-        if (params.institutionCode && log.institutionCode !== params.institutionCode) return false;
-        return true;
+        return logMatchesGeoFilter(log, params);
       });
     logs = activityYetkiFiltresi(logs, await aktifKullaniciBaglami());
     logs.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
     const activeUsers = new Set(logs.map((l) => l.userId || l.userName).filter(Boolean)).size;
-    const activeYurts = new Set(logs.map((l) => l.institutionCode).filter(Boolean)).size;
+    const activeYurts = new Set(logs.map((l) => normalizeImportKey(l.institutionCode)).filter(Boolean)).size;
     return {
       range,
       hasActivityLogs: logs.length > 0,
