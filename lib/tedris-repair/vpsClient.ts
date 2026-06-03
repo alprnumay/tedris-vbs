@@ -1,0 +1,228 @@
+import type { AppUserRecordData, BackendRecord, BackendUser } from "./types";
+
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+function normalizeRecords<T>(payload: unknown): BackendRecord<T>[] {
+  if (Array.isArray(payload)) return payload as BackendRecord<T>[];
+  const p = payload as { records?: unknown; data?: unknown; items?: unknown; record?: unknown };
+  const d = p.data as { records?: unknown; items?: unknown; data?: unknown; id?: unknown } | undefined;
+  if (Array.isArray(p.records)) return p.records as BackendRecord<T>[];
+  if (Array.isArray(p.items)) return p.items as BackendRecord<T>[];
+  if (Array.isArray(p.data)) return p.data as BackendRecord<T>[];
+  if (d && Array.isArray(d.records)) return d.records as BackendRecord<T>[];
+  if (d && Array.isArray(d.items)) return d.items as BackendRecord<T>[];
+  if (d && Array.isArray(d.data)) return d.data as BackendRecord<T>[];
+  if ((payload as { id?: unknown }).id != null) return [payload as BackendRecord<T>];
+  if (p.record && (p.record as { id?: unknown }).id != null) return [p.record as BackendRecord<T>];
+  return [];
+}
+
+function pageMeta(payload: unknown) {
+  const p = payload as Record<string, unknown>;
+  const d = (p.data && typeof p.data === "object" ? p.data : {}) as Record<string, unknown>;
+  const meta = (p.meta && typeof p.meta === "object" ? p.meta : d.meta && typeof d.meta === "object" ? d.meta : {}) as Record<
+    string,
+    unknown
+  >;
+  const read = (keys: string[]) => {
+    for (const key of keys) {
+      const value = p[key] ?? d[key] ?? meta[key];
+      if (value != null) return value;
+    }
+    return undefined;
+  };
+  const totalRaw = read(["total", "totalCount", "total_count"]);
+  const hasMoreRaw = read(["hasMore", "has_more", "hasNextPage", "has_next_page"]);
+  return {
+    total: typeof totalRaw === "number" ? totalRaw : typeof totalRaw === "string" ? Number(totalRaw) : undefined,
+    hasMore: typeof hasMoreRaw === "boolean" ? hasMoreRaw : undefined,
+    nextCursor: read(["nextCursor", "next_cursor", "cursor", "next"]) as string | undefined,
+  };
+}
+
+export class VpsApiClient {
+  private adminRecordsBlocked = false;
+
+  constructor(
+    private readonly baseUrl: string,
+    private readonly projectKey: string,
+    private bearerToken?: string,
+  ) {}
+
+  setBearerToken(token: string | undefined) {
+    this.bearerToken = token;
+  }
+
+  private headers(json = true): HeadersInit {
+    const h: Record<string, string> = {};
+    if (json) h["Content-Type"] = "application/json";
+    if (this.projectKey) h["X-Project-Key"] = this.projectKey;
+    if (this.bearerToken) h.Authorization = `Bearer ${this.bearerToken}`;
+    return h;
+  }
+
+  private async request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl.replace(/\/+$/, "")}${path}`, {
+      method,
+      headers: this.headers(body !== undefined),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let data: unknown = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text };
+    }
+    if (!res.ok) {
+      const err = data as { message?: unknown; error?: unknown };
+      const message =
+        typeof err.message === "string"
+          ? err.message
+          : typeof err.error === "string"
+            ? err.error
+            : text || "request_failed";
+      throw new Error(`${res.status} ${message}`);
+    }
+    return data as T;
+  }
+
+  async me(): Promise<{ user?: BackendUser }> {
+    return this.request("GET", "/auth/me");
+  }
+
+  async listAuthUsers(): Promise<BackendUser[]> {
+    const payload = await this.request<unknown>("GET", "/admin/users");
+    const users = normalizeRecords<BackendUser>(payload);
+    if (users.length) return users;
+    const p = payload as { users?: BackendUser[] };
+    return Array.isArray(p.users) ? p.users : [];
+  }
+
+  async fetchAllFromPath<T>(path: "/records" | "/admin/records", recordType: string, maxPages = 100): Promise<BackendRecord<T>[]> {
+    const limit = 100;
+    const all: BackendRecord<T>[] = [];
+    const seenIds = new Set<string>();
+    let cursor: string | undefined;
+
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      const params = new URLSearchParams();
+      params.set("record_type", recordType);
+      params.set("limit", String(limit));
+      if (cursor) params.set("cursor", cursor);
+      else {
+        params.set("page", String(pageIndex + 1));
+        params.set("offset", String(pageIndex * limit));
+      }
+      const payload = await this.request<unknown>("GET", `${path}?${params.toString()}`);
+      const records = normalizeRecords<T>(payload);
+      const meta = pageMeta(payload);
+      let newRecords = 0;
+      for (const record of records) {
+        const key = String(record.id);
+        if (seenIds.has(key)) continue;
+        seenIds.add(key);
+        all.push(record);
+        newRecords += 1;
+      }
+      if (!records.length || !newRecords) break;
+      if (meta.total != null && all.length >= meta.total) break;
+      if (meta.nextCursor) {
+        cursor = meta.nextCursor;
+        continue;
+      }
+      if (meta.hasMore === false) break;
+      if (records.length < limit) break;
+    }
+    return all;
+  }
+
+  async loadAllAppUsers(): Promise<BackendRecord<AppUserRecordData>[]> {
+    const owned = await this.fetchAllFromPath<AppUserRecordData>("/records", "app_user").catch(() => []);
+    if (this.adminRecordsBlocked) return owned;
+    try {
+      const admin = await this.fetchAllFromPath<AppUserRecordData>("/admin/records", "app_user");
+      const byId = new Map<string, BackendRecord<AppUserRecordData>>();
+      for (const r of [...owned, ...admin]) byId.set(String(r.id), r);
+      return [...byId.values()];
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
+        this.adminRecordsBlocked = true;
+        return owned;
+      }
+      throw error;
+    }
+  }
+
+  async updateAppUser(id: string | number, data: AppUserRecordData): Promise<BackendRecord<AppUserRecordData>> {
+    const body = { record_type: "app_user", data };
+    try {
+      const res = await this.request<{ record?: BackendRecord<AppUserRecordData>; data?: BackendRecord<AppUserRecordData> }>(
+        "PUT",
+        `/records/${encodeURIComponent(id)}`,
+        body,
+      );
+      return (res.record ?? res.data ?? res) as BackendRecord<AppUserRecordData>;
+    } catch (ownedError) {
+      if (this.adminRecordsBlocked) throw ownedError;
+      try {
+        const res = await this.request<{ record?: BackendRecord<AppUserRecordData>; data?: BackendRecord<AppUserRecordData> }>(
+          "PUT",
+          `/admin/records/${encodeURIComponent(id)}`,
+          body,
+        );
+        return (res.record ?? res.data ?? res) as BackendRecord<AppUserRecordData>;
+      } catch {
+        throw ownedError;
+      }
+    }
+  }
+
+  async registerAuth(email: string, password: string, name: string): Promise<BackendUser | null> {
+    try {
+      const res = await this.request<{ user?: BackendUser }>("POST", "/auth/register", { email, password, name });
+      return res.user ?? null;
+    } catch (error) {
+      const msg = (error instanceof Error ? error.message : String(error)).toLocaleLowerCase("tr-TR");
+      if (msg.includes("409") || msg.includes("conflict") || msg.includes("zaten") || msg.includes("already")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async loginAuth(email: string, password: string): Promise<BackendUser | null> {
+    try {
+      const res = await this.request<{ user?: BackendUser }>("POST", "/auth/login", { email, password });
+      return res.user ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  findAuthUserByEmail(authUsers: BackendUser[], email: string): BackendUser | null {
+    const normalized = email.trim().toLocaleLowerCase("tr-TR");
+    return (
+      authUsers.find((u) => (typeof u.email === "string" ? u.email.trim().toLocaleLowerCase("tr-TR") : "") === normalized) ??
+      null
+    );
+  }
+}
+
+export function passwordForDistrict(district?: string | null): string {
+  const codes: Record<string, string> = {
+    burdur: "153415",
+    merkez: "153415",
+    alanya: "073407",
+    kemer: "073407",
+    manavgat: "073407",
+    isparta: "323432",
+    aglasun: "153415",
+    yesilova: "153415",
+  };
+  const key = String(district ?? "").trim().toLowerCase();
+  if (codes[key]) return codes[key];
+  const partial = Object.entries(codes).find(([k]) => key.includes(k));
+  return partial?.[1] ?? "tedris2026";
+}

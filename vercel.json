@@ -3,5 +3,13 @@
   "installCommand": "pnpm install",
   "buildCommand": "pnpm --filter @workspace/veli-bilgilendirme build",
   "outputDirectory": "artifacts/veli-bilgilendirme/dist/public",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "functions": {
+    "api/admin/repair-app-user-auth-links.ts": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    { "source": "/api/admin/repair-app-user-auth-links", "destination": "/api/admin/repair-app-user-auth-links" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

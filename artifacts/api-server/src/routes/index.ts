@@ -7,6 +7,7 @@ import supportRouter from "./support";
 import adminRouter from "./admin";
 import adminReportsRouter from "./adminReports";
 import activityRouter from "./activity";
+import vpsRepairRouter from "./vpsRepair";
 
 const router: IRouter = Router();
 
@@ -16,6 +17,7 @@ router.use(localAuthRouter);
 router.use(activityRouter);
 router.use(postersRouter);
 router.use(supportRouter);
+router.use(vpsRepairRouter);
 router.use(adminRouter);
 router.use(adminReportsRouter);
 

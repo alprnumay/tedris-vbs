@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   api,
+  REPAIR_MAINTENANCE_MESSAGE,
+  isRepairEnabled,
   type AdminKullanici,
   type AdminDestek,
   type AdminDashboard,
@@ -416,7 +418,15 @@ export default function AdminSayfasi() {
     await veriYukle();
   };
 
+  const repairBakimUyarisi = () => {
+    alert(REPAIR_MAINTENANCE_MESSAGE);
+  };
+
   const eslestir = async () => {
+    if (!isRepairEnabled()) {
+      repairBakimUyarisi();
+      return;
+    }
     if (!eslemeModal || !eslemeMintika || !eslemeKurum) return;
     const y = kurumSecenekleriTum.find((k) => k.institutionCode === eslemeKurum);
     await api.adminVeriSagligiAksiyon({
@@ -852,96 +862,53 @@ export default function AdminSayfasi() {
             <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
               <button
                 type="button"
-                onClick={async () => {
-                  try {
-                    const r = await api.repairAppUserAuthLinks();
-                    const credLines =
-                      r.createdCredentials.length > 0
-                        ? `\n\nYeni oluşturulan (${r.createdCredentials.length}) — şifreler yalnızca bu raporda:\n${r.createdCredentials
-                            .slice(0, 8)
-                            .map((c) => `${c.name}: ${c.email}`)
-                            .join("\n")}${r.createdCredentials.length > 8 ? "\n…" : ""}`
-                        : "";
-                    alert(
-                      [
-                        `Kaynak: ${r.source === "backend" ? "sunucu" : "istemci"}`,
-                        `Taranan app_user: ${r.totalAppUsers}`,
-                        `Zaten bağlı: ${r.alreadyLinked}`,
-                        `Mevcut auth ile eşleşen: ${r.authFoundAndLinked}`,
-                        `Yeni auth oluşturulan: ${r.authCreatedAndLinked}`,
-                        `Başarısız: ${r.failed}`,
-                        r.errors.length ? `Hatalar: ${r.errors.slice(0, 3).map((e) => e.email || e.id).join(", ")}` : "",
-                      ]
-                        .filter(Boolean)
-                        .join("\n") + credLines,
-                    );
-                    veriYukle();
-                  } catch (e) {
-                    alert(e instanceof Error ? e.message : "Auth eşleştirme başarısız");
+                onClick={() => {
+                  if (!isRepairEnabled()) {
+                    repairBakimUyarisi();
+                    return;
                   }
+                  void (async () => {
+                    try {
+                      const r = await api.repairAppUserAuthLinks();
+                      alert(
+                        [
+                          "Backend onarım raporu",
+                          `Taranan: ${r.totalAppUsers}`,
+                          `Benzersiz e-posta: ${r.uniqueEmails ?? "—"}`,
+                          `Zaten bağlı: ${r.alreadyLinked}`,
+                          `E-posta normalize: ${r.emailNormalized ?? 0}`,
+                          `Mevcut auth: ${r.authFoundAndLinked}`,
+                          `Yeni auth: ${r.authCreatedAndLinked}`,
+                          `Duplicate: ${r.duplicatesDetected ?? 0}`,
+                          `Pasif atlanan: ${r.skippedDeleted ?? 0}`,
+                          `Başarısız: ${r.failed}`,
+                        ].join("\n"),
+                      );
+                      veriYukle();
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : "Onarım başarısız");
+                    }
+                  })();
                 }}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#047857", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
               >
                 Auth Hesaplarını Oluştur / Eşleştir
               </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const r = await api.adminRepairUsers();
-                    if (!r) {
-                      alert("Onarım için admin oturumu gerekli.");
-                      return;
-                    }
-                    alert(
-                      [
-                        "Auth ↔ app_user onarımı tamamlandı.",
-                        `Taranan: ${r.scanned}`,
-                        `E-posta düzeltilen: ${r.emailsRepaired}`,
-                        `authUserId bağlanan: ${r.authUserIdLinked}`,
-                        `Sahiplik devredilen: ${r.ownershipTransferred}`,
-                        `Auth oluşturulan: ${r.authUsersCreated}`,
-                        `Duplicate e-posta: ${r.duplicates.length}`,
-                        `Auth var / app_user yok: ${r.orphanAuthOnly.length}`,
-                        `app_user var / auth yok: ${r.orphanAppOnly.length}`,
-                        `Hata: ${r.errors.length}`,
-                      ].join("\n"),
-                    );
-                    veriYukle();
-                  } catch (e) {
-                    alert(e instanceof Error ? e.message : "Auth/App User onarımı başarısız");
-                  }
-                }}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#991b1b", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
-              >
+              <button type="button" onClick={repairBakimUyarisi} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                 Auth / App User onarımı (giriş için zorunlu)
               </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const r = await api.adminReconcile();
-                    alert(
-                      `Kurum eşleştirme tamamlandı.\nBağlanan: ${r.linked}\nYeni kurum: ${r.institutionsCreated}\nAtlanan: ${r.skipped}\nEşleşmeyen: ${r.unmatched.length}`,
-                    );
-                    veriYukle();
-                  } catch (e) {
-                    alert(e instanceof Error ? e.message : "Eşleştirme başarısız");
-                  }
-                }}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
-              >
+              <button type="button" onClick={repairBakimUyarisi} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                 Kullanıcıları kurumlara eşleştir
               </button>
-              <p style={{ fontSize: 11, color: "#64748b", width: "100%", margin: 0 }}>
-                app_user_no_auth için önce yeşil buton (auth hesabı + authUserId). Kurum kodu eksikse mavi buton. Tam onarım (sahiplik vb.) için kırmızı buton.
+              <p style={{ fontSize: 11, color: "#b45309", width: "100%", margin: 0, fontWeight: 600 }}>
+                {REPAIR_MAINTENANCE_MESSAGE}
               </p>
             </div>
             <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
             {seciliIssueIds.length > 0 && (
               <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <strong style={{ fontSize: 12, color: "#9a3412" }}>{seciliIssueIds.length} kayıt seçildi</strong>
-                <button type="button" onClick={() => setEslemeModal({ userIds: seciliIssueUserIds() })} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri eşleştir</button>
+                <button type="button" onClick={repairBakimUyarisi} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri eşleştir</button>
                 <button type="button" onClick={() => { if (confirm("Seçili kayıtlar silinecek veya pasifleştirilecek. Bu işlem raporları etkileyebilir. Devam etmek istiyor musunuz?")) void veriSagligiAksiyon("deactivate"); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri pasifleştir</button>
                 <button type="button" onClick={() => void veriSagligiAksiyon("ignore")} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri yoksay</button>
               </div>
@@ -959,25 +926,15 @@ export default function AdminSayfasi() {
                       <td>{i.suggestion}</td>
                       <td style={{ padding: 8 }}>
                         {i.targetKind === "user" && i.targetId && (i.type === "app_user_no_auth" || i.type === "app_user_auth_unlinked") && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const r = await api.repairAppUserAuthLinks({ userIds: [String(i.targetId)] });
-                                alert(
-                                  `Auth onarımı: eşleşen ${r.authFoundAndLinked}, oluşturulan ${r.authCreatedAndLinked}, hata ${r.failed}`,
-                                );
-                                veriYukle();
-                              } catch (e) {
-                                alert(e instanceof Error ? e.message : "Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
-                              }
-                            }}
-                            style={{ fontSize: 10, marginRight: 4, color: "#047857", fontWeight: 700 }}
-                          >
+                          <button type="button" onClick={repairBakimUyarisi} style={{ fontSize: 10, marginRight: 4, color: "#64748b", fontWeight: 700 }}>
                             Auth bağla
                           </button>
                         )}
-                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => setEslemeModal({ userIds: [String(i.targetId)] })} style={{ fontSize: 10, marginRight: 4 }}>Kurum eşleştir</button>}
+                        {i.targetKind === "user" && i.targetId && (
+                          <button type="button" onClick={repairBakimUyarisi} style={{ fontSize: 10, marginRight: 4 }}>
+                            Kurum eşleştir
+                          </button>
+                        )}
                         {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => { if (confirm("Bu kayıt pasifleştirilecek. Devam etmek istiyor musunuz?")) void api.adminVeriSagligiAksiyon({ action: "deactivate", userIds: [String(i.targetId)], issueIds: [i.id] }).then(veriYukle); }} style={{ fontSize: 10, color: "#dc2626" }}>Sil / Pasifleştir</button>}
                       </td>
                     </tr>

@@ -7,11 +7,10 @@ import {
   findAuthUserByEmail as findAuthUserByEmailFromAuth,
   getAppUserEmail as getAppUserEmailFromSync,
   loadAllAppUserCatalog,
-  reconcileAppUsersAndAuthUsers,
-  repairAppUserAuthLinks as repairAppUserAuthLinksCore,
   type ReconcileAppUsersResult,
   type RepairAppUserAuthLinksResult,
 } from "./appUserSync";
+import { assertRepairEnabled, isRepairEnabled, repairApiUrl, REPAIR_MAINTENANCE_MESSAGE } from "./repairPolicy";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
@@ -158,12 +157,8 @@ async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<
 }
 
 async function adminRepairUsers(): Promise<ReconcileAppUsersResult | null> {
-  if (!getBackendToken() || !(await resolveViewerUsesAdminRecords())) return null;
-  return reconcileAppUsersAndAuthUsers({
-    updateAppUserRecord,
-    registerAuthUser: (data) => registerAuthUserSafely(data),
-    defaultPassword: VARSAYILAN_SIFRE,
-  });
+  assertRepairEnabled();
+  throw new Error(REPAIR_MAINTENANCE_MESSAGE);
 }
 
 function appUserPasswordForAuth(data: AppUserRecordData): string {
@@ -172,56 +167,62 @@ function appUserPasswordForAuth(data: AppUserRecordData): string {
   return VARSAYILAN_SIFRE;
 }
 
-async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<RepairAppUserAuthLinksResult> {
-  if (!getBackendToken()) {
-    throw new Error("Bu işlem için admin oturumu gerekiyor.");
-  }
+async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<RepairAppUserAuthLinksResult & Record<string, unknown>> {
+  assertRepairEnabled();
+  const token = getBackendToken();
+  if (!token) throw new Error("Bu işlem için admin oturumu gerekiyor.");
   if (!(await resolveViewerUsesAdminRecords())) {
     throw new Error("Bu işlem için admin yetkisi gerekiyor.");
   }
 
-  const useBackendRepair = import.meta.env.VITE_BACKEND_AUTH_REPAIR === "true";
-  if (useBackendRepair) {
-    try {
-      const remote = await backendApi.repairAppUserAuthLinks(opts?.userIds?.length ? { userIds: opts.userIds } : undefined);
-      if (remote && typeof remote.totalAppUsers === "number") {
-        return {
-          ok: remote.ok ?? true,
-          source: "backend",
-          totalAppUsers: remote.totalAppUsers ?? 0,
-          alreadyLinked: remote.alreadyLinked ?? 0,
-          authFoundAndLinked: remote.authFoundAndLinked ?? 0,
-          authCreatedAndLinked: remote.authCreatedAndLinked ?? 0,
-          failed: remote.failed ?? 0,
-          errors: remote.errors ?? [],
-          createdCredentials: remote.createdCredentials ?? [],
-        };
-      }
-    } catch (error) {
-      if (!isHttpForbiddenError(error) && !String(error).includes("404")) {
-        console.warn("[TEDRIS_REPAIR_AUTH_LINKS_BACKEND_SKIP]", error);
-      }
-    }
-  }
-
-  const report = await repairAppUserAuthLinksCore({
-    updateAppUserRecord,
-    registerAuthUser: (data) => registerOrResolveAuthUser(data),
-    passwordForRecord: appUserPasswordForAuth,
-    recordIds: opts?.userIds,
+  const projectKey = import.meta.env.VITE_PROJECT_API_KEY || "";
+  const res = await fetch(repairApiUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(projectKey ? { "X-Project-Key": projectKey } : {}),
+    },
+    body: JSON.stringify(opts?.userIds?.length ? { userIds: opts.userIds } : {}),
   });
-
-  if (report.failed > 0 && report.authFoundAndLinked + report.authCreatedAndLinked === 0) {
-    const forbidden = report.errors.some((e) => isHttpForbiddenError(new Error(e.reason)));
-    if (forbidden) {
-      throw new Error(
-        "Kayıtlar güncellenemedi (403). VPS admin/records yetkisi yok; app_user kayıtlarının admin hesabına ait olduğundan emin olun.",
-      );
-    }
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  try {
+    data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    data = { error: text };
+  }
+  if (!res.ok) {
+    const err = typeof data.error === "string" ? data.error : typeof data.message === "string" ? data.message : text;
+    throw new Error(err || `Onarım başarısız (${res.status})`);
   }
 
-  return report;
+  const errors = Array.isArray(data.errors)
+    ? (data.errors as { appUserId?: string; id?: string; email?: string; reason?: string }[]).map((e) => ({
+        id: String(e.appUserId ?? e.id ?? ""),
+        email: String(e.email ?? ""),
+        reason: String(e.reason ?? ""),
+      }))
+    : [];
+
+  return {
+    ok: data.ok !== false,
+    source: "backend",
+    totalAppUsers: Number(data.totalAppUsers ?? 0),
+    alreadyLinked: Number(data.alreadyLinked ?? 0),
+    authFoundAndLinked: Number(data.authFoundAndLinked ?? 0),
+    authCreatedAndLinked: Number(data.authCreatedAndLinked ?? 0),
+    failed: Number(data.failed ?? 0),
+    errors,
+    createdCredentials: [],
+    uniqueEmails: Number(data.uniqueEmails ?? 0),
+    emailNormalized: Number(data.emailNormalized ?? 0),
+    duplicatesDetected: Number(data.duplicatesDetected ?? 0),
+    skippedDeleted: Number(data.skippedDeleted ?? 0),
+  };
 }
+
+export { REPAIR_MAINTENANCE_MESSAGE, isRepairEnabled };
 
 function logLoginFlowStop(payload: {
   email: string;
@@ -860,11 +861,7 @@ async function appUsersByEmail(
     if (authUser?.id && String(record.data?.authUserId ?? "") === authUser.id) return true;
     return false;
   });
-  const matches = opts?.loginLookup
-    ? filtered
-    : await Promise.all(
-        filtered.map((record) => (appUserRecordNeedsEmailRepair(record) ? repairAppUserRecordEmail(record) : record)),
-      );
+  const matches = filtered;
   const users = matches.map(appUserFromRecord);
   console.log("[TEDRIS_LOGIN_APP_USER_CANDIDATES]", {
     loginEmail: normalized,
@@ -1055,11 +1052,6 @@ async function registerOrResolveAuthUser(data: { email: string; password: string
   return null;
 }
 
-async function resolveAppUserForLogin(authUser: KullaniciBilgisi): Promise<AdminKullanici | null> {
-  const matches = await appUsersByEmail(authUser.email, authUser, { loginLookup: true });
-  return selectBestAppUser(matches, authUser.id);
-}
-
 function tarihAraligi(params: Record<string, string | undefined> = {}): AdminRange {
   const now = new Date();
   const end = new Date(now);
@@ -1162,11 +1154,19 @@ function enrichActivityLog(
   };
 }
 
+async function findAppUserForAuthUserReadOnly(
+  authUser: KullaniciBilgisi,
+  opts?: { loginLookup?: boolean },
+): Promise<AdminKullanici | null> {
+  const matches = await appUsersByEmail(authUser.email, authUser, { loginLookup: opts?.loginLookup }).catch(() => []);
+  return selectBestAppUser(matches, authUser.id);
+}
+
 async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
   const me = await backendApi.me().catch(() => null);
   const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
   if (!user?.email) return null;
-  const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
+  const appUser = await findAppUserForAuthUserReadOnly(user).catch(() => null);
   if (!appUserAktifMi(appUser)) {
     return null;
   }
@@ -1769,18 +1769,9 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
 }
 
 async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonRequest) {
-  if (data.action === "repair_auth") {
-    const userIds = data.userIds ?? [];
-    try {
-      const report = await repairAppUserAuthLinks(userIds.length ? { userIds } : undefined);
-      return { ok: report.ok, affected: report.authFoundAndLinked + report.authCreatedAndLinked, report };
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : "Auth eşleştirme başarısız";
-      if (msg.includes("403") || msg.toLowerCase().includes("forbidden") || msg.includes("admin yetkisi")) {
-        throw new Error("Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
-      }
-      throw error;
-    }
+  if (data.action === "repair_auth" || data.action === "match") {
+    assertRepairEnabled();
+    throw new Error(REPAIR_MAINTENANCE_MESSAGE);
   }
 
   const userIds = data.userIds ?? [];
@@ -1789,18 +1780,7 @@ async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonReques
     const current = await getAppUserRecord(userId).catch(() => null);
     if (!current) continue;
     const currentData = current.data ?? {};
-    if (data.action === "match") {
-      const institutionId = await kurumIdBul(data.institutionCode);
-      await updateAppUserRecord(userId, {
-        ...currentData,
-        district: data.district ?? currentData.district ?? null,
-        institutionName: data.institutionName ?? currentData.institutionName ?? null,
-        institutionCode: data.institutionCode ?? currentData.institutionCode ?? null,
-        institutionId: institutionId ?? currentData.institutionId ?? null,
-        updatedAt: new Date().toISOString(),
-      });
-      affected += 1;
-    } else if (data.action === "deactivate") {
+    if (data.action === "deactivate") {
       await updateAppUserRecord(userId, {
         ...currentData,
         isActive: false,
@@ -1910,7 +1890,7 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
-    const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
+    const appUser = await findAppUserForAuthUserReadOnly(user).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
@@ -1927,7 +1907,7 @@ export const api = {
       }
       authUserFound = true;
 
-      const appUser = await resolveAppUserForLogin(user);
+      const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true });
       appUserFound = Boolean(appUser);
 
       if (!appUser) {
@@ -1958,7 +1938,7 @@ export const api = {
           registerStatus: "skipped_login",
         });
         throw new Error(
-          "Bu kullanıcı için giriş hesabı henüz oluşturulmamış. Yönetici Veri Sağlığı > Eşleştir işlemini çalıştırmalı.",
+          "Bu kullanıcı için giriş hesabı henüz bağlanmamış. Yönetici backend veri onarım endpointini çalıştırmalı.",
         );
       }
 
@@ -1974,7 +1954,7 @@ export const api = {
           registerStatus: "skipped_login",
         });
         throw new Error(
-          "Uygulama kullanıcı kaydı ile giriş hesabı eşleşmiyor. Yönetici Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırmalı.",
+          "Uygulama kullanıcı kaydı ile giriş hesabı eşleşmiyor. Yönetici backend veri onarım endpointini çalıştırmalı.",
         );
       }
 
@@ -1993,30 +1973,6 @@ export const api = {
       }
 
       logLoginDiag(user, appUser);
-      await updateAppUserRecord(appUser.id, {
-        authUserId: appUser.authUserId ?? user.id,
-        email: appUser.email,
-        loginEmail: appUser.email,
-        generatedEmail: appUser.email,
-        name: appUser.name,
-        role: appUser.role,
-        isAdmin: appUser.isAdmin,
-        isActive: appUser.isActive,
-        status: appUser.status ?? "active",
-        district: appUser.district,
-        province: appUser.province,
-        institutionName: appUser.institutionName,
-        institutionCode: appUser.institutionCode,
-        institutionId: appUser.institutionId,
-        allowedDistricts: appUser.allowedDistricts,
-        allowedCities: appUser.allowedCities,
-        allowedInstitutions: appUser.allowedInstitutions,
-        reportPermissions: appUser.reportPermissions,
-        createdAt: appUser.createdAt,
-        updatedAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString(),
-        deletedAt: appUser.deletedAt ?? null,
-      }).catch(() => null);
       await activityRecordOlustur("login", { source: "auth_login" }).catch(() => null);
       logLoginLoadingFinalized(loginEmail, true);
       return { user: mergeKullaniciWithAppUser(user, appUser) };
@@ -2046,7 +2002,7 @@ export const api = {
         });
         logLoginLoadingFinalized(loginEmail, false, "auth_login_failed_possible_no_auth");
         throw new Error(
-          "Giriş başarısız. Bu kullanıcı için giriş hesabı henüz oluşturulmamış olabilir; yönetici Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırmalı.",
+          "Giriş başarısız. Bu kullanıcı için giriş hesabı henüz oluşturulmamış olabilir; yönetici backend veri onarım endpointini çalıştırmalı.",
         );
       }
       logLoginLoadingFinalized(loginEmail, false, errorCode);
@@ -2300,18 +2256,10 @@ export const api = {
       ? await updateAppUserRecord(existing.id, payload)
       : await backendApi.createRecord<AppUserRecordData>("app_user", payload);
     let authUserLinked = false;
-    if (authUser?.id) {
-      const recordData = appUserDataFromRecord(record);
-      await backendApi.assignRecordOwner(record.id, authUser.id, {
-        recordType: "app_user",
-        data: { ...recordData, ...payload, authUserId: authUser.id },
-      }).catch((error) => {
-        console.warn("[TEDRIS_OWNERSHIP_ASSIGN_FAIL]", {
-          recordId: record.id,
-          authUserId: authUser.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
+    if (authUser?.id && !payload.authUserId) {
+      await updateAppUserRecord(record.id, { ...payload, authUserId: authUser.id }).catch(() => null);
+      authUserLinked = true;
+    } else if (authUser?.id) {
       authUserLinked = true;
     }
     const created = appUserFromRecord(record);
@@ -2865,60 +2813,8 @@ export const api = {
   },
 
   adminReconcile: async () => {
-    const reconcile = await adminRepairUsers();
-    const [rawUserRecords, institutions] = await Promise.all([
-      loadAppUserRawRecords(),
-      institutionRecords(),
-    ]);
-    if (!reconcile) await syncAppUserRecordOwnership(rawUserRecords);
-    for (const record of rawUserRecords) {
-      if (appUserRecordNeedsEmailRepair(record)) {
-        await repairAppUserRecordEmail(record);
-        continue;
-      }
-      const data = record.data ?? {};
-      const shouldRepairStatus = appUserActiveData(data) && data.status !== "active";
-      if (!shouldRepairStatus) continue;
-      await updateAppUserRecord(record.id, {
-        ...data,
-        status: "active",
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    const users = (await appUserRecords()).filter((user) => getAppUserEmail(user));
-    const byCode = new Map(institutions.map((i) => [i.institutionCode, i]));
-    let linked = 0;
-    let skipped = 0;
-    const unmatched: { id: string; name: string; email: string; reason: string }[] = [];
-
-    for (const user of users) {
-      if (!user.institutionCode) {
-        skipped += 1;
-        unmatched.push({ id: user.id, name: user.name, email: user.email, reason: "Kurum kodu yok." });
-        continue;
-      }
-      const institution = byCode.get(user.institutionCode);
-      if (!institution) {
-        skipped += 1;
-        unmatched.push({ id: user.id, name: user.name, email: user.email, reason: "Kurum envanterde yok." });
-        continue;
-      }
-      await api.adminKullaniciGuncelle(user.id, {
-        district: institution.districtName,
-        province: institution.province,
-        institutionName: institution.institutionName,
-        institutionCode: institution.institutionCode,
-        institutionId: institution.id,
-      });
-      linked += 1;
-    }
-
-    return {
-      linked,
-      institutionsCreated: 0,
-      skipped,
-      unmatched,
-    };
+    assertRepairEnabled();
+    throw new Error(REPAIR_MAINTENANCE_MESSAGE);
   },
 };
 
