@@ -57,7 +57,14 @@ export default async function handler(req: Req, res: Res) {
       res.status(403).json({ error: msg });
       return;
     }
-    console.error("[repair-app-user-auth-links]", error);
-    res.status(500).json({ error: msg || "Onarım tamamlanamadı." });
+    res.status(500).json({
+      ok: false,
+      error: msg || "Onarım tamamlanamadı.",
+      diagnostics: {
+        endpoint: "repair-app-user-auth-links",
+        reason: error instanceof Error ? error.name : "unknown_error",
+        message: msg,
+      },
+    });
   }
 }
