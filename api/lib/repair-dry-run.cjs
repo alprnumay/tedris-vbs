@@ -22,12 +22,65 @@ var diagnoseOnlyEntry_exports = {};
 __export(diagnoseOnlyEntry_exports, {
   assertAdminCaller: () => assertAdminCaller,
   createVpsClientFromEnv: () => createVpsClientFromEnv,
+  isAdminUser: () => isAdminUser,
+  parseMeUser: () => parseMeUser,
   runDiagnoseEmailsOnly: () => runDiagnoseEmailsOnly
 });
 module.exports = __toCommonJS(diagnoseOnlyEntry_exports);
 
-// server/tedris-repair/email.ts
+// server/tedris-repair/adminAuth.ts
 function normalizeEmail(value) {
+  return (value ?? "").trim().toLocaleLowerCase("tr-TR");
+}
+function parseMeUser(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const raw = payload;
+  if (raw.user && typeof raw.user === "object") {
+    return raw.user;
+  }
+  if (raw.id != null || typeof raw.email === "string") {
+    return raw;
+  }
+  return null;
+}
+function userFromJwtPayload(token) {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(b64, "base64").toString("utf8");
+    const p = JSON.parse(json);
+    const id = p.id ?? p.userId ?? p.sub;
+    const email = typeof p.email === "string" ? p.email : void 0;
+    if (id == null && !email) return null;
+    return {
+      id,
+      email,
+      role: typeof p.role === "string" ? p.role : void 0,
+      isAdmin: typeof p.isAdmin === "boolean" ? p.isAdmin : void 0
+    };
+  } catch {
+    return null;
+  }
+}
+function isAdminUser(user, configuredAdminEmail) {
+  const email = normalizeEmail(user.email);
+  const role = String(user.role ?? "").trim().toLowerCase();
+  const adminEmail = normalizeEmail(configuredAdminEmail);
+  if (Boolean(user.isAdmin)) return true;
+  if (role === "admin" || role === "super_admin") return true;
+  if (adminEmail && email && email === adminEmail) return true;
+  return false;
+}
+function resolveAdminUser(mePayload, bearerToken) {
+  const fromMe = parseMeUser(mePayload);
+  if (fromMe?.id != null || fromMe?.email) return fromMe;
+  return userFromJwtPayload(bearerToken);
+}
+
+// server/tedris-repair/email.ts
+function normalizeEmail2(value) {
   return (value ?? "").trim().toLocaleLowerCase("tr-TR");
 }
 function getAppUserEmail(source) {
@@ -43,7 +96,7 @@ function getAppUserEmail(source) {
     nested.generatedEmail,
     nested.username
   ]) {
-    const normalized = normalizeEmail(value);
+    const normalized = normalizeEmail2(value);
     if (normalized) return normalized;
   }
   return "";
@@ -132,7 +185,7 @@ function resolveEmailCategory(email, group, authUser, primary) {
   const authId = authUser?.id != null ? String(authUser.id) : null;
   const recordAuthId = data.authUserId ? String(data.authUserId) : null;
   if (authId && recordAuthId && recordAuthId === authId) {
-    const authEmail = typeof authUser?.email === "string" ? normalizeEmail(authUser.email) : "";
+    const authEmail = typeof authUser?.email === "string" ? normalizeEmail2(authUser.email) : "";
     if (authEmail === email) return "alreadyLinked";
   }
   if (authUser?.id && !recordAuthId) return "authFoundWouldLink";
@@ -141,8 +194,8 @@ function resolveEmailCategory(email, group, authUser, primary) {
   return "failed";
 }
 function diagnoseRepairEmail(email, records, authUsers) {
-  const normalized = normalizeEmail(email);
-  const authUser = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail(a.email) : "") === normalized) ?? null;
+  const normalized = normalizeEmail2(email);
+  const authUser = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail2(a.email) : "") === normalized) ?? null;
   const authUserId = authUser?.id != null ? String(authUser.id) : null;
   const group = records.filter((record) => {
     const computed = getAppUserEmail(record);
@@ -229,6 +282,9 @@ var VpsApiClient = class {
   setBearerToken(token) {
     this.bearerToken = token;
   }
+  getBearerToken() {
+    return this.bearerToken;
+  }
   headers(json = true) {
     const h = {};
     if (json) h["Content-Type"] = "application/json";
@@ -306,7 +362,7 @@ var VpsApiClient = class {
    * Teşhis: hedef e-postalar bulunana kadar sayfalı /records (tam 852 tarama yok).
    */
   async fetchAppUsersForDiagnose(targetEmails, authUserIds, maxPages = 25) {
-    const targets = new Set(targetEmails.map((e) => normalizeEmail(e)).filter(Boolean));
+    const targets = new Set(targetEmails.map((e) => normalizeEmail2(e)).filter(Boolean));
     const authIds = new Set(authUserIds.filter(Boolean));
     const foundTargets = /* @__PURE__ */ new Set();
     const limit = 100;
@@ -422,10 +478,10 @@ var VpsApiClient = class {
 
 // server/tedris-repair/repairAppUserAuthLinks.ts
 async function runDiagnoseEmailsOnly(client, diagnoseEmails) {
-  const emails = diagnoseEmails.map((e) => normalizeEmail(e)).filter(Boolean);
+  const emails = diagnoseEmails.map((e) => normalizeEmail2(e)).filter(Boolean);
   const authUsers = await client.listAuthUsers().catch(() => []);
   const authIds = emails.map((email) => {
-    const auth = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail(a.email) : "") === email);
+    const auth = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail2(a.email) : "") === email);
     return auth?.id != null ? String(auth.id) : null;
   }).filter((id) => Boolean(id));
   const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, authIds);
@@ -465,18 +521,31 @@ function createVpsClientFromEnv(bearerToken) {
   return new VpsApiClient(baseUrl, projectKey, bearerToken);
 }
 async function assertAdminCaller(client, adminEmail) {
-  const me = await client.me();
-  const user = me.user;
-  if (!user?.id) throw new Error("401 Oturum do\u011Frulanamad\u0131.");
-  const email = typeof user.email === "string" ? user.email.trim().toLocaleLowerCase("tr-TR") : "";
-  const role = String(user.role ?? "").trim().toLowerCase();
   const configuredAdmin = (adminEmail || process.env.ADMIN_EMAIL || "").trim().toLocaleLowerCase("tr-TR");
-  const isAdmin = Boolean(user.isAdmin) || role === "admin" || role === "super_admin" || configuredAdmin && email === configuredAdmin;
-  if (!isAdmin) throw new Error("403 Bu i\u015Flem i\xE7in admin yetkisi gerekir.");
+  const token = client.getBearerToken();
+  let mePayload = null;
+  try {
+    mePayload = await client.me();
+  } catch {
+    mePayload = null;
+  }
+  let user = resolveAdminUser(mePayload, token);
+  if (!user?.id && !user?.email) {
+    user = userFromJwtPayload(token);
+  }
+  const hasIdentity = user?.id != null || Boolean(user?.email);
+  if (!hasIdentity) {
+    throw new Error("401 Oturum do\u011Frulanamad\u0131.");
+  }
+  if (!isAdminUser(user, configuredAdmin)) {
+    throw new Error("403 Bu i\u015Flem i\xE7in admin yetkisi gerekir.");
+  }
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   assertAdminCaller,
   createVpsClientFromEnv,
+  isAdminUser,
+  parseMeUser,
   runDiagnoseEmailsOnly
 });

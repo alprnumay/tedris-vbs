@@ -61,6 +61,10 @@ export class VpsApiClient {
     this.bearerToken = token;
   }
 
+  getBearerToken(): string | undefined {
+    return this.bearerToken;
+  }
+
   private headers(json = true): Record<string, string> {
     const h: Record<string, string> = {};
     if (json) h["Content-Type"] = "application/json";
@@ -95,8 +99,8 @@ export class VpsApiClient {
     return data as T;
   }
 
-  async me(): Promise<{ user?: BackendUser }> {
-    return this.request("GET", "/auth/me");
+  async me(): Promise<unknown> {
+    return this.request<unknown>("GET", "/auth/me");
   }
 
   async listAuthUsers(): Promise<BackendUser[]> {

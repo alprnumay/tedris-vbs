@@ -1,3 +1,4 @@
+import { isAdminUser, resolveAdminUser, userFromJwtPayload } from "./adminAuth";
 import { buildDryRunSummary, diagnoseRepairEmail } from "./diagnoseDryRun";
 import {
   appUserDataFromRecord,
@@ -303,15 +304,29 @@ export function createVpsClientFromEnv(bearerToken?: string): VpsApiClient {
 }
 
 export async function assertAdminCaller(client: VpsApiClient, adminEmail?: string): Promise<void> {
-  const me = await client.me();
-  const user = me.user;
-  if (!user?.id) throw new Error("401 Oturum doğrulanamadı.");
-  const email = typeof user.email === "string" ? user.email.trim().toLocaleLowerCase("tr-TR") : "";
-  const role = String(user.role ?? "").trim().toLowerCase();
   const configuredAdmin = (adminEmail || process.env.ADMIN_EMAIL || "").trim().toLocaleLowerCase("tr-TR");
-  const isAdmin =
-    Boolean(user.isAdmin) || role === "admin" || role === "super_admin" || (configuredAdmin && email === configuredAdmin);
-  if (!isAdmin) throw new Error("403 Bu işlem için admin yetkisi gerekir.");
+  const token = client.getBearerToken();
+
+  let mePayload: unknown = null;
+  try {
+    mePayload = await client.me();
+  } catch {
+    mePayload = null;
+  }
+
+  let user = resolveAdminUser(mePayload, token);
+  if (!user?.id && !user?.email) {
+    user = userFromJwtPayload(token);
+  }
+
+  const hasIdentity = user?.id != null || Boolean(user?.email);
+  if (!hasIdentity) {
+    throw new Error("401 Oturum doğrulanamadı.");
+  }
+
+  if (!isAdminUser(user!, configuredAdmin)) {
+    throw new Error("403 Bu işlem için admin yetkisi gerekir.");
+  }
 }
 
 export function parseDryRunFlag(query: Record<string, string | string[] | undefined>, body?: unknown): boolean {
