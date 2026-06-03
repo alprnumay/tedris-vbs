@@ -1,7 +1,11 @@
-import { repairEnvStatus } from "../_server/tedris-repair/env";
+/**
+ * Vercel serverless — sıfır üst-seviye import (module load crash önlemi).
+ * Health: GET ?health=1 — repair kodu yüklenmez.
+ * Dry-run: POST ?dryRun=true — dynamic import ile _server yüklenir.
+ */
 
 export const config = {
-  maxDuration: 300,
+  maxDuration: 60,
 };
 
 type Req = {
@@ -14,6 +18,24 @@ type Req = {
 type Res = {
   status: (code: number) => { json: (body: unknown) => void };
 };
+
+function readEnvStatus() {
+  return {
+    hasVpsApiBaseUrl: Boolean(String(process.env.VPS_API_BASE_URL ?? "").trim()),
+    hasProjectApiKey: Boolean(String(process.env.VPS_PROJECT_API_KEY ?? "").trim()),
+    hasAdminEmail: Boolean(String(process.env.ADMIN_EMAIL ?? "").trim()),
+  };
+}
+
+function queryParam(req: Req, key: string): string | undefined {
+  const raw = req.query?.[key];
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+function isHealthRequest(req: Req): boolean {
+  const val = queryParam(req, "health");
+  return val === "1" || val === "true";
+}
 
 function bearerFromReq(req: Req): string | undefined {
   const raw = req.headers.authorization ?? req.headers.Authorization;
@@ -35,9 +57,9 @@ function parseBody(req: Req): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function repairErrorResponse(
-  status: number,
+function failJson(
   message: string,
+  phase: string,
   details?: string,
   extra?: Record<string, unknown>,
 ) {
@@ -45,26 +67,40 @@ function repairErrorResponse(
     ok: false,
     error: "REPAIR_DRY_RUN_FAILED",
     message,
+    phase,
     details: details ?? message,
-    envStatus: repairEnvStatus(),
+    envStatus: readEnvStatus(),
+    deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     ...extra,
   };
 }
 
 export default async function handler(req: Req, res: Res) {
-  if (req.method !== "POST") {
-    res.status(405).json(repairErrorResponse(405, "Method not allowed"));
-    return;
-  }
-
   try {
-    const envStatus = repairEnvStatus();
+    if (req.method === "GET" && isHealthRequest(req)) {
+      res.status(200).json({
+        ok: true,
+        route: "repair-app-user-auth-links",
+        phase: "health",
+        dryRunOnly: true,
+        deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+        envStatus: readEnvStatus(),
+      });
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(405).json(failJson("Method not allowed. Use GET ?health=1 or POST dry-run.", "method"));
+      return;
+    }
+
+    const envStatus = readEnvStatus();
     if (!envStatus.hasVpsApiBaseUrl || !envStatus.hasProjectApiKey) {
       res.status(503).json(
-        repairErrorResponse(
-          503,
-          "VPS_API_BASE_URL ve VPS_PROJECT_API_KEY Vercel ortamında tanımlı değil.",
-          "FUNCTION_INVOCATION_FAILED genelde eksik env veya modül yüklenememesinden kaynaklanır.",
+        failJson(
+          "VPS_API_BASE_URL ve VPS_PROJECT_API_KEY Vercel Production env'de tanımlı olmalı.",
+          "env_missing",
+          "Handler çalışıyor; VPS env eksik.",
         ),
       );
       return;
@@ -72,7 +108,7 @@ export default async function handler(req: Req, res: Res) {
 
     const token = bearerFromReq(req);
     if (!token) {
-      res.status(401).json(repairErrorResponse(401, "Authorization Bearer token gerekli."));
+      res.status(401).json(failJson("Authorization Bearer token gerekli.", "auth"));
       return;
     }
 
@@ -83,9 +119,8 @@ export default async function handler(req: Req, res: Res) {
       const msg = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;
       res.status(500).json(
-        repairErrorResponse(500, "Repair modülü yüklenemedi.", msg, {
-          phase: "module_import",
-          stack: stack?.split("\n").slice(0, 8).join("\n"),
+        failJson("Repair modülü yüklenemedi (dynamic import).", "module_import", msg, {
+          stack: stack?.split("\n").slice(0, 10).join("\n"),
         }),
       );
       return;
@@ -99,10 +134,10 @@ export default async function handler(req: Req, res: Res) {
 
     if (!dryRun) {
       res.status(400).json(
-        repairErrorResponse(
-          400,
-          "Bu endpoint yalnızca dry-run teşhis içindir. dryRun=true veya diagnoseEmails gönderin.",
-          "dryRun=false ile çağrı 852 kayıtta gerçek onarım döngüsünü tetikleyebilir ve FUNCTION_INVOCATION_FAILED üretebilir.",
+        failJson(
+          "Yalnızca dry-run kabul edilir. ?dryRun=true veya body.diagnoseEmails gönderin.",
+          "dry_run_required",
+          "dryRun=false veya eksik query ile gerçek onarım döngüsü başlatılmaz.",
           { dryRun: false, repairBlocked: true },
         ),
       );
@@ -116,13 +151,11 @@ export default async function handler(req: Req, res: Res) {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.startsWith("401")) {
-        res.status(401).json(repairErrorResponse(401, msg, "Admin JWT geçersiz veya süresi dolmuş."));
+        res.status(401).json(failJson(msg, "admin_auth"));
         return;
       }
       if (msg.startsWith("403")) {
-        res.status(403).json(
-          repairErrorResponse(403, msg, `ADMIN_EMAIL=${process.env.ADMIN_EMAIL ? "set" : "missing"}`),
-        );
+        res.status(403).json(failJson(msg, "admin_forbidden", `ADMIN_EMAIL=${envStatus.hasAdminEmail ? "set" : "missing"}`));
         return;
       }
       throw error;
@@ -130,9 +163,7 @@ export default async function handler(req: Req, res: Res) {
 
     const diagnoseEmails = Array.isArray(body?.diagnoseEmails)
       ? (body.diagnoseEmails as string[])
-      : dryRun
-        ? ["burdurbaglarbasi@gmail.com"]
-        : undefined;
+      : ["burdurbaglarbasi@gmail.com"];
 
     const userIds = Array.isArray(body?.userIds) ? (body.userIds as string[]) : undefined;
 
@@ -147,16 +178,21 @@ export default async function handler(req: Req, res: Res) {
       ok: report.ok,
       dryRun: true,
       dataChanged: false,
+      phase: "dry_run_ok",
       envStatus,
+      deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? error.stack : undefined;
-    res.status(500).json(
-      repairErrorResponse(500, msg || "Dry-run tamamlanamadı.", stack?.split("\n").slice(0, 12).join("\n"), {
-        phase: "handler",
-        name: error instanceof Error ? error.name : "unknown_error",
-      }),
-    );
+    try {
+      res.status(500).json(
+        failJson(msg || "Dry-run tamamlanamadı.", "handler", stack?.split("\n").slice(0, 12).join("\n"), {
+          name: error instanceof Error ? error.name : "unknown_error",
+        }),
+      );
+    } catch {
+      /* response already sent */
+    }
   }
 }
