@@ -344,6 +344,43 @@ export function selectCanonicalAppUserRecord(
 }
 
 /** Login: yalnızca oturum sahibinin görebildiği kayıtlar; admin onarım yok. */
+export async function logLoginRecordsScopeDiag(authUser: AuthLoginLike): Promise<void> {
+  const normalized = normalizeEmail(authUser.email);
+  const authUserId = authUser.id != null ? String(authUser.id) : null;
+  let owned: BackendRecord<AppUserRecordData>[] = [];
+  let fetchError: string | null = null;
+  try {
+    owned = await backendApi.fetchAllRecords<AppUserRecordData>("app_user", { maxPages: 15 });
+  } catch (error) {
+    fetchError = error instanceof Error ? error.message : String(error);
+    owned = [];
+  }
+  const ownedMatchByEmailOrAuthId = owned.filter((record) =>
+    recordMatchesAppUserEmail(record, normalized, authUserId ?? undefined),
+  );
+  const ownedMatchByEmailOnly = owned.filter((record) => getAppUserEmail(record) === normalized);
+  const ownedMatchByAuthIdOnly = authUserId
+    ? owned.filter((record) => String(record.data?.authUserId ?? "") === authUserId)
+    : [];
+
+  console.log("[TEDRIS_LOGIN_RECORDS_SCOPE_DIAG]", {
+    tokenAuthUserId: authUserId,
+    tokenEmail: normalized,
+    recordsAppUserOwnedCount: owned.length,
+    ownedMatchByEmailOrAuthId: ownedMatchByEmailOrAuthId.length,
+    ownedMatchByEmailOnly: ownedMatchByEmailOnly.length,
+    ownedMatchByAuthIdOnly: ownedMatchByAuthIdOnly.length,
+    fetchError,
+    adminCatalogCandidateCount: null,
+    adminCatalogNote:
+      "Admin katalog aday sayısı yalnızca admin JWT repair dry-run (emailDiagnosis) ile ölçülür; yurt token ile /records genelde sahibine ait kayıtları döndürür.",
+    scopedReadHint:
+      owned.length === 0
+        ? "VPS GET /records?record_type=app_user bu token için 0 kayıt — auth_ok_app_user_missing buna bağlanabilir."
+        : undefined,
+  });
+}
+
 export async function findAppUserRecordsForLoginReadOnly(
   authUser: AuthLoginLike,
 ): Promise<BackendRecord<AppUserRecordData>[]> {

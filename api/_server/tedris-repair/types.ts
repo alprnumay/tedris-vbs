@@ -42,6 +42,61 @@ export interface BackendUser {
   isAdmin?: boolean;
 }
 
+export type RepairEmailCategory =
+  | "alreadyLinked"
+  | "authFoundWouldLink"
+  | "authWouldCreate"
+  | "appUserMissing"
+  | "duplicateEmails"
+  | "inactiveOrDeleted"
+  | "missingEmail"
+  | "failed";
+
+export interface RepairEmailDiagnosis {
+  email: string;
+  category: RepairEmailCategory;
+  authUserId: string | null;
+  authUserExists: boolean;
+  appUserId: string | null;
+  emailFields: {
+    topLevel: string | null;
+    dataEmail: string | null;
+    loginEmail: string | null;
+    generatedEmail: string | null;
+    username: string | null;
+    computed: string | null;
+  };
+  authUserIdOnRecord: string | null;
+  authUserIdMatchesAuth: boolean;
+  institutionCode: string | null;
+  district: string | null;
+  province: string | null;
+  status: string | null;
+  isActive: boolean | null;
+  deletedAt: string | null;
+  duplicateAppUserIds: string[];
+  adminCatalogCandidatesByEmail: number;
+  adminCatalogCandidatesByAuthId: number;
+  loginScopedRecordsNote: string;
+}
+
+export interface RepairDryRunSummary {
+  totalAppUsers: number;
+  totalAuthUsers: number;
+  activeAppUsers: number;
+  missingTopLevelEmail: number;
+  missingAnyEmail: number;
+  missingAuthUserId: number;
+  authFoundWouldLink: number;
+  authWouldCreate: number;
+  duplicateEmails: number;
+  institutionMissing: number;
+  inactiveOrDeleted: number;
+  loginReadyUsers: number;
+  loginBlockedUsers: number;
+  alreadyLinked: number;
+}
+
 export interface RepairAppUserAuthLinksReport {
   ok: boolean;
   dryRun: boolean;
@@ -58,10 +113,14 @@ export interface RepairAppUserAuthLinksReport {
   skippedDeleted: number;
   failed: number;
   errors: { appUserId: string; email: string; reason: string }[];
+  summary?: RepairDryRunSummary;
+  emailDiagnosis?: RepairEmailDiagnosis[];
 }
 
 export interface RepairOptions {
   userIds?: string[];
   maxRecords?: number;
   dryRun?: boolean;
+  /** Dry-run: ayrıntılı teşhis satırları (ör. burdurbaglarbasi@gmail.com) */
+  diagnoseEmails?: string[];
 }

@@ -43,9 +43,20 @@ export default async function handler(req: Req, res: Res) {
     const client = createVpsClientFromEnv(token);
     await assertAdminCaller(client);
 
-    const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) as { userIds?: string[]; dryRun?: boolean } | undefined;
+    const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) as {
+      userIds?: string[];
+      dryRun?: boolean;
+      diagnoseEmails?: string[];
+    } | undefined;
     const dryRun = parseDryRunFlag(req.query ?? {}, body);
-    const report = await runRepairAppUserAuthLinks(client, { userIds: body?.userIds, dryRun });
+    const diagnoseEmails =
+      body?.diagnoseEmails ??
+      (dryRun ? ["burdurbaglarbasi@gmail.com"] : undefined);
+    const report = await runRepairAppUserAuthLinks(client, {
+      userIds: body?.userIds,
+      dryRun,
+      diagnoseEmails,
+    });
     res.status(200).json(report);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

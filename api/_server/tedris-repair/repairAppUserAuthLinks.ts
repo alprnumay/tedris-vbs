@@ -1,3 +1,4 @@
+import { buildDryRunSummary, diagnoseRepairEmail } from "./diagnoseDryRun";
 import {
   appUserDataFromRecord,
   getAppUserEmail,
@@ -45,6 +46,10 @@ export async function runRepairAppUserAuthLinks(
 
   const idFilter = opts.userIds?.length ? new Set(opts.userIds.map(String)) : null;
   const [records, authUsers] = await Promise.all([client.loadAllAppUsers(), client.listAuthUsers().catch(() => [])]);
+
+  const diagnoseEmails = (opts.diagnoseEmails ?? [])
+    .map((e) => normalizeEmail(e))
+    .filter(Boolean);
 
   const authByEmail = new Map<string, BackendUser>();
   for (const auth of authUsers) {
@@ -164,6 +169,55 @@ export async function runRepairAppUserAuthLinks(
         appUserId: String(primary.id),
         email,
         reason: error instanceof Error ? error.message : "Kayıt güncellenemedi",
+      });
+    }
+  }
+
+  if (dryRun) {
+    report.summary = buildDryRunSummary(records, authUsers, {
+      authFoundWouldLink: report.authFoundWouldLink,
+      authWouldCreate: report.authWouldCreate,
+      duplicatesDetected: report.duplicatesDetected,
+      skippedDeleted: report.skippedDeleted,
+      alreadyLinked: report.alreadyLinked,
+    });
+    if (diagnoseEmails.length) {
+      report.emailDiagnosis = diagnoseEmails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+    }
+    console.log("[TEDRIS_REPAIR_DRY_RUN]", {
+      dryRun: true,
+      summary: report.summary,
+      emailDiagnosis: report.emailDiagnosis,
+    });
+    for (const row of report.emailDiagnosis ?? []) {
+      const foundIn =
+        row.emailFields.computed != null
+          ? "computed"
+          : row.emailFields.dataEmail
+            ? "data.email"
+            : row.emailFields.loginEmail
+              ? "data.loginEmail"
+              : row.emailFields.generatedEmail
+                ? "data.generatedEmail"
+                : row.emailFields.topLevel
+                  ? "topLevel.email"
+                  : row.emailFields.username
+                    ? "username"
+                    : "none";
+      console.log("[TEDRIS_REPAIR_EMAIL_DIAG_LINE]", {
+        email: row.email,
+        category: row.category,
+        authUserId: row.authUserId,
+        appUserId: row.appUserId,
+        appUserFoundInEmailField: foundIn,
+        authUserExists: row.authUserExists,
+        authUserIdOnRecord: row.authUserIdOnRecord,
+        authUserIdMatchesAuth: row.authUserIdMatchesAuth,
+        institutionCode: row.institutionCode,
+        status: row.status,
+        isActive: row.isActive,
+        adminCatalogCandidatesByEmail: row.adminCatalogCandidatesByEmail,
+        adminCatalogCandidatesByAuthId: row.adminCatalogCandidatesByAuthId,
       });
     }
   }

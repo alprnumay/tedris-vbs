@@ -5,6 +5,7 @@ import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
 import { epostaAlternatif, epostaUret, kurumKoduUret, sifreUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
 import {
   findAppUserRecordsForLoginReadOnly,
+  logLoginRecordsScopeDiag,
   findAuthUserByEmail as findAuthUserByEmailFromAuth,
   getAppUserEmail as getAppUserEmailFromSync,
   loadAllAppUserCatalog,
@@ -525,7 +526,7 @@ function zorunluAktifAppUser(authUser: KullaniciBilgisi, appUser: AdminKullanici
       hint: "Auth kaydı var ama app_user kaydı bu kullanıcıya devredilmemiş olabilir. Yönetici bir kez panele girip oturum açmalı.",
     });
     throw new Error(
-      "Auth hesabı var fakat uygulama kullanıcı kaydı bulunamadı. Yönetici panelinden Veri Sağlığı > Auth/App User onarımını çalıştırın.",
+      "Bu giriş hesabı auth sisteminde var ancak uygulama kullanıcı kaydıyla eşleşmemiş. Yönetici backend dry-run raporu sonrası kontrollü veri onarımı yapmalıdır.",
     );
   }
   if (!appUserAktifMi(appUser)) {
@@ -1851,6 +1852,8 @@ export const api = {
       }
       authUserFound = true;
 
+      await logLoginRecordsScopeDiag({ id: user.id, email: user.email, name: user.name });
+
       const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true });
       appUserFound = Boolean(appUser);
 
@@ -1866,7 +1869,7 @@ export const api = {
           registerStatus: "skipped_login",
         });
         throw new Error(
-          "Bu giriş hesabı auth sisteminde var ama uygulama kullanıcı kaydı bulunamadı. Yönetici Veri Sağlığı > Eşleştir işlemini çalıştırmalı.",
+          "Bu giriş hesabı auth sisteminde var ancak uygulama kullanıcı kaydıyla eşleşmemiş. Yönetici backend dry-run raporu sonrası kontrollü veri onarımı yapmalıdır.",
         );
       }
 
