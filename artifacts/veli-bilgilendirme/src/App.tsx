@@ -28,6 +28,7 @@ const KurumsalKimlikModulu = lazy(() =>
 );
 
 const POSTER_W = 520;
+const POSTER_H_FALLBACK = 720;
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -69,9 +70,11 @@ function MainApp() {
   const downloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const desktopSahneRef = useRef<HTMLDivElement>(null);
+  const posterInnerRef = useRef<HTMLDivElement>(null);
   const adim2Ref = useRef<(() => void) | undefined>(undefined);
   const [zoom, setZoom] = useState(1);
   const [desktopZoom, setDesktopZoom] = useState(0.72);
+  const [posterH, setPosterH] = useState(POSTER_H_FALLBACK);
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
   const veliModulLoglandi = useRef(false);
@@ -108,25 +111,39 @@ function MainApp() {
     return () => obs.disconnect();
   }, [aktifSekme]);
 
+  const desktopOlcekHesapla = useCallback(() => {
+    const area = desktopSahneRef.current;
+    const inner = posterInnerRef.current;
+    if (!area || !inner) return;
+    const pad = 12;
+    const aw = area.clientWidth - pad * 2;
+    const ah = area.clientHeight - pad * 2;
+    const ph = inner.offsetHeight || POSTER_H_FALLBACK;
+    setPosterH(ph);
+    const s = Math.min(aw / POSTER_W, ah / ph, 1);
+    setDesktopZoom(s);
+  }, []);
+
   useEffect(() => {
-    const el = desktopSahneRef.current;
-    if (!el) return;
-    const sigdir = () => {
-      const w = el.clientWidth - 20;
-      setDesktopZoom(Math.min(1, Math.max(0.6, w / POSTER_W)));
+    desktopOlcekHesapla();
+    const t1 = requestAnimationFrame(() => desktopOlcekHesapla());
+    const t2 = window.setTimeout(desktopOlcekHesapla, 120);
+    const obs = new ResizeObserver(desktopOlcekHesapla);
+    if (desktopSahneRef.current) obs.observe(desktopSahneRef.current);
+    if (posterInnerRef.current) obs.observe(posterInnerRef.current);
+    return () => {
+      cancelAnimationFrame(t1);
+      window.clearTimeout(t2);
+      obs.disconnect();
     };
-    sigdir();
-    const obs = new ResizeObserver(sigdir);
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [form, seciliSablon]);
+  }, [desktopOlcekHesapla, form, seciliSablon]);
 
   const desktopSigdir = useCallback(() => {
-    const el = desktopSahneRef.current;
-    if (!el) return;
-    const w = el.clientWidth - 20;
-    setDesktopZoom(Math.min(1, Math.max(0.6, w / POSTER_W)));
-  }, []);
+    desktopOlcekHesapla();
+  }, [desktopOlcekHesapla]);
+
+  const desktopScaledW = Math.round(POSTER_W * desktopZoom);
+  const desktopScaledH = Math.round(posterH * desktopZoom);
 
   useEffect(() => {
     if (captureSnapshot && captureResolveFn.current) {
@@ -766,8 +783,18 @@ function MainApp() {
                       </div>
                     </div>
                     <div ref={desktopSahneRef} className="veli-studio-sahne">
-                      <div className="veli-studio-poster-wrap" style={{ zoom: desktopZoom } as React.CSSProperties}>
-                        <div style={{ width: POSTER_W }}>
+                      <div
+                        className="veli-studio-poster-wrap"
+                        style={{ width: desktopScaledW, height: desktopScaledH, flexShrink: 0 }}
+                      >
+                        <div
+                          ref={posterInnerRef}
+                          style={{
+                            width: POSTER_W,
+                            transform: `scale(${desktopZoom})`,
+                            transformOrigin: "top center",
+                          }}
+                        >
                           <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
                         </div>
                       </div>
