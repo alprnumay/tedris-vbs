@@ -130,6 +130,20 @@ export interface RepairAppUserAuthLinksReport {
   emailDiagnosis?: RepairEmailDiagnosis[];
 }
 
+export interface DiagnoseOnlyReport {
+  ok: true;
+  dryRun: true;
+  dataChanged: false;
+  emailDiagnosis: RepairEmailDiagnosis[];
+  catalogMeta: {
+    mode: "diagnose_emails_only";
+    pagesFetched: number;
+    recordsLoaded: number;
+    stoppedEarly: boolean;
+    targetEmailCount: number;
+  };
+}
+
 export interface RepairOptions {
   userIds?: string[];
   maxRecords?: number;

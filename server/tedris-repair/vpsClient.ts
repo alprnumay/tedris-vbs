@@ -1,3 +1,4 @@
+import { getAppUserEmail, normalizeEmail } from "./email";
 import type { AppUserRecordData, BackendRecord, BackendUser } from "./types";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -142,6 +143,67 @@ export class VpsApiClient {
       if (records.length < limit) break;
     }
     return all;
+  }
+
+  /**
+   * Teşhis: hedef e-postalar bulunana kadar sayfalı /records (tam 852 tarama yok).
+   */
+  async fetchAppUsersForDiagnose(
+    targetEmails: string[],
+    authUserIds: string[],
+    maxPages = 25,
+  ): Promise<{ records: BackendRecord<AppUserRecordData>[]; pagesFetched: number; stoppedEarly: boolean }> {
+    const targets = new Set(targetEmails.map((e) => normalizeEmail(e)).filter(Boolean));
+    const authIds = new Set(authUserIds.filter(Boolean));
+    const foundTargets = new Set<string>();
+    const limit = 100;
+    const matches: BackendRecord<AppUserRecordData>[] = [];
+    const seenIds = new Set<string>();
+    let cursor: string | undefined;
+    let pagesFetched = 0;
+    let stoppedEarly = false;
+
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+      const params = new URLSearchParams();
+      params.set("record_type", "app_user");
+      params.set("limit", String(limit));
+      if (cursor) params.set("cursor", cursor);
+      else {
+        params.set("page", String(pageIndex + 1));
+        params.set("offset", String(pageIndex * limit));
+      }
+      const payload = await this.request<unknown>("GET", `/records?${params.toString()}`);
+      const records = normalizeRecords<AppUserRecordData>(payload);
+      const meta = pageMeta(payload);
+      pagesFetched += 1;
+
+      for (const record of records) {
+        const key = String(record.id);
+        if (seenIds.has(key)) continue;
+        const computed = getAppUserEmail(record);
+        const recordAuthId = String(record.data?.authUserId ?? "");
+        const emailHit = computed && targets.has(computed);
+        const authHit = recordAuthId && authIds.has(recordAuthId);
+        if (!emailHit && !authHit) continue;
+        seenIds.add(key);
+        matches.push(record);
+        if (computed && targets.has(computed)) foundTargets.add(computed);
+      }
+
+      if (targets.size > 0 && foundTargets.size >= targets.size) {
+        stoppedEarly = true;
+        break;
+      }
+      if (!records.length) break;
+      if (meta.nextCursor) {
+        cursor = meta.nextCursor;
+        continue;
+      }
+      if (meta.hasMore === false) break;
+      if (records.length < limit) break;
+    }
+
+    return { records: matches, pagesFetched, stoppedEarly };
   }
 
   async loadAllAppUsers(): Promise<BackendRecord<AppUserRecordData>[]> {

@@ -1,11 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install",
-  "buildCommand": "pnpm --filter @workspace/veli-bilgilendirme build",
+  "buildCommand": "node scripts/bundle-repair-dry-run.mjs && pnpm --filter @workspace/veli-bilgilendirme build",
   "outputDirectory": "artifacts/veli-bilgilendirme/dist/public",
   "functions": {
     "api/admin/repair-app-user-auth-links.js": {
-      "maxDuration": 10
+      "maxDuration": 60,
+      "includeFiles": "api/lib/repair-dry-run.cjs"
     }
   },
   "rewrites": [

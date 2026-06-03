@@ -6,7 +6,14 @@ import {
   normalizeEmail,
   selectPrimaryAppUserRecord,
 } from "./email";
-import type { AppUserRecordData, BackendRecord, BackendUser, RepairAppUserAuthLinksReport, RepairOptions } from "./types";
+import type {
+  AppUserRecordData,
+  BackendRecord,
+  BackendUser,
+  DiagnoseOnlyReport,
+  RepairAppUserAuthLinksReport,
+  RepairOptions,
+} from "./types";
 import { passwordForDistrict, VpsApiClient } from "./vpsClient";
 
 function authAlreadyLinked(data: AppUserRecordData, email: string, authUsers: BackendUser[]): boolean {
@@ -37,6 +44,51 @@ function emptyReport(dryRun: boolean): RepairAppUserAuthLinksReport {
   };
 }
 
+/** Yalnızca diagnoseEmails — katalog erken durur, yazma/register/PUT yok. */
+export async function runDiagnoseEmailsOnly(
+  client: VpsApiClient,
+  diagnoseEmails: string[],
+): Promise<DiagnoseOnlyReport> {
+  const emails = diagnoseEmails.map((e) => normalizeEmail(e)).filter(Boolean);
+  const authUsers = await client.listAuthUsers().catch(() => []);
+  const authIds = emails
+    .map((email) => {
+      const auth = authUsers.find((a) => (typeof a.email === "string" ? normalizeEmail(a.email) : "") === email);
+      return auth?.id != null ? String(auth.id) : null;
+    })
+    .filter((id): id is string => Boolean(id));
+
+  const { records, pagesFetched, stoppedEarly } = await client.fetchAppUsersForDiagnose(emails, authIds);
+  const emailDiagnosis = emails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+
+  console.log("[TEDRIS_REPAIR_DRY_RUN]", {
+    dryRun: true,
+    mode: "diagnose_emails_only",
+    pagesFetched,
+    recordsLoaded: records.length,
+    stoppedEarly,
+    emailCount: emails.length,
+    emailDiagnosis,
+  });
+  for (const row of emailDiagnosis) {
+    console.log("[TEDRIS_REPAIR_EMAIL_DIAG_LINE]", row);
+  }
+
+  return {
+    ok: true,
+    dryRun: true,
+    dataChanged: false,
+    emailDiagnosis,
+    catalogMeta: {
+      mode: "diagnose_emails_only",
+      pagesFetched,
+      recordsLoaded: records.length,
+      stoppedEarly,
+      targetEmailCount: emails.length,
+    },
+  };
+}
+
 export async function runRepairAppUserAuthLinks(
   client: VpsApiClient,
   opts: RepairOptions = {},
@@ -52,24 +104,10 @@ export async function runRepairAppUserAuthLinks(
     .filter(Boolean);
 
   if (dryRun && diagnoseEmails.length > 0 && !idFilter) {
-    report.totalAppUsers = records.length;
-    report.emailDiagnosis = diagnoseEmails.map((email) => diagnoseRepairEmail(email, records, authUsers));
-    report.summary = buildDryRunSummary(records, authUsers, {
-      authFoundWouldLink: 0,
-      authWouldCreate: 0,
-      duplicatesDetected: 0,
-      skippedDeleted: 0,
-      alreadyLinked: 0,
-    });
-    console.log("[TEDRIS_REPAIR_DRY_RUN]", {
-      dryRun: true,
-      mode: "diagnose_only",
-      summary: report.summary,
-      emailDiagnosis: report.emailDiagnosis,
-    });
-    for (const row of report.emailDiagnosis ?? []) {
-      console.log("[TEDRIS_REPAIR_EMAIL_DIAG_LINE]", row);
-    }
+    const scoped = await runDiagnoseEmailsOnly(client, diagnoseEmails);
+    report.totalAppUsers = scoped.catalogMeta.recordsLoaded;
+    report.emailDiagnosis = scoped.emailDiagnosis;
+    report.dryRun = true;
     return report;
   }
 
