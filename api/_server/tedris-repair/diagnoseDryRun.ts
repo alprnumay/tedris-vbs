@@ -5,7 +5,49 @@ import {
   normalizeEmail,
   selectPrimaryAppUserRecord,
 } from "./email";
-import type { AppUserRecordData, BackendRecord, BackendUser, RepairEmailDiagnosis, RepairEmailCategory, RepairDryRunSummary } from "./types";
+import type {
+  AppUserRecordData,
+  BackendRecord,
+  BackendUser,
+  RepairDiagnosticTag,
+  RepairEmailDiagnosis,
+  RepairEmailCategory,
+  RepairDryRunSummary,
+} from "./types";
+
+function recordOwnerId(record: BackendRecord<AppUserRecordData>): string | null {
+  const raw = record as BackendRecord<AppUserRecordData> & AppUserRecordData & { payload?: AppUserRecordData };
+  const nested = raw.data ?? raw.payload ?? {};
+  const nestedOwner = (nested as { userId?: string | number }).userId;
+  const id = record.userId ?? nestedOwner ?? (raw as { userId?: string | number }).userId;
+  return id != null && String(id).trim() !== "" ? String(id) : null;
+}
+
+function buildDiagnosticTags(
+  normalized: string,
+  group: BackendRecord<AppUserRecordData>[],
+  authUserId: string | null,
+  primary: BackendRecord<AppUserRecordData> | null,
+  recordAuthId: string | null,
+): RepairDiagnosticTag[] {
+  const tags: RepairDiagnosticTag[] = [];
+  if (!group.length) {
+    tags.push("appUserMissing");
+    return tags;
+  }
+  if (group.length > 1) tags.push("duplicateEmail");
+  if (!primary) return tags;
+
+  const data = appUserDataFromRecord(primary);
+  if (isDeletedOrInactive(data)) tags.push("inactiveDeleted");
+
+  const ownerId = recordOwnerId(primary);
+  if (authUserId && ownerId && ownerId !== authUserId) tags.push("appUserOwnerMismatch");
+  if (authUserId && recordAuthId && recordAuthId !== authUserId) tags.push("authUserIdMismatch");
+  if (authUserId && (!recordAuthId || recordAuthId !== authUserId)) tags.push("authFoundWouldLink");
+
+  return [...new Set(tags)];
+}
 
 function emailFieldsFromRecord(record: BackendRecord<AppUserRecordData>) {
   const raw = record as AppUserRecordData & BackendRecord<AppUserRecordData> & { payload?: AppUserRecordData };
@@ -144,6 +186,8 @@ export function diagnoseRepairEmail(
   const fields = primary ? emailFieldsFromRecord(primary) : emailFieldsFromRecord({ id: "", data: {} });
   const recordAuthId = data?.authUserId ? String(data.authUserId) : null;
   const category = resolveEmailCategory(normalized, group, authUser, primary);
+  const recordUserId = primary ? recordOwnerId(primary) : null;
+  const diagnosticTags = buildDiagnosticTags(normalized, group, authUserId, primary, recordAuthId);
 
   return {
     email: normalized,
@@ -151,6 +195,10 @@ export function diagnoseRepairEmail(
     authUserId,
     authUserExists: Boolean(authUser?.id),
     appUserId: primary ? String(primary.id) : null,
+    recordUserId,
+    recordOwnerMatchesAuth: Boolean(authUserId && recordUserId && recordUserId === authUserId),
+    institutionName: data?.institutionName ?? null,
+    diagnosticTags,
     emailFields: fields,
     authUserIdOnRecord: recordAuthId,
     authUserIdMatchesAuth: Boolean(authUserId && recordAuthId && recordAuthId === authUserId),

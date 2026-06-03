@@ -5,7 +5,8 @@
   "outputDirectory": "artifacts/veli-bilgilendirme/dist/public",
   "functions": {
     "api/admin/repair-app-user-auth-links.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "api/_server/tedris-repair/**"
     }
   },
   "rewrites": [

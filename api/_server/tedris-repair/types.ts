@@ -52,12 +52,25 @@ export type RepairEmailCategory =
   | "missingEmail"
   | "failed";
 
+/** Teşhis etiketleri (dry-run raporu; birden fazla aynı anda olabilir) */
+export type RepairDiagnosticTag =
+  | "appUserOwnerMismatch"
+  | "authFoundWouldLink"
+  | "authUserIdMismatch"
+  | "duplicateEmail"
+  | "inactiveDeleted"
+  | "appUserMissing";
+
 export interface RepairEmailDiagnosis {
   email: string;
   category: RepairEmailCategory;
   authUserId: string | null;
   authUserExists: boolean;
   appUserId: string | null;
+  recordUserId: string | null;
+  recordOwnerMatchesAuth: boolean;
+  institutionName: string | null;
+  diagnosticTags: RepairDiagnosticTag[];
   emailFields: {
     topLevel: string | null;
     dataEmail: string | null;

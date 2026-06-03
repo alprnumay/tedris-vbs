@@ -51,6 +51,28 @@ export async function runRepairAppUserAuthLinks(
     .map((e) => normalizeEmail(e))
     .filter(Boolean);
 
+  if (dryRun && diagnoseEmails.length > 0 && !idFilter) {
+    report.totalAppUsers = records.length;
+    report.emailDiagnosis = diagnoseEmails.map((email) => diagnoseRepairEmail(email, records, authUsers));
+    report.summary = buildDryRunSummary(records, authUsers, {
+      authFoundWouldLink: 0,
+      authWouldCreate: 0,
+      duplicatesDetected: 0,
+      skippedDeleted: 0,
+      alreadyLinked: 0,
+    });
+    console.log("[TEDRIS_REPAIR_DRY_RUN]", {
+      dryRun: true,
+      mode: "diagnose_only",
+      summary: report.summary,
+      emailDiagnosis: report.emailDiagnosis,
+    });
+    for (const row of report.emailDiagnosis ?? []) {
+      console.log("[TEDRIS_REPAIR_EMAIL_DIAG_LINE]", row);
+    }
+    return report;
+  }
+
   const authByEmail = new Map<string, BackendUser>();
   for (const auth of authUsers) {
     const email = typeof auth.email === "string" ? normalizeEmail(auth.email) : "";
@@ -207,15 +229,23 @@ export async function runRepairAppUserAuthLinks(
       console.log("[TEDRIS_REPAIR_EMAIL_DIAG_LINE]", {
         email: row.email,
         category: row.category,
+        diagnosticTags: row.diagnosticTags,
         authUserId: row.authUserId,
         appUserId: row.appUserId,
+        recordUserId: row.recordUserId,
+        recordOwnerMatchesAuth: row.recordOwnerMatchesAuth,
         appUserFoundInEmailField: foundIn,
         authUserExists: row.authUserExists,
         authUserIdOnRecord: row.authUserIdOnRecord,
         authUserIdMatchesAuth: row.authUserIdMatchesAuth,
         institutionCode: row.institutionCode,
+        institutionName: row.institutionName,
+        district: row.district,
+        province: row.province,
         status: row.status,
         isActive: row.isActive,
+        deletedAt: row.deletedAt,
+        duplicateAppUserIds: row.duplicateAppUserIds,
         adminCatalogCandidatesByEmail: row.adminCatalogCandidatesByEmail,
         adminCatalogCandidatesByAuthId: row.adminCatalogCandidatesByAuthId,
       });
@@ -250,6 +280,8 @@ export function parseDryRunFlag(query: Record<string, string | string[] | undefi
   const q = query.dryRun ?? query.dryrun;
   const qVal = Array.isArray(q) ? q[0] : q;
   if (qVal === "true" || qVal === "1") return true;
-  const b = body as { dryRun?: boolean; dryrun?: boolean } | undefined;
-  return b?.dryRun === true || b?.dryrun === true;
+  const b = body as { dryRun?: boolean | string; dryrun?: boolean | string; diagnoseEmails?: string[] } | undefined;
+  if (b?.dryRun === true || b?.dryrun === true || b?.dryRun === "true" || b?.dryrun === "true") return true;
+  if (Array.isArray(b?.diagnoseEmails) && b.diagnoseEmails.length > 0) return true;
+  return false;
 }
