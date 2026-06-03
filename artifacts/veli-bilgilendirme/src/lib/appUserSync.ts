@@ -32,6 +32,18 @@ type AppUserRecordLike = BackendRecord<AppUserRecordData> & AppUserRecordData & 
   data?: AppUserRecordData;
 };
 
+export interface RepairAppUserAuthLinksResult {
+  ok: boolean;
+  source: "backend" | "frontend";
+  totalAppUsers: number;
+  alreadyLinked: number;
+  authFoundAndLinked: number;
+  authCreatedAndLinked: number;
+  failed: number;
+  errors: { id: string; email: string; reason: string }[];
+  createdCredentials: { appUserId: string; email: string; name: string; password: string }[];
+}
+
 export interface ReconcileAppUsersResult {
   ok: boolean;
   scanned: number;
@@ -143,6 +155,144 @@ export async function loadAllAppUserCatalog(): Promise<BackendRecord<AppUserReco
   const owned = await backendApi.fetchAllRecords<AppUserRecordData>("app_user").catch(() => []);
   const adminScoped = await backendApi.fetchAllAdminRecords<AppUserRecordData>("app_user").catch(() => []);
   return mergeRecordsById(owned, adminScoped);
+}
+
+/** Auth onarımı: yalnızca /records (admin/records 403 üretmez). */
+export async function loadAppUserCatalogForAuthRepair(): Promise<BackendRecord<AppUserRecordData>[]> {
+  return backendApi.fetchAllRecords<AppUserRecordData>("app_user", { maxPages: 200 }).catch(() => []);
+}
+
+export interface RepairAuthLinksDeps {
+  updateAppUserRecord: (id: string | number, data: AppUserRecordData) => Promise<BackendRecord<AppUserRecordData>>;
+  registerAuthUser: (data: { email: string; password: string; name: string }) => Promise<{ user?: BackendUser } | null>;
+  passwordForRecord: (data: AppUserRecordData) => string;
+  recordIds?: string[];
+}
+
+export async function repairAppUserAuthLinks(deps: RepairAuthLinksDeps): Promise<RepairAppUserAuthLinksResult> {
+  const result: RepairAppUserAuthLinksResult = {
+    ok: true,
+    source: "frontend",
+    totalAppUsers: 0,
+    alreadyLinked: 0,
+    authFoundAndLinked: 0,
+    authCreatedAndLinked: 0,
+    failed: 0,
+    errors: [],
+    createdCredentials: [],
+  };
+
+  const idFilter = deps.recordIds?.length ? new Set(deps.recordIds.map(String)) : null;
+  const [records, authUsers] = await Promise.all([
+    loadAppUserCatalogForAuthRepair(),
+    backendApi.listAuthUsers().catch(() => [] as BackendUser[]),
+  ]);
+
+  const authByEmail = new Map<string, BackendUser>();
+  for (const auth of authUsers) {
+    const email = normalizeEmail(typeof auth.email === "string" ? auth.email : "");
+    if (email && auth.id != null) authByEmail.set(email, auth);
+  }
+
+  for (const record of records) {
+    if (idFilter && !idFilter.has(String(record.id))) continue;
+    result.totalAppUsers += 1;
+    const data = appUserDataFromRecord(record);
+    const email = getAppUserEmail(record);
+    if (!email) {
+      result.failed += 1;
+      result.errors.push({ id: String(record.id), email: "", reason: "E-posta yok" });
+      continue;
+    }
+
+    const existingAuthId = data.authUserId ? String(data.authUserId) : "";
+    if (existingAuthId) {
+      const linked = authUsers.find((a) => String(a.id) === existingAuthId);
+      const linkedEmail = linked ? normalizeEmail(typeof linked.email === "string" ? linked.email : "") : "";
+      if (linked && linkedEmail === email) {
+        result.alreadyLinked += 1;
+        continue;
+      }
+    }
+
+    let authUser = authByEmail.get(email) ?? null;
+    let createdNew = false;
+
+    if (!authUser) {
+      const password = deps.passwordForRecord(data);
+      const name = String(data.name ?? data.institutionName ?? email);
+      try {
+        const registered = await deps.registerAuthUser({ email, password, name });
+        const createdId = registered?.user?.id;
+        if (createdId) {
+          authUser = registered.user as BackendUser;
+          authByEmail.set(email, authUser);
+          createdNew = true;
+        } else {
+          authUser = await findAuthUserByEmail(email, authUsers);
+          if (authUser?.id) authByEmail.set(email, authUser);
+        }
+      } catch (error) {
+        authUser = await findAuthUserByEmail(email, [...authUsers, ...authByEmail.values()]);
+        if (!authUser?.id) {
+          result.failed += 1;
+          result.errors.push({
+            id: String(record.id),
+            email,
+            reason: error instanceof Error ? error.message : "Auth oluşturulamadı",
+          });
+          continue;
+        }
+        authByEmail.set(email, authUser);
+      }
+    }
+
+    if (!authUser?.id) {
+      result.failed += 1;
+      result.errors.push({ id: String(record.id), email, reason: "Auth kullanıcısı bulunamadı" });
+      continue;
+    }
+
+    const nextData = buildCanonicalAppUserData(record, {
+      id: String(authUser.id),
+      email,
+      name: String(authUser.name ?? data.name ?? email),
+    });
+    nextData.authUserId = String(authUser.id);
+
+    try {
+      await deps.updateAppUserRecord(record.id, nextData);
+      if (createdNew) {
+        result.authCreatedAndLinked += 1;
+        result.createdCredentials.push({
+          appUserId: String(record.id),
+          email,
+          name: String(nextData.name ?? email),
+          password: deps.passwordForRecord(data),
+        });
+      } else {
+        result.authFoundAndLinked += 1;
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Kayıt güncellenemedi";
+      result.failed += 1;
+      result.errors.push({ id: String(record.id), email, reason });
+      if (reason.includes("403") || reason.toLowerCase().includes("forbidden")) {
+        result.ok = false;
+      }
+    }
+  }
+
+  console.log("[TEDRIS_REPAIR_AUTH_LINKS]", {
+    source: result.source,
+    totalAppUsers: result.totalAppUsers,
+    alreadyLinked: result.alreadyLinked,
+    authFoundAndLinked: result.authFoundAndLinked,
+    authCreatedAndLinked: result.authCreatedAndLinked,
+    failed: result.failed,
+    errorCount: result.errors.length,
+  });
+  return result;
 }
 
 export async function findAuthUserByEmail(

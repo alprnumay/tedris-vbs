@@ -106,7 +106,7 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown, opts
       : typeof err.error === "string"
         ? err.error
         : "Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.";
-    throw new Error(message);
+    throw new Error(`${res.status} ${message}`);
   }
 
   return data as T;
@@ -180,6 +180,18 @@ export const backendApi = {
 
   resetAuthPassword: (id: string, body: { password?: string; generate?: boolean }) =>
     request<{ ok?: boolean; password?: string }>("POST", `/admin/users/${encodeURIComponent(id)}/reset-password`, body),
+
+  repairAppUserAuthLinks: (body?: { userIds?: string[] }) =>
+    request<{
+      ok?: boolean;
+      totalAppUsers?: number;
+      alreadyLinked?: number;
+      authFoundAndLinked?: number;
+      authCreatedAndLinked?: number;
+      failed?: number;
+      errors?: { id: string; email: string; reason: string }[];
+      createdCredentials?: { appUserId: string; email: string; name: string; password: string }[];
+    }>("POST", "/admin/repair-app-user-auth-links", body ?? {}),
 
   listAuthUsers: async () => {
     const payload = await request<unknown>("GET", "/admin/users");

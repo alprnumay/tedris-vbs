@@ -854,6 +854,40 @@ export default function AdminSayfasi() {
                 type="button"
                 onClick={async () => {
                   try {
+                    const r = await api.repairAppUserAuthLinks();
+                    const credLines =
+                      r.createdCredentials.length > 0
+                        ? `\n\nYeni oluşturulan (${r.createdCredentials.length}) — şifreler yalnızca bu raporda:\n${r.createdCredentials
+                            .slice(0, 8)
+                            .map((c) => `${c.name}: ${c.email}`)
+                            .join("\n")}${r.createdCredentials.length > 8 ? "\n…" : ""}`
+                        : "";
+                    alert(
+                      [
+                        `Kaynak: ${r.source === "backend" ? "sunucu" : "istemci"}`,
+                        `Taranan app_user: ${r.totalAppUsers}`,
+                        `Zaten bağlı: ${r.alreadyLinked}`,
+                        `Mevcut auth ile eşleşen: ${r.authFoundAndLinked}`,
+                        `Yeni auth oluşturulan: ${r.authCreatedAndLinked}`,
+                        `Başarısız: ${r.failed}`,
+                        r.errors.length ? `Hatalar: ${r.errors.slice(0, 3).map((e) => e.email || e.id).join(", ")}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n") + credLines,
+                    );
+                    veriYukle();
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : "Auth eşleştirme başarısız");
+                  }
+                }}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#047857", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+              >
+                Auth Hesaplarını Oluştur / Eşleştir
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
                     const r = await api.adminRepairUsers();
                     if (!r) {
                       alert("Onarım için admin oturumu gerekli.");
@@ -900,7 +934,7 @@ export default function AdminSayfasi() {
                 Kullanıcıları kurumlara eşleştir
               </button>
               <p style={{ fontSize: 11, color: "#64748b", width: "100%", margin: 0 }}>
-                Kurum girişi çalışmıyorsa önce kırmızı butonu çalıştırın (e-posta, authUserId, kayıt sahipliği). Sonra mavi butonla kurum kodlarını bağlayın.
+                app_user_no_auth için önce yeşil buton (auth hesabı + authUserId). Kurum kodu eksikse mavi buton. Tam onarım (sahiplik vb.) için kırmızı buton.
               </p>
             </div>
             <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
@@ -924,7 +958,26 @@ export default function AdminSayfasi() {
                       <td>{i.description}</td>
                       <td>{i.suggestion}</td>
                       <td style={{ padding: 8 }}>
-                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => setEslemeModal({ userIds: [String(i.targetId)] })} style={{ fontSize: 10, marginRight: 4 }}>Eşleştir</button>}
+                        {i.targetKind === "user" && i.targetId && (i.type === "app_user_no_auth" || i.type === "app_user_auth_unlinked") && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const r = await api.repairAppUserAuthLinks({ userIds: [String(i.targetId)] });
+                                alert(
+                                  `Auth onarımı: eşleşen ${r.authFoundAndLinked}, oluşturulan ${r.authCreatedAndLinked}, hata ${r.failed}`,
+                                );
+                                veriYukle();
+                              } catch (e) {
+                                alert(e instanceof Error ? e.message : "Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
+                              }
+                            }}
+                            style={{ fontSize: 10, marginRight: 4, color: "#047857", fontWeight: 700 }}
+                          >
+                            Auth bağla
+                          </button>
+                        )}
+                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => setEslemeModal({ userIds: [String(i.targetId)] })} style={{ fontSize: 10, marginRight: 4 }}>Kurum eşleştir</button>}
                         {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => { if (confirm("Bu kayıt pasifleştirilecek. Devam etmek istiyor musunuz?")) void api.adminVeriSagligiAksiyon({ action: "deactivate", userIds: [String(i.targetId)], issueIds: [i.id] }).then(veriYukle); }} style={{ fontSize: 10, color: "#dc2626" }}>Sil / Pasifleştir</button>}
                       </td>
                     </tr>

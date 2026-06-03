@@ -1,14 +1,16 @@
 import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
 import { kurumKoduOner } from "./kurumSlug";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
-import { epostaAlternatif, epostaUret, kurumKoduUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
+import { epostaAlternatif, epostaUret, kurumKoduUret, sifreUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
 import {
   findAppUserRecordsForLoginReadOnly,
   findAuthUserByEmail as findAuthUserByEmailFromAuth,
   getAppUserEmail as getAppUserEmailFromSync,
   loadAllAppUserCatalog,
   reconcileAppUsersAndAuthUsers,
+  repairAppUserAuthLinks as repairAppUserAuthLinksCore,
   type ReconcileAppUsersResult,
+  type RepairAppUserAuthLinksResult,
 } from "./appUserSync";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
@@ -138,6 +140,55 @@ async function adminRepairUsers(): Promise<ReconcileAppUsersResult | null> {
   });
 }
 
+function appUserPasswordForAuth(data: AppUserRecordData): string {
+  const district = String(data.district ?? data.province ?? "").trim();
+  if (district) return sifreUret(district).sifre;
+  return VARSAYILAN_SIFRE;
+}
+
+async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<RepairAppUserAuthLinksResult> {
+  if (!getBackendToken()) {
+    throw new Error("Bu işlem için admin oturumu gerekiyor.");
+  }
+  if (!(await resolveViewerUsesAdminRecords())) {
+    throw new Error("Bu işlem için admin yetkisi gerekiyor.");
+  }
+
+  try {
+    const remote = await backendApi.repairAppUserAuthLinks(opts?.userIds?.length ? { userIds: opts.userIds } : undefined);
+    if (remote && typeof remote.totalAppUsers === "number") {
+      return {
+        ok: remote.ok ?? true,
+        source: "backend",
+        totalAppUsers: remote.totalAppUsers ?? 0,
+        alreadyLinked: remote.alreadyLinked ?? 0,
+        authFoundAndLinked: remote.authFoundAndLinked ?? 0,
+        authCreatedAndLinked: remote.authCreatedAndLinked ?? 0,
+        failed: remote.failed ?? 0,
+        errors: remote.errors ?? [],
+        createdCredentials: remote.createdCredentials ?? [],
+      };
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const isMissingEndpoint =
+      msg.includes("404") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("cannot post");
+    if (!isMissingEndpoint) {
+      if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
+        throw new Error("Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
+      }
+      throw error instanceof Error ? error : new Error(msg);
+    }
+  }
+
+  return repairAppUserAuthLinksCore({
+    updateAppUserRecord,
+    registerAuthUser: (data) => registerAuthUserSafely(data),
+    passwordForRecord: appUserPasswordForAuth,
+    recordIds: opts?.userIds,
+  });
+}
+
 function logLoginFlowStop(payload: {
   email: string;
   reason: string;
@@ -158,19 +209,25 @@ function logLoginLoadingFinalized(email: string, success: boolean, errorCode?: s
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
   try {
     return await backendApi.getRecord<AppUserRecordData>(id);
-  } catch (error) {
+  } catch (ownedError) {
     if (await resolveViewerUsesAdminRecords()) {
-      return backendApi.getAdminRecord<AppUserRecordData>(id);
+      try {
+        return await backendApi.getAdminRecord<AppUserRecordData>(id);
+      } catch {
+        throw ownedError;
+      }
     }
-    throw error;
+    throw ownedError;
   }
 }
 
 async function updateAppUserRecord(id: string | number, data: AppUserRecordData): Promise<BackendRecord<AppUserRecordData>> {
-  if (await resolveViewerUsesAdminRecords()) {
+  try {
+    return await backendApi.updateRecord<AppUserRecordData>(id, "app_user", data);
+  } catch (ownedError) {
+    if (!(await resolveViewerUsesAdminRecords())) throw ownedError;
     return backendApi.updateAdminRecord<AppUserRecordData>(id, "app_user", data);
   }
-  return backendApi.updateRecord<AppUserRecordData>(id, "app_user", data);
 }
 
 async function loadInstitutionRawRecords(): Promise<BackendRecord<InstitutionRecordData>[]> {
@@ -1474,7 +1531,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
         targetId: user.id,
         record: `${user.name} (${user.email})`,
         description: "app_user var fakat auth hesabı yok.",
-        suggestion: "Auth/App User onarımı ile auth hesabı oluşturun veya kullanıcıyı yeniden oluşturun.",
+        suggestion: "Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırın.",
       });
     }
 
@@ -1655,6 +1712,20 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
 }
 
 async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonRequest) {
+  if (data.action === "repair_auth") {
+    const userIds = data.userIds ?? [];
+    try {
+      const report = await repairAppUserAuthLinks(userIds.length ? { userIds } : undefined);
+      return { ok: report.ok, affected: report.authFoundAndLinked + report.authCreatedAndLinked, report };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Auth eşleştirme başarısız";
+      if (msg.includes("403") || msg.toLowerCase().includes("forbidden") || msg.includes("admin yetkisi")) {
+        throw new Error("Bu işlem için admin yetkisi gerekiyor veya backend repair endpointi eksik.");
+      }
+      throw error;
+    }
+  }
+
   const userIds = data.userIds ?? [];
   let affected = 0;
   for (const userId of userIds) {
@@ -1814,7 +1885,39 @@ export const api = {
           registerStatus: "skipped_login",
         });
         throw new Error(
-          "Bu giriş hesabı auth sisteminde var ama uygulama kullanıcı kaydı bulunamadı. Yönetici veri onarımı yapmalı.",
+          "Bu giriş hesabı auth sisteminde var ama uygulama kullanıcı kaydı bulunamadı. Yönetici Veri Sağlığı > Eşleştir işlemini çalıştırmalı.",
+        );
+      }
+
+      if (!appUser.authUserId) {
+        logLoginFlowStop({
+          email: loginEmail,
+          reason: "app_user_missing_auth_link",
+          authUserFound: true,
+          appUserFound: true,
+          attemptedAdminRepair: false,
+          adminRepairStatus: "skipped_login",
+          attemptedRegister: false,
+          registerStatus: "skipped_login",
+        });
+        throw new Error(
+          "Bu kullanıcı için giriş hesabı henüz oluşturulmamış. Yönetici Veri Sağlığı > Eşleştir işlemini çalıştırmalı.",
+        );
+      }
+
+      if (String(appUser.authUserId) !== String(user.id)) {
+        logLoginFlowStop({
+          email: loginEmail,
+          reason: "app_user_auth_id_mismatch",
+          authUserFound: true,
+          appUserFound: true,
+          attemptedAdminRepair: false,
+          adminRepairStatus: "skipped_login",
+          attemptedRegister: false,
+          registerStatus: "skipped_login",
+        });
+        throw new Error(
+          "Uygulama kullanıcı kaydı ile giriş hesabı eşleşmiyor. Yönetici Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırmalı.",
         );
       }
 
@@ -1862,7 +1965,33 @@ export const api = {
       return { user: mergeKullaniciWithAppUser(user, appUser) };
     } catch (error) {
       clearAuthState();
-      const errorCode = error instanceof Error ? error.message : "login_failed";
+      const raw = error instanceof Error ? error.message : "login_failed";
+      const lower = raw.toLocaleLowerCase("tr-TR");
+      const looksLikeBadCredentials =
+        lower.includes("401") ||
+        lower.includes("403") ||
+        lower.includes("invalid") ||
+        lower.includes("hatalı") ||
+        lower.includes("yanlış") ||
+        lower.includes("credentials") ||
+        lower.includes("unauthorized");
+      const errorCode = raw;
+      if (!authUserFound && looksLikeBadCredentials) {
+        logLoginFlowStop({
+          email: loginEmail,
+          reason: "auth_login_failed_possible_no_auth",
+          authUserFound: false,
+          appUserFound: false,
+          attemptedAdminRepair: false,
+          adminRepairStatus: "skipped_login",
+          attemptedRegister: false,
+          registerStatus: "skipped_login",
+        });
+        logLoginLoadingFinalized(loginEmail, false, "auth_login_failed_possible_no_auth");
+        throw new Error(
+          "Giriş başarısız. Bu kullanıcı için giriş hesabı henüz oluşturulmamış olabilir; yönetici Veri Sağlığı > Auth Hesaplarını Oluştur / Eşleştir işlemini çalıştırmalı.",
+        );
+      }
       logLoginLoadingFinalized(loginEmail, false, errorCode);
       throw error;
     }
@@ -2567,6 +2696,7 @@ export const api = {
   },
 
   adminRepairUsers,
+  repairAppUserAuthLinks,
   reconcileAppUsersAndAuthUsers: () => adminRepairUsers(),
 
   adminVeriSagligi: () => veriSagligiUret(),
@@ -2844,7 +2974,7 @@ export interface AdminImportCommitResponse {
 }
 
 export interface AdminVeriSagligiAksiyonRequest {
-  action: "match" | "deactivate" | "ignore";
+  action: "match" | "deactivate" | "ignore" | "repair_auth";
   userIds?: string[];
   issueIds?: string[];
   district?: string;
