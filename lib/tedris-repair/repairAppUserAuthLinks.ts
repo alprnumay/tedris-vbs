@@ -16,23 +16,32 @@ function authAlreadyLinked(data: AppUserRecordData, email: string, authUsers: Ba
   return Boolean(linked && linkedEmail === normalizeEmail(email));
 }
 
-export async function runRepairAppUserAuthLinks(
-  client: VpsApiClient,
-  opts: RepairOptions = {},
-): Promise<RepairAppUserAuthLinksReport> {
-  const report: RepairAppUserAuthLinksReport = {
+function emptyReport(dryRun: boolean): RepairAppUserAuthLinksReport {
+  return {
     ok: true,
+    dryRun,
     totalAppUsers: 0,
     uniqueEmails: 0,
     alreadyLinked: 0,
     emailNormalized: 0,
+    emailNormalizedWouldUpdate: 0,
     authFoundAndLinked: 0,
+    authFoundWouldLink: 0,
     authCreatedAndLinked: 0,
+    authWouldCreate: 0,
     duplicatesDetected: 0,
     skippedDeleted: 0,
     failed: 0,
     errors: [],
   };
+}
+
+export async function runRepairAppUserAuthLinks(
+  client: VpsApiClient,
+  opts: RepairOptions = {},
+): Promise<RepairAppUserAuthLinksReport> {
+  const dryRun = opts.dryRun === true;
+  const report = emptyReport(dryRun);
 
   const idFilter = opts.userIds?.length ? new Set(opts.userIds.map(String)) : null;
   const [records, authUsers] = await Promise.all([client.loadAllAppUsers(), client.listAuthUsers().catch(() => [])]);
@@ -70,9 +79,28 @@ export async function runRepairAppUserAuthLinks(
       continue;
     }
 
-    let nextData: AppUserRecordData = { ...data };
     const computedEmail = getAppUserEmail(primary);
-    if (!normalizeEmail(data.email) && computedEmail) {
+    const wouldNormalizeEmail = !normalizeEmail(data.email) && Boolean(computedEmail);
+
+    if (authAlreadyLinked(data, email, authUsers)) {
+      report.alreadyLinked += 1;
+      continue;
+    }
+
+    const existingAuth = authByEmail.get(email) ?? null;
+
+    if (dryRun) {
+      if (wouldNormalizeEmail) report.emailNormalizedWouldUpdate += 1;
+      if (existingAuth?.id) {
+        report.authFoundWouldLink += 1;
+      } else {
+        report.authWouldCreate += 1;
+      }
+      continue;
+    }
+
+    let nextData: AppUserRecordData = { ...data };
+    if (wouldNormalizeEmail) {
       nextData.email = computedEmail;
       nextData.loginEmail = nextData.loginEmail ?? computedEmail;
       nextData.generatedEmail = nextData.generatedEmail ?? computedEmail;
@@ -87,12 +115,7 @@ export async function runRepairAppUserAuthLinks(
       nextData.status = "active";
     }
 
-    if (authAlreadyLinked(nextData, email, authUsers)) {
-      report.alreadyLinked += 1;
-      continue;
-    }
-
-    let authUser = authByEmail.get(email) ?? null;
+    let authUser = existingAuth;
     let createdNew = false;
 
     if (!authUser?.id) {
@@ -104,7 +127,8 @@ export async function runRepairAppUserAuthLinks(
         authByEmail.set(email, authUser);
         createdNew = true;
       } else {
-        authUser = client.findAuthUserByEmail(authUsers, email) ?? client.findAuthUserByEmail([...authByEmail.values()], email);
+        authUser =
+          client.findAuthUserByEmail(authUsers, email) ?? client.findAuthUserByEmail([...authByEmail.values()], email);
         if (!authUser?.id) {
           const loginUser = await client.loginAuth(email, password);
           if (loginUser?.id) authUser = loginUser;
@@ -165,6 +189,15 @@ export async function assertAdminCaller(client: VpsApiClient, adminEmail?: strin
   const configuredAdmin = (adminEmail || process.env.ADMIN_EMAIL || process.env.VITE_PRIMARY_ADMIN_EMAIL || "")
     .trim()
     .toLocaleLowerCase("tr-TR");
-  const isAdmin = Boolean(user.isAdmin) || role === "admin" || role === "super_admin" || (configuredAdmin && email === configuredAdmin);
+  const isAdmin =
+    Boolean(user.isAdmin) || role === "admin" || role === "super_admin" || (configuredAdmin && email === configuredAdmin);
   if (!isAdmin) throw new Error("403 Bu işlem için admin yetkisi gerekir.");
+}
+
+export function parseDryRunFlag(query: Record<string, string | string[] | undefined>, body?: unknown): boolean {
+  const q = query.dryRun ?? query.dryrun;
+  const qVal = Array.isArray(q) ? q[0] : q;
+  if (qVal === "true" || qVal === "1") return true;
+  const b = body as { dryRun?: boolean; dryrun?: boolean } | undefined;
+  return b?.dryRun === true || b?.dryrun === true;
 }

@@ -1,46 +1,111 @@
-# Tedris VBS — Acil stabilizasyon ve backend onarım
+# Tedris VBS — Stabilizasyon ve canlı onarım prosedürü
 
-## Durum
+## Özet
 
-Frontend üzerinden yapılan `auth/register` + `admin/records` döngüsü veri bütünlüğünü bozdu (852 `app_user`, 403/409 fırtınası). Onarım artık **yalnızca backend** endpoint üzerinden yapılmalı.
+- Frontend onarım döngüsü **kapalı** (`VITE_ENABLE_REPAIR` unset veya `false`).
+- Onarım yalnızca **`POST /api/admin/repair-app-user-auth-links`** (Vercel Function veya api-server).
+- **İlk test her zaman dry-run:** `?dryRun=true` — kayıt/auth yazılmaz.
+- **Gerçek onarım öncesi** VPS/PostgreSQL tam yedeği zorunlu.
 
-## Frontend (şu an)
+---
 
-- Veri Sağlığı onarım butonları **kapalı** (`VITE_ENABLE_REPAIR` varsayılan: kapalı).
-- Login: yalnızca `/auth/login` + `app_user` okuma + aktiflik; repair/register/admin PUT yok.
-- Onarım açıldığında: `VITE_ENABLE_REPAIR=true` ve tek çağrı `POST .../admin/repair-app-user-auth-links`.
+## Vercel projesi ve ortam değişkenleri
 
-## Backend onarım endpoint
+**Proje:** Monorepo kökündeki Vercel projesi (frontend deploy — `vercel.json` → `artifacts/veli-bilgilendirme`).
 
-| Konum | Dosya |
-|--------|--------|
-| Ortak mantık | `lib/tedris-repair/repairAppUserAuthLinks.ts` |
-| Vercel (önerilen) | `api/admin/repair-app-user-auth-links.ts` |
-| api-server (Render) | `artifacts/api-server/src/routes/vpsRepair.ts` |
+Vercel Dashboard → **Projeniz (tedris-vbs / veli-bilgilendirme)** → **Settings** → **Environment Variables** → **Production** (ve Preview isteğe bağlı):
 
-### Ortam değişkenleri (sunucu)
+| Değişken | Değer | Not |
+|----------|--------|-----|
+| `VPS_API_BASE_URL` | `https://api.antalyanehari.xyz/api` | Sunucu onarımı VPS’e bağlanır |
+| `VPS_PROJECT_API_KEY` | `<proje_anahtarı>` | VPS `X-Project-Key` |
+| `ADMIN_EMAIL` | `alprn0604@gmail.com` | Admin yetki kontrolü |
 
-| Değişken | Açıklama |
-|----------|----------|
-| `VPS_API_BASE_URL` | `https://api.antalyanehari.xyz/api` |
-| `VPS_PROJECT_API_KEY` | Proje anahtarı |
-| `ADMIN_EMAIL` | Admin e-posta (yetki kontrolü) |
+**Frontend (şimdilik):**
 
-### Vercel deploy
+| Değişken | Değer |
+|----------|--------|
+| `VITE_API_BASE_URL` | `https://api.antalyanehari.xyz/api` |
+| `VITE_PROJECT_API_KEY` | `<proje_anahtarı>` |
+| `VITE_ENABLE_REPAIR` | **tanımlamayın** veya `false` |
 
-1. Vercel env: `VPS_API_BASE_URL`, `VPS_PROJECT_API_KEY`, `ADMIN_EMAIL`
-2. Frontend env: `VITE_ENABLE_REPAIR=true`, `VITE_REPAIR_API_BASE_URL` = Vercel site kökü (örn. `https://xxx.vercel.app/api` değil — fonksiyon `/api/admin/...` altında; `repairApiUrl()` origin + `/api/...` kullanır)
+Onarım açılacağı zaman: `VITE_ENABLE_REPAIR=true` (dry-run testleri bittikten sonra).
 
-### VPS’e gömme
+---
 
-`lib/tedris-repair/*` modülünü VPS API koduna kopyalayıp `POST /admin/repair-app-user-auth-links` olarak mount edin (frontend `VITE_API_BASE_URL` aynı kalır).
+## Endpoint URL
 
-## Onarımı tekrar açma
+Vercel production domain’iniz ne ise (örnek):
 
-```env
-VITE_ENABLE_REPAIR=true
-# İsteğe bağlı: onarım Vercel function’da ise boş bırakın (same-origin /api kullanılır)
-# VITE_REPAIR_API_BASE_URL=https://your-app.vercel.app
+```
+https://<VERCEL_PRODUCTION_DOMAIN>/api/admin/repair-app-user-auth-links
 ```
 
-VPS’te endpoint yoksa önce Vercel function veya api-server route deploy edilmelidir.
+Dry-run:
+
+```
+POST https://<VERCEL_PRODUCTION_DOMAIN>/api/admin/repair-app-user-auth-links?dryRun=true
+```
+
+**Not:** `api.antalyanehari.xyz` üzerinde bu route yoktur (VPS kodu repoda değil). Onarım **Vercel origin** üzerinden çalışır.
+
+---
+
+## Dry-run raporu
+
+```json
+{
+  "ok": true,
+  "dryRun": true,
+  "totalAppUsers": 0,
+  "uniqueEmails": 0,
+  "alreadyLinked": 0,
+  "emailNormalized": 0,
+  "emailNormalizedWouldUpdate": 0,
+  "authFoundAndLinked": 0,
+  "authFoundWouldLink": 0,
+  "authCreatedAndLinked": 0,
+  "authWouldCreate": 0,
+  "duplicatesDetected": 0,
+  "skippedDeleted": 0,
+  "failed": 0,
+  "errors": []
+}
+```
+
+Gerçek onarım: `dryRun=false` veya query/body’de `dryRun` yok (varsayılan frontend çağrısı `dryRun=true` kalır güvenlik için).
+
+---
+
+## Canlı test sırası (A → H)
+
+| Adım | İşlem |
+|------|--------|
+| **A** | Git push → Vercel deploy bitene kadar bekle |
+| **B** | Vercel env: `VPS_API_BASE_URL`, `VPS_PROJECT_API_KEY`, `ADMIN_EMAIL` |
+| **C** | Admin olarak giriş → JWT al → dry-run POST (curl veya Postman) |
+| **D** | Raporu incele (`authWouldCreate`, `authFoundWouldLink`, `duplicatesDetected`, `failed`) |
+| **E** | Rapor mantıklıysa **VPS/PostgreSQL yedeği** |
+| **F** | `VITE_ENABLE_REPAIR=true` + redeploy (henüz yapmayın) |
+| **G** | Veri Sağlığı → tek repair (`dryRun=false` ile bilinçli çağrı) |
+| **H** | `burdurbaglarbasi@gmail.com` ile login + raporlar |
+
+---
+
+## curl örneği (dry-run)
+
+```bash
+curl -X POST "https://<DOMAIN>/api/admin/repair-app-user-auth-links?dryRun=true" \
+  -H "Authorization: Bearer <ADMIN_JWT>" \
+  -H "X-Project-Key: <PROJECT_KEY>" \
+  -H "Content-Type: application/json" \
+  -d "{}"
+```
+
+---
+
+## Login’de olmaması gerekenler
+
+- `POST /api/auth/register` (login akışında)
+- `PUT /api/admin/records/:id` (login akışında)
+- Toplu frontend repair / `adminReconcile`

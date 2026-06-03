@@ -44,12 +44,16 @@ export interface BackendUser {
 
 export interface RepairAppUserAuthLinksReport {
   ok: boolean;
+  dryRun: boolean;
   totalAppUsers: number;
   uniqueEmails: number;
   alreadyLinked: number;
   emailNormalized: number;
+  emailNormalizedWouldUpdate: number;
   authFoundAndLinked: number;
+  authFoundWouldLink: number;
   authCreatedAndLinked: number;
+  authWouldCreate: number;
   duplicatesDetected: number;
   skippedDeleted: number;
   failed: number;
@@ -59,4 +63,5 @@ export interface RepairAppUserAuthLinksReport {
 export interface RepairOptions {
   userIds?: string[];
   maxRecords?: number;
+  dryRun?: boolean;
 }

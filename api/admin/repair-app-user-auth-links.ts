@@ -1,4 +1,9 @@
-import { assertAdminCaller, createVpsClientFromEnv, runRepairAppUserAuthLinks } from "../../lib/tedris-repair/repairAppUserAuthLinks";
+import {
+  assertAdminCaller,
+  createVpsClientFromEnv,
+  parseDryRunFlag,
+  runRepairAppUserAuthLinks,
+} from "../../lib/tedris-repair/repairAppUserAuthLinks";
 
 export const config = {
   maxDuration: 300,
@@ -8,6 +13,7 @@ type Req = {
   method?: string;
   headers: Record<string, string | string[] | undefined>;
   body?: unknown;
+  query?: Record<string, string | string[] | undefined>;
 };
 
 type Res = {
@@ -37,8 +43,9 @@ export default async function handler(req: Req, res: Res) {
     const client = createVpsClientFromEnv(token);
     await assertAdminCaller(client);
 
-    const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) as { userIds?: string[] } | undefined;
-    const report = await runRepairAppUserAuthLinks(client, { userIds: body?.userIds });
+    const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) as { userIds?: string[]; dryRun?: boolean } | undefined;
+    const dryRun = parseDryRunFlag(req.query ?? {}, body);
+    const report = await runRepairAppUserAuthLinks(client, { userIds: body?.userIds, dryRun });
     res.status(200).json(report);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

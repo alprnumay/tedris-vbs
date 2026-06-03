@@ -11,11 +11,23 @@ export function assertRepairEnabled(): void {
   }
 }
 
-export function repairApiUrl(): string {
+export function repairApiUrl(opts?: { dryRun?: boolean }): string {
   const repairBase = (import.meta.env.VITE_REPAIR_API_BASE_URL || "").replace(/\/+$/, "");
-  if (repairBase) return `${repairBase}/admin/repair-app-user-auth-links`;
-  const origin = typeof window !== "undefined" ? window.location.origin.replace(/\/+$/, "") : "";
-  if (origin) return `${origin}/api/admin/repair-app-user-auth-links`;
-  const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
-  return `${apiBase}/admin/repair-app-user-auth-links`;
+  let base: string;
+  if (repairBase) base = `${repairBase}/admin/repair-app-user-auth-links`;
+  else if (typeof window !== "undefined" && window.location.origin) {
+    base = `${window.location.origin.replace(/\/+$/, "")}/api/admin/repair-app-user-auth-links`;
+  } else {
+    const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+    base = `${apiBase}/admin/repair-app-user-auth-links`;
+  }
+  if (opts?.dryRun) {
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}dryRun=true`;
+  }
+  return base;
 }
+
+/** Gerçek onarım öncesi VPS/PostgreSQL yedeği zorunludur. */
+export const REPAIR_BACKUP_REQUIRED_MESSAGE =
+  "Gerçek onarım öncesi VPS/PostgreSQL tam yedeği alınmalıdır. İlk çalıştırma dryRun=true ile yapılmalıdır.";

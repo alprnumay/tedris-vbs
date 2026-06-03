@@ -167,8 +167,12 @@ function appUserPasswordForAuth(data: AppUserRecordData): string {
   return VARSAYILAN_SIFRE;
 }
 
-async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<RepairAppUserAuthLinksResult & Record<string, unknown>> {
+async function repairAppUserAuthLinks(opts?: {
+  userIds?: string[];
+  dryRun?: boolean;
+}): Promise<RepairAppUserAuthLinksResult & Record<string, unknown>> {
   assertRepairEnabled();
+  const dryRun = opts?.dryRun !== false;
   const token = getBackendToken();
   if (!token) throw new Error("Bu işlem için admin oturumu gerekiyor.");
   if (!(await resolveViewerUsesAdminRecords())) {
@@ -176,14 +180,17 @@ async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<Re
   }
 
   const projectKey = import.meta.env.VITE_PROJECT_API_KEY || "";
-  const res = await fetch(repairApiUrl(), {
+  const res = await fetch(repairApiUrl({ dryRun }), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
       ...(projectKey ? { "X-Project-Key": projectKey } : {}),
     },
-    body: JSON.stringify(opts?.userIds?.length ? { userIds: opts.userIds } : {}),
+    body: JSON.stringify({
+      ...(opts?.userIds?.length ? { userIds: opts.userIds } : {}),
+      dryRun,
+    }),
   });
   const text = await res.text();
   let data: Record<string, unknown> = {};
@@ -208,15 +215,19 @@ async function repairAppUserAuthLinks(opts?: { userIds?: string[] }): Promise<Re
   return {
     ok: data.ok !== false,
     source: "backend",
+    dryRun: data.dryRun === true || dryRun,
     totalAppUsers: Number(data.totalAppUsers ?? 0),
     alreadyLinked: Number(data.alreadyLinked ?? 0),
     authFoundAndLinked: Number(data.authFoundAndLinked ?? 0),
+    authFoundWouldLink: Number(data.authFoundWouldLink ?? 0),
     authCreatedAndLinked: Number(data.authCreatedAndLinked ?? 0),
+    authWouldCreate: Number(data.authWouldCreate ?? 0),
     failed: Number(data.failed ?? 0),
     errors,
     createdCredentials: [],
     uniqueEmails: Number(data.uniqueEmails ?? 0),
     emailNormalized: Number(data.emailNormalized ?? 0),
+    emailNormalizedWouldUpdate: Number(data.emailNormalizedWouldUpdate ?? 0),
     duplicatesDetected: Number(data.duplicatesDetected ?? 0),
     skippedDeleted: Number(data.skippedDeleted ?? 0),
   };

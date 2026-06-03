@@ -1,5 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { assertAdminCaller, createVpsClientFromEnv, runRepairAppUserAuthLinks } from "../../../../lib/tedris-repair/repairAppUserAuthLinks";
+import {
+  assertAdminCaller,
+  createVpsClientFromEnv,
+  parseDryRunFlag,
+  runRepairAppUserAuthLinks,
+} from "../../../../lib/tedris-repair/repairAppUserAuthLinks";
 
 const router: IRouter = Router();
 
@@ -20,9 +25,10 @@ router.post("/admin/repair-app-user-auth-links", async (req: Request, res: Respo
     const client = createVpsClientFromEnv(token);
     await assertAdminCaller(client);
     const userIds = Array.isArray((req.body as { userIds?: unknown })?.userIds)
-      ? ((req.body as { userIds: string[] }).userIds)
+      ? (req.body as { userIds: string[] }).userIds
       : undefined;
-    const report = await runRepairAppUserAuthLinks(client, { userIds });
+    const dryRun = parseDryRunFlag(req.query as Record<string, string | string[] | undefined>, req.body);
+    const report = await runRepairAppUserAuthLinks(client, { userIds, dryRun });
     res.json(report);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
