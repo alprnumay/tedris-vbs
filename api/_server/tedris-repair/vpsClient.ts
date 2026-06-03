@@ -53,7 +53,7 @@ export class VpsApiClient {
     this.bearerToken = token;
   }
 
-  private headers(json = true): HeadersInit {
+  private headers(json = true): Record<string, string> {
     const h: Record<string, string> = {};
     if (json) h["Content-Type"] = "application/json";
     if (this.projectKey) h["X-Project-Key"] = this.projectKey;

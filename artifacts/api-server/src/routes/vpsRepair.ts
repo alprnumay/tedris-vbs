@@ -4,7 +4,7 @@ import {
   createVpsClientFromEnv,
   parseDryRunFlag,
   runRepairAppUserAuthLinks,
-} from "../../../../lib/tedris-repair/repairAppUserAuthLinks";
+} from "../../../../api/_server/tedris-repair/repairAppUserAuthLinks";
 
 const router: IRouter = Router();
 

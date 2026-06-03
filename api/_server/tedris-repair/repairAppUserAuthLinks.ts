@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import {
   appUserDataFromRecord,
   getAppUserEmail,
@@ -172,8 +174,8 @@ export async function runRepairAppUserAuthLinks(
 }
 
 export function createVpsClientFromEnv(bearerToken?: string): VpsApiClient {
-  const baseUrl = process.env.VPS_API_BASE_URL || process.env.VITE_API_BASE_URL || "";
-  const projectKey = process.env.VPS_PROJECT_API_KEY || process.env.VITE_PROJECT_API_KEY || "";
+  const baseUrl = process.env.VPS_API_BASE_URL ?? "";
+  const projectKey = process.env.VPS_PROJECT_API_KEY ?? "";
   if (!baseUrl || !projectKey) {
     throw new Error("VPS_API_BASE_URL ve VPS_PROJECT_API_KEY tanımlı olmalı.");
   }
@@ -186,9 +188,7 @@ export async function assertAdminCaller(client: VpsApiClient, adminEmail?: strin
   if (!user?.id) throw new Error("401 Oturum doğrulanamadı.");
   const email = typeof user.email === "string" ? user.email.trim().toLocaleLowerCase("tr-TR") : "";
   const role = String(user.role ?? "").trim().toLowerCase();
-  const configuredAdmin = (adminEmail || process.env.ADMIN_EMAIL || process.env.VITE_PRIMARY_ADMIN_EMAIL || "")
-    .trim()
-    .toLocaleLowerCase("tr-TR");
+  const configuredAdmin = (adminEmail || process.env.ADMIN_EMAIL || "").trim().toLocaleLowerCase("tr-TR");
   const isAdmin =
     Boolean(user.isAdmin) || role === "admin" || role === "super_admin" || (configuredAdmin && email === configuredAdmin);
   if (!isAdmin) throw new Error("403 Bu işlem için admin yetkisi gerekir.");

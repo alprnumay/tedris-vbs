@@ -179,13 +179,11 @@ async function repairAppUserAuthLinks(opts?: {
     throw new Error("Bu işlem için admin yetkisi gerekiyor.");
   }
 
-  const projectKey = import.meta.env.VITE_PROJECT_API_KEY || "";
   const res = await fetch(repairApiUrl({ dryRun }), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
-      ...(projectKey ? { "X-Project-Key": projectKey } : {}),
     },
     body: JSON.stringify({
       ...(opts?.userIds?.length ? { userIds: opts.userIds } : {}),

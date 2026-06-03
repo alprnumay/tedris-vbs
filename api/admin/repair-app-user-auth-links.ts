@@ -3,7 +3,7 @@ import {
   createVpsClientFromEnv,
   parseDryRunFlag,
   runRepairAppUserAuthLinks,
-} from "../../lib/tedris-repair/repairAppUserAuthLinks";
+} from "../_server/tedris-repair/repairAppUserAuthLinks";
 
 export const config = {
   maxDuration: 300,
