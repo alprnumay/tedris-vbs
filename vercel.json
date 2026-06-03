@@ -1,14 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install",
-  "buildCommand": "pnpm run typecheck:api && pnpm --filter @workspace/veli-bilgilendirme build",
+  "buildCommand": "pnpm --filter @workspace/veli-bilgilendirme build",
   "outputDirectory": "artifacts/veli-bilgilendirme/dist/public",
   "functions": {
-    "api/admin/repair-app-user-auth-links.ts": {
-      "maxDuration": 60,
-      "includeFiles": "api/_server/**"
-    },
-    "api/repair-health.ts": {
+    "api/admin/repair-app-user-auth-links.js": {
       "maxDuration": 10
     }
   },

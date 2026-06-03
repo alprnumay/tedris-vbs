@@ -4,9 +4,9 @@
  */
 import { readFileSync } from "fs";
 import { join } from "path";
-import { diagnoseRepairEmail } from "../api/_server/tedris-repair/diagnoseDryRun";
-import type { AppUserRecordData, BackendRecord, BackendUser } from "../api/_server/tedris-repair/types";
-import { VpsApiClient } from "../api/_server/tedris-repair/vpsClient";
+import { diagnoseRepairEmail } from "../server/tedris-repair/diagnoseDryRun";
+import type { AppUserRecordData, BackendRecord, BackendUser } from "../server/tedris-repair/types";
+import { VpsApiClient } from "../server/tedris-repair/vpsClient";
 
 function loadLocalEnv() {
   try {
