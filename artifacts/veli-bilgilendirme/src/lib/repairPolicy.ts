@@ -4,6 +4,10 @@ export const CLIENT_SIDE_REPAIR_DISABLED_MESSAGE =
 export const REPAIR_MAINTENANCE_MESSAGE =
   "Backend onarım endpointi hazır olmadan bu işlem kapalıdır.";
 
+/** Yönetim paneli salt okunur mod — veri yazma / import / silme kapalı. */
+export const ADMIN_PANEL_READ_ONLY_MESSAGE =
+  "Yönetim paneli şu an salt okunur moddadır. Veri değiştirme, onarım ve Excel içe aktarma geçici olarak kapalıdır.";
+
 /** @deprecated Use REPAIR_MAINTENANCE_MESSAGE */
 export const REPAIR_UI_DISABLED_MESSAGE = REPAIR_MAINTENANCE_MESSAGE;
 

@@ -46,36 +46,11 @@ function clearStoredSessionToken() {
 }
 
 let viewerAdminCache: boolean | null = null;
-let adminRecordsApiAvailable: boolean | null = null;
 
 function clearAuthState() {
   clearStoredSessionToken();
   clearBackendToken();
   viewerAdminCache = null;
-  adminRecordsApiAvailable = null;
-}
-
-function isHttpForbiddenError(error: unknown): boolean {
-  const msg = (error instanceof Error ? error.message : String(error)).toLocaleLowerCase("tr-TR");
-  return msg.includes("403") || msg.includes("forbidden");
-}
-
-async function resolveAdminRecordsApiAvailable(): Promise<boolean> {
-  if (adminRecordsApiAvailable != null) return adminRecordsApiAvailable;
-  if (!(await resolveViewerUsesAdminRecords())) {
-    adminRecordsApiAvailable = false;
-    return false;
-  }
-  try {
-    await backendApi.fetchAllRecordsFromPath<AppUserRecordData>("/admin/records", "app_user", {
-      limit: 1,
-      maxPages: 1,
-    });
-    adminRecordsApiAvailable = true;
-  } catch (error) {
-    adminRecordsApiAvailable = !isHttpForbiddenError(error);
-  }
-  return adminRecordsApiAvailable;
 }
 
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
@@ -188,7 +163,12 @@ async function repairAppUserAuthLinks(opts?: {
   };
 }
 
-export { REPAIR_MAINTENANCE_MESSAGE, isRepairEnabled, logRepairDisabled } from "./repairPolicy";
+export {
+  ADMIN_PANEL_READ_ONLY_MESSAGE,
+  REPAIR_MAINTENANCE_MESSAGE,
+  isRepairEnabled,
+  logRepairDisabled,
+} from "./repairPolicy";
 
 function logLoginFlowStop(payload: {
   email: string;
@@ -960,6 +940,7 @@ function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecor
 }
 
 async function registerAuthUserSafely(data: { email: string; password: string; name: string }) {
+  rejectClientSideRepair("api.registerAuthUserSafely");
   const currentToken = getBackendToken();
   try {
     return await backendApi.register(data);
@@ -1670,27 +1651,7 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
 }
 
 async function adminVeriSagligiAksiyonUygula(data: AdminVeriSagligiAksiyonRequest) {
-  if (data.action === "repair_auth" || data.action === "match") {
-    rejectClientSideRepair(`api.adminVeriSagligiAksiyon.${data.action}`);
-  }
-
-  const userIds = data.userIds ?? [];
-  let affected = 0;
-  for (const userId of userIds) {
-    const current = await getAppUserRecord(userId).catch(() => null);
-    if (!current) continue;
-    const currentData = current.data ?? {};
-    if (data.action === "deactivate") {
-      await updateAppUserRecord(userId, {
-        ...currentData,
-        isActive: false,
-        deletedAt: currentData.deletedAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-      affected += 1;
-    }
-  }
-  return { ok: true, affected };
+  rejectClientSideRepair(`api.adminVeriSagligiAksiyon.${data.action}`);
 }
 
 async function deactivateInstitutionIfNoActiveUsers(institutionCode?: string | null) {
@@ -2096,6 +2057,7 @@ export const api = {
     isActive?: boolean;
     isAdmin?: boolean;
   }) => {
+    rejectClientSideRepair("api.adminKullaniciOlustur");
     const canonicalEmail = normalizeEmail(data.email);
     if (!canonicalEmail) throw new Error("Geçerli bir e-posta adresi girin.");
 
@@ -2177,6 +2139,7 @@ export const api = {
   },
 
   adminKullaniciGuncelle: async (id: string, data: Partial<AdminKullanici>) => {
+    rejectClientSideRepair("api.adminKullaniciGuncelle");
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const role = data.role ?? currentData.role ?? (data.isAdmin || currentData.isAdmin ? "admin" : "user");
@@ -2208,6 +2171,7 @@ export const api = {
   },
 
   adminSifreSifirla: async (id: string, opts?: { password?: string; generate?: boolean }) => {
+    rejectClientSideRepair("api.adminSifreSifirla");
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const appUser = appUserFromRecord(current);
@@ -2289,6 +2253,7 @@ export const api = {
   },
 
   adminKullaniciSil: async (id: string) => {
+    rejectClientSideRepair("api.adminKullaniciSil");
     const userBeforeDelete = await getAppUserRecord(id).then(appUserFromRecord).catch(() => null);
     const r = await api.adminKullaniciGuncelle(id, {
       isActive: false,
@@ -2313,6 +2278,7 @@ export const api = {
   },
 
   adminTopluKurumImport: async (data: AdminImportCommitRequest) => {
+    rejectClientSideRepair("api.adminTopluKurumImport");
     const institutions = await institutionRecords();
     const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
     const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));

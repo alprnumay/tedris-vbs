@@ -1,8 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   api,
-  REPAIR_MAINTENANCE_MESSAGE,
-  logRepairDisabled,
+  ADMIN_PANEL_READ_ONLY_MESSAGE,
   type AdminKullanici,
   type AdminDestek,
   type AdminDashboard,
@@ -10,16 +9,13 @@ import {
   type AdminYurtMetrik,
   type AdminVeriSagligi,
   type AdminAktiviteResponse,
-  type AdminImportCommitResponse,
   type AdminYurtKayit,
 } from "../lib/api";
 import { TRACKED_DISTRICTS } from "../lib/admin/trackedDistricts";
 import { hatirlatmaMesaji, yurtHatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
 import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
 import { indirAdminExcel } from "../lib/admin/adminExcel";
-import { excelKurumImportOku, type KurumImportSatiri } from "../lib/admin/adminExcelImport";
 import { AppBrand } from "./AppBrand";
-import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
 import {
   StatKart,
   DurumRozet,
@@ -64,12 +60,6 @@ const TARIH_SECENEKLERI = [
   { v: "custom", l: "Özel aralık" },
 ];
 
-const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
-
-function kullaniciSilinebilirMi(user: AdminKullanici): boolean {
-  return user.email.trim().toLocaleLowerCase("tr-TR") !== PRIMARY_ADMIN_EMAIL;
-}
-
 export default function AdminSayfasi() {
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [yukleniyor, setYukleniyor] = useState(true);
@@ -101,20 +91,6 @@ export default function AdminSayfasi() {
   const [donemBitis, setDonemBitis] = useState("");
   const [sezonBaslangic, setSezonBaslangic] = useState("");
   const [sezonBitis, setSezonBitis] = useState("");
-  const [silinecekKullanici, setSilinecekKullanici] = useState<AdminKullanici | null>(null);
-  const [silmeOnayAsamasi, setSilmeOnayAsamasi] = useState<1 | 2>(1);
-  const [seciliKullaniciIds, setSeciliKullaniciIds] = useState<string[]>([]);
-  const [topluSilYukleniyor, setTopluSilYukleniyor] = useState(false);
-  const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
-  const [importYukleniyor, setImportYukleniyor] = useState(false);
-  const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(true);
-  const [importSifre, setImportSifre] = useState("tedris2026");
-  const [importSonuc, setImportSonuc] = useState<AdminImportCommitResponse | null>(null);
-  const [seciliIssueIds, setSeciliIssueIds] = useState<string[]>([]);
-  const [eslemeModal, setEslemeModal] = useState<{ userIds: string[] } | null>(null);
-  const [eslemeMintika, setEslemeMintika] = useState("");
-  const [eslemeKurum, setEslemeKurum] = useState("");
-
   const filtreParams = useCallback(
     () => ({
       district: mintika || undefined,
@@ -192,46 +168,6 @@ export default function AdminSayfasi() {
     if (!yukleniyor) veriYukle();
   }, [aktifSekme, tarihAralik, yurtPreset, aktiviteAction]);
 
-  useEffect(() => {
-    const mevcutIds = new Set(kullanicilar.map((u) => u.id));
-    setSeciliKullaniciIds((prev) => prev.filter((id) => mevcutIds.has(id)));
-  }, [kullanicilar]);
-
-  const silinebilirKullanicilar = useMemo(
-    () => kullanicilar.filter(kullaniciSilinebilirMi),
-    [kullanicilar],
-  );
-
-  const seciliSilinebilirKullanicilar = useMemo(
-    () => silinebilirKullanicilar.filter((u) => seciliKullaniciIds.includes(u.id)),
-    [silinebilirKullanicilar, seciliKullaniciIds],
-  );
-
-  const tumKullanicilarSecili = silinebilirKullanicilar.length > 0
-    && silinebilirKullanicilar.every((u) => seciliKullaniciIds.includes(u.id));
-
-  const kullaniciSec = (id: string, checked: boolean) => {
-    setSeciliKullaniciIds((prev) => checked ? [...new Set([...prev, id])] : prev.filter((current) => current !== id));
-  };
-
-  const tumKullanicilariSec = (checked: boolean) => {
-    setSeciliKullaniciIds(checked ? silinebilirKullanicilar.map((u) => u.id) : []);
-  };
-
-  const kullaniciPasif = async (u: AdminKullanici) => {
-    await api.adminKullaniciGuncelle(u.id, { isActive: !u.isActive } as Partial<AdminKullanici>);
-    veriYukle();
-  };
-
-  const sifreSifirla = async (u: AdminKullanici) => {
-    try {
-      const r = await api.adminSifreSifirla(u.id, { generate: true });
-      alert(`Yeni geçici şifre: ${r.password ?? "—"}`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Şifre sıfırlanamadı.");
-    }
-  };
-
   const kurumSec = (code: string, district?: string) => {
     if (district) setMintika(district);
     setKurum(code);
@@ -292,139 +228,6 @@ export default function AdminSayfasi() {
       activityLogs: tip === "aktivite" ? aktivite?.logs : undefined,
       issues: tip === "veri" ? veriSagligi?.issues : undefined,
     });
-  };
-
-  const mevcutEpostalar = kullanicilar.map((u) => u.email.toLowerCase());
-
-  const excelImportSec = async (file?: File) => {
-    if (!file) return;
-    setImportYukleniyor(true);
-    setImportSonuc(null);
-    try {
-      const [kurumRes, kullaniciRes] = await Promise.all([
-        api.adminYurtKayitlari().catch(() => ({ institutions: [] as typeof kurumKayitlari })),
-        api.adminKullanicilar({ active: "active" }).catch(() => ({ users: [] as typeof kullanicilar })),
-      ]);
-      const kurumlar = kurumRes.institutions.length > 0
-        ? kurumRes.institutions.map((k) => ({
-            institutionCode: k.institutionCode,
-            institutionName: k.institutionName,
-            districtName: k.districtName,
-            province: k.province,
-          }))
-        : kurumSecenekleriTum;
-      const epostalar = kullaniciRes.users.length > 0
-        ? kullaniciRes.users.map((u) => u.email.toLowerCase())
-        : mevcutEpostalar;
-      const rows = await excelKurumImportOku(
-        file,
-        kurumlar.map((k) => k.institutionCode),
-        epostalar,
-        kurumlar,
-      );
-      setImportRows(rows);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Excel okunamadı.");
-    } finally {
-      setImportYukleniyor(false);
-    }
-  };
-
-  const importBaslat = async () => {
-    setImportYukleniyor(true);
-    try {
-      const sonuc = await api.adminTopluKurumImport({
-        rows: importRows.map((r) => ({
-          rowNumber: r.rowNumber,
-          district: r.district,
-          institutionName: r.cleanInstitutionName || r.institutionName,
-          institutionCode: r.institutionCode,
-          email: r.email,
-          province: r.province,
-        })),
-        totalRows: importRows.length,
-        createUsers: importKullaniciOlustur,
-        defaultPassword: importSifre,
-      });
-      setImportSonuc(sonuc);
-      await veriYukle();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Excel içe aktarma başarısız.");
-    } finally {
-      setImportYukleniyor(false);
-    }
-  };
-
-  const hataliSatirlariKopyala = () => {
-    const text = importRows
-      .filter((r) => r.durum !== "yeni")
-      .map((r) => `${r.rowNumber}\t${r.district}\t${r.institutionName}\t${r.durumMetni}`)
-      .join("\n");
-    void navigator.clipboard.writeText(text || "Hatalı satır yok.");
-  };
-
-  const kullaniciSil = async () => {
-    if (!silinecekKullanici) return;
-    await api.adminKullaniciSil(silinecekKullanici.id);
-    setSilinecekKullanici(null);
-    setSilmeOnayAsamasi(1);
-    setSeciliKullaniciIds((prev) => prev.filter((id) => id !== silinecekKullanici.id));
-    await veriYukle();
-  };
-
-  const silmeModalAc = (u: AdminKullanici) => {
-    if (!kullaniciSilinebilirMi(u)) {
-      alert("Ana admin kullanıcısı silinemez.");
-      return;
-    }
-    setSilinecekKullanici(u);
-    setSilmeOnayAsamasi(1);
-  };
-
-  const topluKullaniciSil = async (mode: "selected" | "all") => {
-    const targets = mode === "all" ? silinebilirKullanicilar : seciliSilinebilirKullanicilar;
-    if (targets.length === 0) {
-      alert(mode === "all" ? "Silinebilecek kullanıcı yok." : "Silmek için kullanıcı seçin.");
-      return;
-    }
-    const label = mode === "all" ? "listedeki tüm silinebilir kullanıcı" : "seçili kullanıcı";
-    const onay = window.confirm(`${targets.length} ${label} silinecek/pasifleştirilecek. Ana admin korunur. Devam edilsin mi?`);
-    if (!onay) return;
-
-    setTopluSilYukleniyor(true);
-    try {
-      for (const user of targets) {
-        await api.adminKullaniciSil(user.id);
-      }
-      setSeciliKullaniciIds([]);
-      await veriYukle();
-      alert(`${targets.length} kullanıcı silindi/pasifleştirildi.`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Toplu silme başarısız.");
-    } finally {
-      setTopluSilYukleniyor(false);
-    }
-  };
-
-  const seciliIssueUserIds = () =>
-    (veriSagligi?.issues ?? [])
-      .filter((i) => seciliIssueIds.includes(i.id) && i.targetKind === "user" && i.targetId)
-      .map((i) => String(i.targetId));
-
-  const veriSagligiAksiyon = async (action: "deactivate" | "ignore") => {
-    const userIds = seciliIssueUserIds();
-    await api.adminVeriSagligiAksiyon({ action, issueIds: seciliIssueIds, userIds });
-    setSeciliIssueIds([]);
-    await veriYukle();
-  };
-
-  const repairBakimUyarisi = (caller?: string) => {
-    logRepairDisabled(caller ?? "AdminSayfasi.repairButton");
-    alert(REPAIR_MAINTENANCE_MESSAGE);
-  };
-
-  const eslestir = async () => {
-    repairBakimUyarisi("AdminSayfasi.eslestir");
   };
 
   const aktiviteEtiket = (action: string) =>
@@ -505,6 +308,9 @@ export default function AdminSayfasi() {
             {dashboard.summary.dataIssueCount > 0 && <button type="button" onClick={() => setAktifSekme("veri")} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: "#991b1b", color: "#fff", fontSize: 11, fontWeight: 800 }}>Veri Sağlığına Git</button>}
           </div>
         )}
+        <div style={{ padding: 12, borderRadius: 10, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 12, marginBottom: 12, lineHeight: 1.55 }}>
+          {ADMIN_PANEL_READ_ONLY_MESSAGE}
+        </div>
 
         <div className="admin-tabbar">
           {SEKMELER.map((s) => (
@@ -681,68 +487,11 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "kullanicilar" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
-            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 800 }}>Gelişmiş işlemler</div>
-                  <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 12 }}>Güncel Talebe sayfasındaki B sütunundan mıntıka, C sütunundan kurum okunur. Önizleme onaylanmadan veri yazılmaz.</p>
-                </div>
-                <label style={{ padding: "9px 14px", borderRadius: 10, background: "#1e3a5f", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
-                  Excel ile Kurum Ekle
-                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => void excelImportSec(e.target.files?.[0])} />
-                </label>
-              </div>
-              {importRows.length > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-                    <label style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
-                      <input type="checkbox" checked={importKullaniciOlustur} onChange={(e) => setImportKullaniciOlustur(e.target.checked)} /> Her kurum için kullanıcı hesabı oluştur
-                    </label>
-                    <input style={{ ...inputStyle, maxWidth: 160 }} value={importSifre} onChange={(e) => setImportSifre(e.target.value)} placeholder="Ortak şifre" />
-                    <button type="button" onClick={importBaslat} disabled={importYukleniyor} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-                      {importYukleniyor ? "İşleniyor..." : "İçe aktarmayı başlat"}
-                    </button>
-                    <button type="button" onClick={() => setImportRows([])} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 700 }}>İptal</button>
-                    <button type="button" onClick={hataliSatirlariKopyala} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>Hatalı satırları kopyala</button>
-                  </div>
-                  <div style={{ overflow: "auto", maxHeight: 280, border: "1px solid #e2e8f0", borderRadius: 12 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                      <thead><tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}><th style={{ padding: 8 }}>Sıra</th><th>Mıntıka</th><th>Excel’deki Kurum Adı</th><th>Temizlenmiş Kurum Adı</th><th>Kurum Kodu</th><th>Oluşacak E-posta</th><th>Durum</th></tr></thead>
-                      <tbody>
-                        {importRows.map((r) => (
-                          <tr key={r.rowNumber} style={{ borderTop: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: 8 }}>{r.sira || r.rowNumber}</td><td>{r.district || "—"}</td><td>{r.institutionName || "—"}</td><td>{r.cleanInstitutionName || "—"}</td><td>{r.institutionCode || "—"}</td><td>{r.email || "—"}</td><td>{r.durumMetni}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {importSonuc && (
-                    <div style={{ fontSize: 12, color: "#166534", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, marginTop: 10, lineHeight: 1.7 }}>
-                      <div>Toplam okunan satır: <b>{importSonuc.readRows}</b></div>
-                      <div>Geçerli satır: <b>{importSonuc.validRows ?? importSonuc.readRows - importSonuc.skippedRows}</b></div>
-                      <div>Yeni kurum eklenen: <b>{importSonuc.addedInstitutions}</b></div>
-                      <div>Zaten var olan kurum: <b>{importSonuc.existingInstitutions}</b></div>
-                      <div>Yeni kullanıcı oluşturulan: <b>{importSonuc.createdUsers}</b></div>
-                      <div>Zaten var olan kullanıcı: <b>{importSonuc.existingUsers}</b></div>
-                      <div>Atlanan satır: <b>{importSonuc.skippedRows}</b></div>
-                      {importSonuc.errors.length > 0 && (
-                        <details style={{ marginTop: 8 }}>
-                          <summary style={{ cursor: "pointer", fontWeight: 800 }}>Atlanan / uyarılı satırlar</summary>
-                          <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: "#475569" }}>
-                            {importSonuc.errors.slice(0, 20).map((err, idx) => (
-                              <li key={`${err.rowNumber ?? "row"}-${idx}`}>
-                                Satır {err.rowNumber ?? "?"}: {err.reason} {err.institutionName ? `Kurum: ${err.institutionName}.` : ""} {err.email ? `E-posta: ${err.email}.` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+            <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1.5px solid #e2e8f0" }}>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Kullanıcı listesi (salt okunur)</div>
+              <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
+                Kullanıcı ekleme, Excel içe aktarma, şifre sıfırlama ve silme işlemleri geçici olarak kapalıdır. Veriler yalnızca okunur.
+              </p>
             </div>
             <FiltreSatir>
               <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta" /></FiltreAlan>
@@ -753,33 +502,7 @@ export default function AdminSayfasi() {
               </FiltreAlan>
               <button type="button" onClick={veriYukle} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Uygula</button>
             </FiltreSatir>
-            <div style={{ background: "#fff", borderRadius: 14, padding: 12, border: "1.5px solid #e2e8f0", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, color: "#334155" }}>
-                <input type="checkbox" checked={tumKullanicilarSecili} onChange={(e) => tumKullanicilariSec(e.target.checked)} disabled={silinebilirKullanicilar.length === 0 || topluSilYukleniyor} />
-                Tümünü seç
-              </label>
-              <div style={{ fontSize: 12, color: "#64748b", flex: 1 }}>
-                {seciliSilinebilirKullanicilar.length} seçili · {silinebilirKullanicilar.length} silinebilir kullanıcı
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => void topluKullaniciSil("selected")} disabled={topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, fontWeight: 800, cursor: topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0 ? "not-allowed" : "pointer", opacity: topluSilYukleniyor || seciliSilinebilirKullanicilar.length === 0 ? 0.55 : 1 }}>
-                  Seçilenleri sil
-                </button>
-                <button type="button" onClick={() => void topluKullaniciSil("all")} disabled={topluSilYukleniyor || silinebilirKullanicilar.length === 0} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontSize: 12, fontWeight: 800, cursor: topluSilYukleniyor || silinebilirKullanicilar.length === 0 ? "not-allowed" : "pointer", opacity: topluSilYukleniyor || silinebilirKullanicilar.length === 0 ? 0.55 : 1 }}>
-                  {topluSilYukleniyor ? "Siliniyor..." : "Listedeki tümünü sil"}
-                </button>
-              </div>
-            </div>
-            <RaporTablo
-              kullanicilar={kullanicilar}
-              onPasif={kullaniciPasif}
-              onSifre={sifreSifirla}
-              onSil={silmeModalAc}
-              showActions
-              showRol
-              seciliIds={seciliKullaniciIds}
-              onSec={kullaniciSec}
-            />
+            <RaporTablo kullanicilar={kullanicilar} showRol />
           </div>
         )}
 
@@ -843,68 +566,23 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "veri" && veriSagligi && (
           <div>
-            <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
-              <button
-                type="button"
-                aria-disabled
-                onClick={() => repairBakimUyarisi("AdminSayfasi.authRepair")}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
-              >
-                Auth Hesaplarını Oluştur / Eşleştir
-              </button>
-              <button
-                type="button"
-                aria-disabled
-                onClick={() => repairBakimUyarisi("AdminSayfasi.authAppUserRepair")}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
-              >
-                Auth / App User onarımı (giriş için zorunlu)
-              </button>
-              <button
-                type="button"
-                aria-disabled
-                onClick={() => repairBakimUyarisi("AdminSayfasi.institutionMatch")}
-                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "not-allowed", opacity: 0.85 }}
-              >
-                Kullanıcıları kurumlara eşleştir
-              </button>
-              <p style={{ fontSize: 11, color: "#b45309", width: "100%", margin: 0, fontWeight: 600 }}>
-                {REPAIR_MAINTENANCE_MESSAGE}
+            <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Veri Sağlığı (teşhis)</div>
+              <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
+                Bu ekran yalnızca sorunları listeler. Auth bağlama, kurum eşleştirme, toplu onarım ve kayıt pasifleştirme işlemleri panelden yapılmaz; backend onarımı hazır olduğunda ayrıca çalıştırılacaktır.
               </p>
             </div>
             <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
-            {seciliIssueIds.length > 0 && (
-              <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <strong style={{ fontSize: 12, color: "#9a3412" }}>{seciliIssueIds.length} kayıt seçildi</strong>
-                <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.bulkMatch")} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#94a3b8", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "not-allowed", opacity: 0.85 }}>Seçilenleri eşleştir</button>
-                <button type="button" onClick={() => { if (confirm("Seçili kayıtlar silinecek veya pasifleştirilecek. Bu işlem raporları etkileyebilir. Devam etmek istiyor musunuz?")) void veriSagligiAksiyon("deactivate"); }} style={{ padding: "7px 10px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri pasifleştir</button>
-                <button type="button" onClick={() => void veriSagligiAksiyon("ignore")} style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 11 }}>Seçilenleri yoksay</button>
-              </div>
-            )}
             <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", marginTop: 12, overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}><input type="checkbox" checked={seciliIssueIds.length > 0 && seciliIssueIds.length === veriSagligi.issues.length} onChange={(e) => setSeciliIssueIds(e.target.checked ? veriSagligi.issues.map((i) => i.id) : [])} /></th><th>Tür</th><th>Kayıt</th><th>Açıklama</th><th>Öneri</th><th>İşlem</th></tr></thead>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tür</th><th>Kayıt</th><th>Açıklama</th><th>Öneri</th></tr></thead>
                 <tbody>
                   {veriSagligi.issues.map((i) => (
                     <tr key={i.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: 8 }}><input type="checkbox" checked={seciliIssueIds.includes(i.id)} onChange={(e) => setSeciliIssueIds((prev) => e.target.checked ? [...prev, i.id] : prev.filter((x) => x !== i.id))} /></td>
-                      <td>{i.type}</td>
-                      <td>{i.record}</td>
-                      <td>{i.description}</td>
-                      <td>{i.suggestion}</td>
-                      <td style={{ padding: 8 }}>
-                        {i.targetKind === "user" && i.targetId && (i.type === "app_user_no_auth" || i.type === "app_user_auth_unlinked") && (
-                          <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.authLink")} style={{ fontSize: 10, marginRight: 4, color: "#64748b", fontWeight: 700, cursor: "not-allowed", opacity: 0.85 }}>
-                            Auth bağla
-                          </button>
-                        )}
-                        {i.targetKind === "user" && i.targetId && (
-                          <button type="button" aria-disabled onClick={() => repairBakimUyarisi("AdminSayfasi.institutionLink")} style={{ fontSize: 10, marginRight: 4, cursor: "not-allowed", opacity: 0.85 }}>
-                            Kurum eşleştir
-                          </button>
-                        )}
-                        {i.targetKind === "user" && i.targetId && <button type="button" onClick={() => { if (confirm("Bu kayıt pasifleştirilecek. Devam etmek istiyor musunuz?")) void api.adminVeriSagligiAksiyon({ action: "deactivate", userIds: [String(i.targetId)], issueIds: [i.id] }).then(veriYukle); }} style={{ fontSize: 10, color: "#dc2626" }}>Sil / Pasifleştir</button>}
-                      </td>
+                      <td style={{ padding: 8 }}>{i.type}</td>
+                      <td style={{ padding: 8 }}>{i.record}</td>
+                      <td style={{ padding: 8 }}>{i.description}</td>
+                      <td style={{ padding: 8 }}>{i.suggestion}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -968,56 +646,6 @@ export default function AdminSayfasi() {
         )}
         </div>
       </div>
-      {silinecekKullanici && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
-            <div style={{ fontSize: 16, fontWeight: 900, color: "#991b1b" }}>Kullanıcıyı sil / pasifleştir</div>
-            <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.55 }}>
-              {silmeOnayAsamasi === 1
-                ? "Bu kullanıcı silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?"
-                : "Son onay: Bu kullanıcı artık kullanıcı listesinde görünmeyecek ve aktif raporlara dahil edilmeyecek."}
-              {" "}Activity log kayıtları korunur.
-            </p>
-            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{silinecekKullanici.name} · {silinecekKullanici.email}</div>
-            {normalizeRole(silinecekKullanici.role, silinecekKullanici.isAdmin) === "admin" && (
-              <div style={{ fontSize: 12, color: "#991b1b", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: 10, marginBottom: 12 }}>
-                Bu kayıt admin yetkisine sahip. Silmek için iki onay gerekir.
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" onClick={() => { setSilinecekKullanici(null); setSilmeOnayAsamasi(1); }} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
-              <button
-                type="button"
-                onClick={() => silmeOnayAsamasi === 1 ? setSilmeOnayAsamasi(2) : void kullaniciSil()}
-                style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800 }}
-              >
-                {silmeOnayAsamasi === 1 ? "İlk onayı ver" : "Son onay: sil"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {eslemeModal && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-          <div style={{ maxWidth: 460, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
-            <div style={{ fontSize: 16, fontWeight: 900 }}>Kullanıcıyı kuruma eşleştir</div>
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              <select style={selectStyle} value={eslemeMintika} onChange={(e) => { setEslemeMintika(e.target.value); setEslemeKurum(""); }}>
-                <option value="">Mıntıka seç</option>
-                {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <select style={selectStyle} value={eslemeKurum} onChange={(e) => setEslemeKurum(e.target.value)}>
-                <option value="">Kurum seç</option>
-                {kurumSecenekleriTum.filter((k) => !eslemeMintika || k.districtName === eslemeMintika).map((k) => <option key={k.institutionCode} value={k.institutionCode}>{k.institutionName}</option>)}
-              </select>
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-              <button type="button" onClick={() => setEslemeModal(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>İptal</button>
-              <button type="button" onClick={eslestir} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 800 }}>Eşleştir</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1061,9 +689,8 @@ function RaporTablo({
                   <input
                     type="checkbox"
                     checked={Boolean(seciliIds?.includes(u.id))}
-                    disabled={!kullaniciSilinebilirMi(u)}
                     onChange={(e) => onSec(u.id, e.target.checked)}
-                    title={kullaniciSilinebilirMi(u) ? "Kullanıcıyı seç" : "Ana admin silinemez"}
+                    title="Kullanıcıyı seç"
                   />
                 </td>
               )}
