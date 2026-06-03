@@ -1,7 +1,15 @@
 import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
 import { kurumKoduOner } from "./kurumSlug";
 import { TRACKED_DISTRICTS } from "./admin/trackedDistricts";
-import { epostaAlternatif, epostaUret, kurumKoduUret } from "./admin/adminKullaniciUret";
+import { epostaAlternatif, epostaUret, kurumKoduUret, VARSAYILAN_SIFRE } from "./admin/adminKullaniciUret";
+import {
+  findAppUserRecordsForLogin,
+  findAuthUserByEmail as findAuthUserByEmailFromAuth,
+  getAppUserEmail as getAppUserEmailFromSync,
+  loadAllAppUserCatalog,
+  reconcileAppUsersAndAuthUsers,
+  type ReconcileAppUsersResult,
+} from "./appUserSync";
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
@@ -124,13 +132,20 @@ async function loadProjectRecords<T>(recordType: string): Promise<BackendRecord<
   return adminScoped.length ? mergeRecordsById(owned, adminScoped) : owned;
 }
 
+async function runReconcileAppUsers(): Promise<ReconcileAppUsersResult | null> {
+  if (!getBackendToken() || !(await resolveViewerUsesAdminRecords())) return null;
+  return reconcileAppUsersAndAuthUsers({
+    updateAppUserRecord,
+    registerAuthUser: (data) => registerAuthUserSafely(data),
+    defaultPassword: VARSAYILAN_SIFRE,
+  });
+}
+
 async function ensureAdminOwnershipSyncOnce() {
   if (adminOwnershipSyncRan) return;
   if (!await resolveViewerUsesAdminRecords()) return;
   adminOwnershipSyncRan = true;
-  void loadProjectRecords<AppUserRecordData>("app_user")
-    .then((records) => syncAppUserRecordOwnership(records))
-    .catch(() => null);
+  void runReconcileAppUsers().catch(() => null);
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
@@ -316,6 +331,8 @@ export interface AdminStats {
   recentUsers: { id: string; name: string; email: string; created_at: string }[];
 }
 
+export type { ReconcileAppUsersResult } from "./appUserSync";
+
 export type KullaniciRol = "user" | "admin";
 export type AktiviteDurum = "today" | "week" | "inactive" | "never";
 
@@ -469,7 +486,9 @@ function zorunluAktifAppUser(authUser: KullaniciBilgisi, appUser: AdminKullanici
       email: authUser.email,
       hint: "Auth kaydı var ama app_user kaydı bu kullanıcıya devredilmemiş olabilir. Yönetici bir kez panele girip oturum açmalı.",
     });
-    throw new Error("Bu e-posta için aktif uygulama kullanıcı kaydı bulunamadı. Lütfen yöneticinizle iletişime geçin.");
+    throw new Error(
+      "Auth hesabı var fakat uygulama kullanıcı kaydı bulunamadı. Yönetici panelinden Veri Sağlığı > Auth/App User onarımını çalıştırın.",
+    );
   }
   if (!appUserAktifMi(appUser)) {
     throw new Error("Hesabınız pasif durumda. Lütfen yöneticinizle iletişime geçin.");
@@ -508,33 +527,35 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
   const matches = await appUsersByEmail(authUser.email, authUser).catch(() => []);
   const existing = selectBestAppUser(matches, authUser.id);
   const now = new Date().toISOString();
+  const authUserIdBefore = existing?.authUserId ?? null;
 
   if (existing) {
     const isPrimaryAdmin = isPrimaryAdminEmail(authUser.email);
     const needsPrimaryAdminUpdate = isPrimaryAdmin && primaryAdminEksikMi(existing);
     const needsAuthLink = !existing.authUserId && authUser.id;
     if (!needsPrimaryAdminUpdate && !needsAuthLink) {
-      console.log("[TEDRIS_AUTH_MATCH]", {
+      console.log("[TEDRIS_AUTH_APPUSER_LINK]", {
         email: existing.email,
-        authUserId: authUser.id,
+        authUserFound: true,
+        appUserFound: true,
         appUserId: existing.id,
+        authUserIdBefore,
+        authUserIdAfter: existing.authUserId ?? authUser.id,
         institutionCode: existing.institutionCode,
-        institutionName: existing.institutionName,
-        district: existing.district,
-        province: existing.province,
       });
       return existing;
     }
 
     const current = await getAppUserRecord(existing.id);
     const currentData = current.data ?? {};
+    const canonicalEmail = getAppUserEmail(current) || normalizeEmail(authUser.email);
     const record = await updateAppUserRecord(existing.id, {
       ...currentData,
       id: currentData.id ?? authUser.id,
       authUserId: currentData.authUserId ?? authUser.id,
-      email: getAppUserEmail(currentData) || getAppUserEmail(current) || authUser.email,
-      loginEmail: currentData.loginEmail ?? (getAppUserEmail(current) || authUser.email),
-      generatedEmail: currentData.generatedEmail ?? (getAppUserEmail(current) || authUser.email),
+      email: canonicalEmail,
+      loginEmail: currentData.loginEmail ?? canonicalEmail,
+      generatedEmail: currentData.generatedEmail ?? canonicalEmail,
       name: currentData.name ?? authUser.name,
       ...(isPrimaryAdmin ? primaryAdminFields() : {}),
       updatedAt: now,
@@ -542,14 +563,17 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
       lastLoginAt: currentData.lastLoginAt ?? existing.lastLoginAt ?? null,
     });
     const linked = appUserFromRecord(record);
-    console.log("[TEDRIS_AUTH_MATCH]", {
+    if (authUser.id && String(record.userId ?? "") !== String(authUser.id)) {
+      await backendApi.assignRecordOwner(record.id, authUser.id, { recordType: "app_user", data: record.data ?? {} }).catch(() => null);
+    }
+    console.log("[TEDRIS_AUTH_APPUSER_LINK]", {
       email: linked.email,
-      authUserId: authUser.id,
+      authUserFound: true,
+      appUserFound: true,
       appUserId: linked.id,
+      authUserIdBefore,
+      authUserIdAfter: linked.authUserId ?? authUser.id,
       institutionCode: linked.institutionCode,
-      institutionName: linked.institutionName,
-      district: linked.district,
-      province: linked.province,
     });
     return linked;
   }
@@ -589,22 +613,7 @@ async function ensureAppUserForAuthUser(authUser: KullaniciBilgisi): Promise<Adm
 type AppUserEmailSource = AppUserRecordLike | AppUserRecordData | AdminKullanici | BackendRecord<AppUserRecordData>;
 
 function getAppUserEmail(source: AppUserEmailSource): string {
-  const raw = source as AppUserRecordLike;
-  const nested = raw.data ?? raw.payload ?? {};
-  for (const value of [
-    raw.email,
-    raw.loginEmail,
-    raw.generatedEmail,
-    raw.username,
-    nested.email,
-    nested.loginEmail,
-    nested.generatedEmail,
-    nested.username,
-  ]) {
-    const normalized = normalizeEmail(value);
-    if (normalized) return normalized;
-  }
-  return "";
+  return getAppUserEmailFromSync(source as Parameters<typeof getAppUserEmailFromSync>[0]);
 }
 
 function appUserDataFromRecord(record: BackendRecord<AppUserRecordData>): AppUserRecordData {
@@ -649,17 +658,8 @@ async function repairAppUserRecordEmail(record: BackendRecord<AppUserRecordData>
   }
 }
 
-async function loadAppUserRecordsForLogin(authUser: KullaniciBilgisi): Promise<BackendRecord<AppUserRecordData>[]> {
-  const owned = await backendApi.listRecords<AppUserRecordData>("app_user").catch(() => [] as BackendRecord<AppUserRecordData>[]);
-  if (owned.length) return owned;
-  if (isVpsAdminUser(authUser)) {
-    return backendApi.fetchAllAdminRecords<AppUserRecordData>("app_user").catch(() => owned);
-  }
-  return owned;
-}
-
 async function loadAppUserRawRecords(): Promise<BackendRecord<AppUserRecordData>[]> {
-  return loadProjectRecords<AppUserRecordData>("app_user");
+  return loadAllAppUserCatalog();
 }
 
 function appUserEmailsFromRecord(record: BackendRecord<AppUserRecordData>): string[] {
@@ -748,12 +748,16 @@ async function appUsersByEmail(email: string, authUser?: KullaniciBilgisi | null
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
   const records = authUser
-    ? await loadAppUserRecordsForLogin(authUser)
+    ? await findAppUserRecordsForLogin(
+        { id: authUser.id, email: authUser.email, name: authUser.name },
+        updateAppUserRecord,
+      )
     : await loadAppUserRawRecords();
   const matches = await Promise.all(
     records
       .filter((record) => {
-        if (appUserEmailsFromRecord(record).includes(normalized)) return true;
+        const computed = getAppUserEmail(record);
+        if (computed === normalized) return true;
         if (authUser?.id && String(record.data?.authUserId ?? "") === authUser.id) return true;
         return false;
       })
@@ -763,18 +767,20 @@ async function appUsersByEmail(email: string, authUser?: KullaniciBilgisi | null
   console.log("[TEDRIS_LOGIN_APP_USER_CANDIDATES]", {
     loginEmail: normalized,
     candidateCount: users.length,
+    lookupSource: authUser ? "login_catalog_and_owned" : "admin_catalog",
     candidates: users.map((user) => {
       const raw = matches.find((record) => String(record.id) === user.id) as AppUserRecordLike | undefined;
       return {
         id: user.id,
-        email: user.email,
-        dataEmail: raw?.data?.email ?? null,
-        loginEmail: raw?.data?.loginEmail ?? null,
-        generatedEmail: raw?.data?.generatedEmail ?? null,
+        rawEmail: raw?.email ?? null,
         computedEmail: getAppUserEmail(user),
+        loginEmail: raw?.data?.loginEmail ?? raw?.loginEmail ?? null,
+        generatedEmail: raw?.data?.generatedEmail ?? raw?.generatedEmail ?? null,
+        dataEmail: raw?.data?.email ?? null,
         isActive: user.isActive,
         status: user.status ?? null,
         deletedAt: user.deletedAt ?? null,
+        authUserId: user.authUserId ?? null,
         institutionCode: user.institutionCode,
         district: user.district,
         computedActive: appUserAktifMi(user),
@@ -1332,15 +1338,21 @@ async function adminSettingsRecord() {
 }
 
 async function veriSagligiUret(): Promise<AdminVeriSagligi> {
-  const [users, institutions, rawInstitutionRecords, rawUserRecords, rawLogs, supportRequests] = await Promise.all([
+  const [users, institutions, rawInstitutionRecords, rawUserRecords, rawLogs, supportRequests, authUsers] = await Promise.all([
     appUserRecords(),
     institutionRecords(),
     loadInstitutionRawRecords(),
     loadAppUserRawRecords(),
     backendApi.listRecords<ActivityLogRecordData>("activity_log").then((records) => records.map(activityFromRecord)),
     destekKayitlari(),
+    backendApi.listAuthUsers().catch(() => [] as BackendUser[]),
   ]);
   const usersByEmail = appUserByEmailMap(users);
+  const authByEmail = new Map<string, BackendUser>();
+  for (const auth of authUsers) {
+    const email = normalizeEmail(typeof auth.email === "string" ? auth.email : "");
+    if (email) authByEmail.set(email, auth);
+  }
   const institutionsByCodeForLogs = institutionByCodeMap(institutions);
   const logs = rawLogs.map((log) => enrichActivityLog(log, usersByEmail, institutionsByCodeForLogs));
   const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
@@ -1421,15 +1433,51 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
       });
     }
 
-    if (!user.authUserId) {
+    const userEmailKey = getAppUserEmail(user);
+    const linkedAuth = userEmailKey ? authByEmail.get(userEmailKey) : undefined;
+    if (!user.authUserId && linkedAuth?.id) {
       issues.push({
-        id: `user-missing-auth-${user.id}`,
-        type: "user_missing_auth_user",
+        id: `user-unlinked-auth-${user.id}`,
+        type: "app_user_auth_unlinked",
         targetKind: "user",
         targetId: user.id,
         record: `${user.name} (${user.email})`,
-        description: "Kullanıcının auth hesabı ile app_user kaydı henüz bağlanmamış.",
-        suggestion: "Kullanıcı bir kez giriş yaptığında authUserId otomatik tamamlanır.",
+        description: "Auth hesabı var ama app_user.authUserId boş.",
+        suggestion: "Veri Sağlığı > Auth/App User onarımını çalıştırın.",
+      });
+    } else if (!user.authUserId && !linkedAuth) {
+      issues.push({
+        id: `user-missing-auth-${user.id}`,
+        type: "app_user_no_auth",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.name} (${user.email})`,
+        description: "app_user var fakat auth hesabı yok.",
+        suggestion: "Auth/App User onarımı ile auth hesabı oluşturun veya kullanıcıyı yeniden oluşturun.",
+      });
+    }
+
+    if (user.isActive && !user.deletedAt && linkedAuth && user.authUserId && user.authUserId !== String(linkedAuth.id)) {
+      issues.push({
+        id: `user-auth-mismatch-${user.id}`,
+        type: "app_user_auth_id_mismatch",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.email}`,
+        description: `app_user.authUserId (${user.authUserId}) auth listesindeki id (${linkedAuth.id}) ile uyuşmuyor.`,
+        suggestion: "Auth/App User onarımını çalıştırın.",
+      });
+    }
+
+    if (user.isActive && !user.deletedAt && user.role !== "super_admin" && !user.isAdmin && !user.institutionCode) {
+      issues.push({
+        id: `user-missing-institution-code-${user.id}`,
+        type: "app_user_missing_institution_code",
+        targetKind: "user",
+        targetId: user.id,
+        record: `${user.name} (${user.email})`,
+        description: "Aktif yurt/kurum hesabında institutionCode boş.",
+        suggestion: "Kullanıcıyı kurum envanterine bağlayın.",
       });
     }
 
@@ -1477,8 +1525,36 @@ async function veriSagligiUret(): Promise<AdminVeriSagligi> {
     });
   }
 
+  for (const auth of authUsers) {
+    const email = normalizeEmail(typeof auth.email === "string" ? auth.email : "");
+    if (!email) continue;
+    if (!usersByEmailGroups.has(email)) {
+      issues.push({
+        id: `auth-no-app-user-${email}`,
+        type: "auth_user_no_app_user",
+        targetKind: "user",
+        targetId: String(auth.id ?? ""),
+        record: email,
+        description: "Auth hesabı var fakat app_user kaydı yok.",
+        suggestion: "Kullanıcı oluşturun veya Auth/App User onarımını çalıştırın.",
+      });
+    }
+  }
+
   for (const [email, group] of usersByEmailGroups.entries()) {
     if (group.length <= 1) continue;
+    const activeGroup = group.filter((u) => u.isActive && !u.deletedAt);
+    if (activeGroup.length > 1) {
+      issues.push({
+        id: `user-duplicate-active-email-${email}`,
+        type: "duplicate_app_user_email",
+        targetKind: "user",
+        targetId: activeGroup[0]?.id ?? null,
+        record: email,
+        description: `${activeGroup.length} aktif app_user aynı e-postayı kullanıyor (login candidateCount karışabilir).`,
+        suggestion: "Fazla kayıtları pasifleştirin; kurum bilgisi dolu olanı birincil bırakın.",
+      });
+    }
     issues.push({
       id: `user-duplicate-email-${email}`,
       type: "user_duplicate_email",
@@ -1698,7 +1774,11 @@ export const api = {
       if (!user) {
         throw new Error("Kullanıcı bilgisi alınamadı.");
       }
-      void ensureAdminOwnershipSyncOnce();
+      if (isVpsAdminUser(user)) {
+        await runReconcileAppUsers().catch(() => null);
+      } else {
+        void ensureAdminOwnershipSyncOnce();
+      }
       const appUser = await ensureAppUserForAuthUser(user).catch(() => null);
       const activeAppUser = zorunluAktifAppUser(user, appUser);
       await updateAppUserRecord(activeAppUser.id, {
@@ -1919,21 +1999,43 @@ export const api = {
     isActive?: boolean;
     isAdmin?: boolean;
   }) => {
-    const existing = await appUserByEmail(data.email);
+    const canonicalEmail = normalizeEmail(data.email);
+    if (!canonicalEmail) throw new Error("Geçerli bir e-posta adresi girin.");
+
+    const existing = await appUserByEmail(canonicalEmail);
     if (existing && !existing.deletedAt) throw new Error("Bu e-posta ile kullanıcı zaten var.");
 
-    const auth = await registerAuthUserSafely({ email: data.email, password: data.password, name: data.name });
-    const authUser = kullaniciFromBackend(auth?.user);
+    let authUser = kullaniciFromBackend((await registerAuthUserSafely({
+      email: canonicalEmail,
+      password: data.password,
+      name: data.name,
+    }))?.user);
+    let authUserCreated = Boolean(authUser?.id);
+
+    if (!authUser?.id) {
+      const authFromList = await findAuthUserByEmailFromAuth(canonicalEmail);
+      if (authFromList?.id) {
+        authUser = {
+          id: String(authFromList.id),
+          email: canonicalEmail,
+          name: String(authFromList.name ?? data.name),
+          isAdmin: Boolean(authFromList.isAdmin),
+          role: typeof authFromList.role === "string" ? authFromList.role : undefined,
+        };
+        authUserCreated = false;
+      }
+    }
+
     const now = new Date().toISOString();
     const institutionId = await kurumIdBul(data.institutionCode);
     const role = data.role ?? (data.isAdmin ? "admin" : "user");
     const permissions = permissionDefaults(role, data.isAdmin);
     const payload: AppUserRecordData = {
-      id: authUser?.id ?? data.email,
+      id: authUser?.id ?? canonicalEmail,
       authUserId: authUser?.id,
-      email: data.email,
-      loginEmail: data.email,
-      generatedEmail: data.email,
+      email: canonicalEmail,
+      loginEmail: canonicalEmail,
+      generatedEmail: canonicalEmail,
       name: data.name,
       role,
       isAdmin: data.isAdmin ?? role === "admin",
@@ -1956,17 +2058,12 @@ export const api = {
     const record = existing?.deletedAt
       ? await updateAppUserRecord(existing.id, payload)
       : await backendApi.createRecord<AppUserRecordData>("app_user", payload);
+    let authUserLinked = false;
     if (authUser?.id) {
       const recordData = appUserDataFromRecord(record);
       await backendApi.assignRecordOwner(record.id, authUser.id, {
         recordType: "app_user",
-        data: {
-          ...(record.data ?? recordData),
-          authUserId: authUser.id,
-          email: data.email,
-          loginEmail: data.email,
-          generatedEmail: data.email,
-        },
+        data: { ...recordData, ...payload, authUserId: authUser.id },
       }).catch((error) => {
         console.warn("[TEDRIS_OWNERSHIP_ASSIGN_FAIL]", {
           recordId: record.id,
@@ -1974,8 +2071,20 @@ export const api = {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+      authUserLinked = true;
     }
-    return { user: appUserFromRecord(record) };
+    const created = appUserFromRecord(record);
+    console.log("[TEDRIS_USER_CREATE_FLOW]", {
+      email: canonicalEmail,
+      appUserCreated: true,
+      appUserId: created.id,
+      authUserCreated,
+      authUserLinked,
+      authUserId: authUser?.id ?? null,
+      institutionCode: created.institutionCode,
+      district: created.district,
+    });
+    return { user: created };
   },
 
   adminKullaniciGuncelle: async (id: string, data: Partial<AdminKullanici>) => {
@@ -2013,40 +2122,79 @@ export const api = {
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const appUser = appUserFromRecord(current);
-    const authUserId = currentData.authUserId ?? appUser.authUserId;
+    const email = getAppUserEmail(current) || appUser.email;
+    let authUserId = currentData.authUserId ?? appUser.authUserId ?? null;
+    let authUserFoundByEmail = false;
+
+    if (!authUserId && email) {
+      const auth = await findAuthUserByEmailFromAuth(email);
+      if (auth?.id) {
+        authUserId = String(auth.id);
+        authUserFoundByEmail = true;
+        await updateAppUserRecord(id, {
+          ...currentData,
+          authUserId,
+          email,
+          loginEmail: currentData.loginEmail ?? email,
+          generatedEmail: currentData.generatedEmail ?? email,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
     if (!authUserId) {
       console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
-        email: appUser.email,
-        target: "auth_password",
+        email,
+        appUserId: id,
+        authUserId: null,
+        authUserFoundByEmail: false,
         authUserUpdated: false,
-        appUserUpdated: false,
+        reason: "auth_user_missing",
       });
-      throw new Error("Şifre değiştirilemedi. Bu işlem gerçek giriş şifresini güncelleyen auth endpointine bağlı değil.");
+      throw new Error("Bu kullanıcı için gerçek giriş hesabı bulunamadı. Önce auth hesabı oluşturulmalı.");
     }
 
     let reset: { ok?: boolean; password?: string };
     try {
       reset = await backendApi.resetAuthPassword(authUserId, opts ?? { generate: true });
-    } catch {
+    } catch (error) {
       console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
-        email: appUser.email,
-        target: "auth_password",
+        email,
+        appUserId: id,
+        authUserId,
+        authUserFoundByEmail,
         authUserUpdated: false,
-        appUserUpdated: false,
+        reason: error instanceof Error ? error.message : "reset_failed",
       });
-      throw new Error("Şifre değiştirilemedi. Bu işlem gerçek giriş şifresini güncelleyen auth endpointine bağlı değil.");
+      throw new Error("Şifre değiştirilemedi. Auth sunucusu şifre güncellemesini reddetti.");
+    }
+
+    if (!reset?.ok && !reset?.password) {
+      console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
+        email,
+        appUserId: id,
+        authUserId,
+        authUserFoundByEmail,
+        authUserUpdated: false,
+        reason: "empty_reset_response",
+      });
+      throw new Error("Şifre sıfırlama yanıtı alınamadı. İşlem tamamlanmadı.");
     }
 
     await updateAppUserRecord(id, {
       ...currentData,
+      authUserId,
+      email,
       passwordResetAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
     console.log("[TEDRIS_PASSWORD_RESET_DIAG]", {
-      email: appUser.email,
-      target: "auth_password",
+      email,
+      appUserId: id,
+      authUserId,
+      authUserFoundByEmail,
       authUserUpdated: true,
-      appUserUpdated: true,
+      reason: "ok",
     });
     return { ok: true, password: reset.password };
   },
@@ -2363,6 +2511,8 @@ export const api = {
     };
   },
 
+  reconcileAppUsersAndAuthUsers: () => runReconcileAppUsers(),
+
   adminVeriSagligi: () => veriSagligiUret(),
 
   adminVeriSagligiAksiyon: (data: AdminVeriSagligiAksiyonRequest) =>
@@ -2472,11 +2622,12 @@ export const api = {
   },
 
   adminReconcile: async () => {
+    const reconcile = await runReconcileAppUsers();
     const [rawUserRecords, institutions] = await Promise.all([
       loadAppUserRawRecords(),
       institutionRecords(),
     ]);
-    await syncAppUserRecordOwnership(rawUserRecords);
+    if (!reconcile) await syncAppUserRecordOwnership(rawUserRecords);
     for (const record of rawUserRecords) {
       if (appUserRecordNeedsEmailRepair(record)) {
         await repairAppUserRecordEmail(record);

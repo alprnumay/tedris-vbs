@@ -849,14 +849,46 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "veri" && veriSagligi && (
           <div>
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const r = await api.reconcileAppUsersAndAuthUsers();
+                    if (!r) {
+                      alert("Onarım için admin oturumu gerekli.");
+                      return;
+                    }
+                    alert(
+                      [
+                        "Auth ↔ app_user onarımı tamamlandı.",
+                        `Taranan: ${r.scanned}`,
+                        `E-posta düzeltilen: ${r.emailsRepaired}`,
+                        `authUserId bağlanan: ${r.authUserIdLinked}`,
+                        `Sahiplik devredilen: ${r.ownershipTransferred}`,
+                        `Auth oluşturulan: ${r.authUsersCreated}`,
+                        `Duplicate e-posta: ${r.duplicates.length}`,
+                        `Auth var / app_user yok: ${r.orphanAuthOnly.length}`,
+                        `app_user var / auth yok: ${r.orphanAppOnly.length}`,
+                        `Hata: ${r.errors.length}`,
+                      ].join("\n"),
+                    );
+                    veriYukle();
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : "Auth/App User onarımı başarısız");
+                  }
+                }}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#991b1b", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+              >
+                Auth / App User onarımı (giriş için zorunlu)
+              </button>
               <button
                 type="button"
                 onClick={async () => {
                   try {
                     const r = await api.adminReconcile();
                     alert(
-                      `Eşleştirme tamamlandı.\nBağlanan: ${r.linked}\nYeni kurum: ${r.institutionsCreated}\nAtlanan: ${r.skipped}\nEşleşmeyen: ${r.unmatched.length}`,
+                      `Kurum eşleştirme tamamlandı.\nBağlanan: ${r.linked}\nYeni kurum: ${r.institutionsCreated}\nAtlanan: ${r.skipped}\nEşleşmeyen: ${r.unmatched.length}`,
                     );
                     veriYukle();
                   } catch (e) {
@@ -865,10 +897,10 @@ export default function AdminSayfasi() {
                 }}
                 style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#1e3a5f", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
               >
-                Kullanıcıları kurumlara eşleştir (onarım)
+                Kullanıcıları kurumlara eşleştir
               </button>
-              <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-                Mevcut kullanıcıları institutionCode ve institutionId ile kurum envanterine bağlar.
+              <p style={{ fontSize: 11, color: "#64748b", width: "100%", margin: 0 }}>
+                Kurum girişi çalışmıyorsa önce kırmızı butonu çalıştırın (e-posta, authUserId, kayıt sahipliği). Sonra mavi butonla kurum kodlarını bağlayın.
               </p>
             </div>
             <StatKart baslik="Veri sağlığı puanı" deger={veriSagligi.score ?? "—"} renk="#0d9488" simge="🩺" altMetin={`${veriSagligi.issueCount} sorun`} />
