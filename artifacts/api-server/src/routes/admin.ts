@@ -17,7 +17,7 @@ import { normalizeDistrictName } from "../lib/trackedDistricts";
 import { normalizeTurkish, removeDistrictPrefixFromInstitutionName } from "../lib/normalizeTurkish";
 
 const router: IRouter = Router();
-router.use(requireAdmin);
+router.use("/admin", requireAdmin);
 
 const TZ = "Europe/Istanbul";
 

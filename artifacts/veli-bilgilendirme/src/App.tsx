@@ -20,6 +20,12 @@ import { AppBrand } from "./components/AppBrand";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
 import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
+import { DavetProviders } from "./modules/davet/DavetProviders";
+import { DavetRouter } from "./modules/davet/DavetRouter";
+
+function isDavetPathname(): boolean {
+  return typeof window !== "undefined" && window.location.pathname.startsWith("/davet");
+}
 
 const KurumsalKimlikModulu = lazy(() =>
   import("./components/kurumsal-kimlik/KurumsalKimlikModulu").then((m) => ({
@@ -84,7 +90,24 @@ function MainApp() {
     (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("modul") === "logo");
 
   useEffect(() => {
-    api.me().then((r) => setKullanici(r.user)).catch(() => setKullanici(null));
+    let cancelled = false;
+    const safety = window.setTimeout(() => {
+      if (!cancelled) setKullanici(null);
+    }, 20_000);
+
+    api.me()
+      .then((r) => {
+        if (!cancelled) setKullanici(r.user);
+      })
+      .catch(() => {
+        if (!cancelled) setKullanici(null);
+      })
+      .finally(() => clearTimeout(safety));
+
+    return () => {
+      cancelled = true;
+      clearTimeout(safety);
+    };
   }, []);
 
   useEffect(() => {
@@ -900,5 +923,35 @@ function MainApp() {
 }
 
 export default function App() {
+  const [davetAktif, setDavetAktif] = useState(isDavetPathname);
+
+  useEffect(() => {
+    const sync = () => setDavetAktif(isDavetPathname());
+    window.addEventListener("popstate", sync);
+    const origPush = history.pushState.bind(history);
+    const origReplace = history.replaceState.bind(history);
+    history.pushState = (...args: Parameters<typeof history.pushState>) => {
+      origPush(...args);
+      sync();
+    };
+    history.replaceState = (...args: Parameters<typeof history.replaceState>) => {
+      origReplace(...args);
+      sync();
+    };
+    return () => {
+      window.removeEventListener("popstate", sync);
+      history.pushState = origPush;
+      history.replaceState = origReplace;
+    };
+  }, []);
+
+  if (davetAktif) {
+    return (
+      <DavetProviders>
+        <DavetRouter />
+      </DavetProviders>
+    );
+  }
+
   return <MainApp />;
 }

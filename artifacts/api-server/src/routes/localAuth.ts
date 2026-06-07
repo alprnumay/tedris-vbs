@@ -16,6 +16,26 @@ import { sessionCookieOptions } from "../lib/sessionCookie";
 const router: IRouter = Router();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
+function mapLocalUserPublicProfile(user: typeof localUsersTable.$inferSelect) {
+  const role = user.role ?? "hoca";
+  const isAdmin =
+    user.email?.toLowerCase() === ADMIN_EMAIL ||
+    isAdminRole(role, user.isAdmin);
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role,
+    isAdmin,
+    isActive: user.isActive,
+    province: user.province ?? null,
+    district: user.district ?? null,
+    institutionId: user.institutionId ?? null,
+    institutionName: user.institutionName ?? null,
+    institutionCode: user.institutionCode ?? null,
+  };
+}
+
 function setSessionCookie(res: Response, sid: string) {
   res.cookie(SESSION_COOKIE, sid, sessionCookieOptions(SESSION_TTL));
 }
@@ -114,20 +134,19 @@ router.post("/auth/login", async (req: Request, res: Response) => {
       console.error("[auth/login] lastLoginAt veya activity log güncellenemedi:", err);
     }
 
-    const isAdmin =
-      normalizedEmail === ADMIN_EMAIL || Boolean((user as any).isAdmin);
+    const publicUser = mapLocalUserPublicProfile(user);
 
-    const sessionUser = {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      isAdmin,
-    };
-
-    const sid = await createSession({ localUser: sessionUser });
+    const sid = await createSession({
+      localUser: {
+        id: publicUser.id,
+        email: publicUser.email,
+        name: publicUser.name,
+        isAdmin: publicUser.isAdmin,
+      },
+    });
     setSessionCookie(res, sid);
 
-    res.json({ user: sessionUser, sessionToken: sid });
+    res.json({ user: publicUser, sessionToken: sid });
   } catch (err) {
     console.error("[auth/login]", err);
     res.status(500).json({
@@ -142,29 +161,21 @@ router.post("/auth/logout", async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-router.get("/auth/me", (req: Request, res: Response) => {
-  if (req.localUser) {
-    const localUser = req.localUser as {
-      id: string;
-      email: string;
-      name: string;
-      isAdmin?: boolean;
-    };
+router.get("/auth/me", async (req: Request, res: Response) => {
+  if (req.localUser?.id) {
+    try {
+      const [user] = await db
+        .select()
+        .from(localUsersTable)
+        .where(eq(localUsersTable.id, req.localUser.id));
 
-    res.json({
-      user: {
-        id: localUser.id,
-        email: localUser.email,
-        name: localUser.name,
-        isAdmin:
-          localUser.email?.toLowerCase() === ADMIN_EMAIL ||
-          isAdminRole(
-            (localUser as { role?: string }).role,
-            localUser.isAdmin,
-          ),
-      },
-    });
-    return;
+      if (user && !user.deletedAt && user.isActive !== false) {
+        res.json({ user: mapLocalUserPublicProfile(user) });
+        return;
+      }
+    } catch (err) {
+      console.error("[auth/me] local user load failed:", err);
+    }
   }
 
   if (req.isAuthenticated() && req.user) {

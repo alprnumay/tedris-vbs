@@ -6,6 +6,7 @@ import {
   Users,
   MessageCircle,
   LayoutTemplate,
+  LayoutGrid,
   X,
 } from "lucide-react";
 import { CategoryCard } from "./CategoryCard";
@@ -110,6 +111,15 @@ export function CategoryHome({
                   <MessageCircle className="h-4 w-4 text-indigo-600" strokeWidth={2} />
                   Destek
                 </button>
+                <a
+                  href="/davet"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-indigo-900 transition hover:bg-indigo-50"
+                  onClick={menuKapat}
+                >
+                  <LayoutGrid className="h-4 w-4 text-indigo-600" strokeWidth={2} />
+                  Nehari Platformu
+                </a>
                 {isAdmin && (
                   <button
                     type="button"
@@ -148,6 +158,12 @@ export function CategoryHome({
             >
               <MessageCircle className="h-4 w-4" strokeWidth={2} />
             </button>
+            <a
+              href="/davet"
+              className="rounded-xl border border-indigo-200/80 bg-gradient-to-b from-indigo-50 to-white px-3.5 py-2 text-xs font-bold text-indigo-900 shadow-sm transition hover:border-indigo-300 hover:shadow-md"
+            >
+              Nehari Platformu
+            </a>
             {isAdmin && (
               <button
                 type="button"
@@ -245,6 +261,15 @@ export function CategoryHome({
             onEylem={onVeliBilgilendirme}
           />
           <CategoryCard
+            baslik="Nehari Platformu"
+            aciklama="Davetler, yatılı alıştırma programları ve örnek çalışmalar"
+            durum="aktif"
+            ikon={LayoutGrid}
+            onEylem={() => {
+              window.location.href = "/davet";
+            }}
+          />
+          <CategoryCard
             baslik="Yatılı Alıştırma"
             aciklama="Yurt ve etüt çalışmaları için afiş ve bilgilendirme modülü hazırlanıyor."
             durum="yakinda"
@@ -252,6 +277,35 @@ export function CategoryHome({
             onEylem={() => onYakinda("Yatılı Alıştırma")}
           />
         </div>
+
+        <nav
+          className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-[11px] font-semibold text-indigo-800 md:mt-6 md:text-xs"
+          aria-label="Nehari Platformu alt bağlantılar"
+        >
+          <a href="/davet/veli" className="rounded-full px-2.5 py-1 hover:bg-indigo-50">
+            Veli Davetleri
+          </a>
+          <a href="/davet/yatili-program" className="rounded-full px-2.5 py-1 hover:bg-indigo-50">
+            Yatılı Alıştırma
+          </a>
+          <a href="/davet/calisma-paylas" className="rounded-full px-2.5 py-1 hover:bg-indigo-50">
+            Çalışma Paylaş
+          </a>
+          <a href="/davet/yayindaki-calismalar" className="rounded-full px-2.5 py-1 hover:bg-indigo-50">
+            Yayındaki Çalışmalar
+          </a>
+          <span
+            className="cursor-not-allowed rounded-full px-2.5 py-1 text-slate-400"
+            title="Geri sayım modülü yakında eklenecek"
+          >
+            Geri Sayım (yakında)
+          </span>
+          {isAdmin ? (
+            <a href="/davet/calisma-onay" className="rounded-full px-2.5 py-1 hover:bg-indigo-50">
+              Çalışma Onayı
+            </a>
+          ) : null}
+        </nav>
 
         <section
           className={[

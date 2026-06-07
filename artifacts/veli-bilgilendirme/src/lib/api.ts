@@ -1,3 +1,4 @@
+import { isLocalDevApi } from "./apiBase";
 import { backendApi, clearBackendToken, getBackendToken, setBackendToken, type BackendRecord, type BackendUser } from "./backendApi";
 import { kurumKoduOner } from "./kurumSlug";
 import { normalizeRole } from "./admin/adminRol";
@@ -186,7 +187,12 @@ function logLoginFlowStop(payload: {
 }
 
 function logLoginLoadingFinalized(email: string, success: boolean, errorCode?: string) {
-  console.log("[TEDRIS_LOGIN_LOADING_FINALIZED]", { email, success, errorCode: errorCode ?? null });
+  const payload = { email, success, errorCode: errorCode ?? null };
+  if (isLocalDevApi()) {
+    if (import.meta.env.DEV) console.debug("[TEDRIS_LOGIN] yerel oturum", payload);
+    return;
+  }
+  console.log("[TEDRIS_LOGIN_LOADING_FINALIZED]", payload);
 }
 
 async function getAppUserRecord(id: string | number): Promise<BackendRecord<AppUserRecordData>> {
@@ -532,12 +538,19 @@ function qs(params: Record<string, string | undefined>): string {
 function kullaniciFromBackend(user?: BackendUser | null): KullaniciBilgisi | null {
   if (!user) return null;
   const role = typeof user.role === "string" ? user.role : "";
+  const isAdmin = Boolean(user.isAdmin) || role === "admin" || role === "super_admin";
   return {
     id: String(user.id ?? user.email ?? ""),
     email: String(user.email ?? ""),
     name: String(user.name ?? user.email ?? "Kullanıcı"),
     role: role || undefined,
-    isAdmin: Boolean(user.isAdmin) || role === "admin",
+    isAdmin,
+    isActive: user.isActive !== false,
+    district: typeof user.district === "string" ? user.district : undefined,
+    province: typeof user.province === "string" ? user.province : undefined,
+    institutionName: typeof user.institutionName === "string" ? user.institutionName : undefined,
+    institutionCode: typeof user.institutionCode === "string" ? user.institutionCode : undefined,
+    institutionId: user.institutionId != null ? String(user.institutionId) : undefined,
   };
 }
 
@@ -568,6 +581,16 @@ function appUserAktifMi(user?: AdminKullanici | null): user is AdminKullanici {
 }
 
 function logLoginDiag(authUser: KullaniciBilgisi | null, appUser: AdminKullanici | null) {
+  if (isLocalDevApi()) {
+    if (import.meta.env.DEV) {
+      console.debug("[TEDRIS_LOGIN] yerel auth", {
+        email: authUser?.email ?? null,
+        authUserFound: Boolean(authUser),
+        note: "Yerel geliştirmede VPS app_user aranmaz; bu normal.",
+      });
+    }
+    return;
+  }
   console.log("[TEDRIS_LOGIN_DIAG]", {
     email: authUser?.email ?? appUser?.email ?? null,
     authUserFound: Boolean(authUser),
@@ -848,6 +871,7 @@ async function appUsersByEmail(
   authUser?: KullaniciBilgisi | null,
   opts?: { loginLookup?: boolean },
 ): Promise<AdminKullanici[]> {
+  if (isLocalDevApi()) return [];
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
   const records = authUser && opts?.loginLookup
@@ -1254,7 +1278,7 @@ async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
   const me = await backendApi.me().catch(() => null);
   const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
   if (!user?.email) return null;
-  const appUser = await findAppUserForAuthUserReadOnly(user).catch(() => null);
+  const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true }).catch(() => null);
   if (!appUserAktifMi(appUser)) {
     return null;
   }
@@ -1846,6 +1870,15 @@ function profilFromRecord(record: BackendRecord<UserProfileRecordData>): Kayitli
   };
 }
 
+function profilFromLocal(profile: { id: string; isim?: string; kurumAdi?: string; rol?: string }): KayitliProfil {
+  return {
+    id: String(profile.id),
+    isim: String(profile.isim ?? ""),
+    kurumAdi: String(profile.kurumAdi ?? ""),
+    rol: String(profile.rol ?? ""),
+  };
+}
+
 function institutionFromRecord(record: BackendRecord<InstitutionRecordData>): AdminYurtKayit {
   const data = record.data ?? {};
   const createdAt = data.createdAt ?? record.createdAt ?? record.created_at ?? new Date().toISOString();
@@ -1923,7 +1956,14 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
-    const appUser = await findAppUserForAuthUserReadOnly(user).catch(() => null);
+    if (isLocalDevApi()) {
+      if (user.isActive === false) {
+        clearAuthState();
+        return { user: null };
+      }
+      return { user };
+    }
+    const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true }).catch(() => null);
     return { user: mergeKullaniciWithAppUser(user, appUser) };
   },
 
@@ -1939,6 +1979,16 @@ export const api = {
         throw new Error("Kullanıcı bilgisi alınamadı.");
       }
       authUserFound = true;
+
+      if (isLocalDevApi()) {
+        if (user.isActive === false) {
+          throw new Error("Hesabınız pasif durumda. Lütfen yöneticinizle iletişime geçin.");
+        }
+        logLoginDiag(user, null);
+        await activityRecordOlustur("login", { source: "local_auth_login" }).catch(() => null);
+        logLoginLoadingFinalized(loginEmail, true);
+        return { user };
+      }
 
       await logLoginRecordsScopeDiag({ id: user.id, email: user.email, name: user.name });
 
@@ -2068,11 +2118,20 @@ export const api = {
   },
 
   profilleriGetir: async () => {
+    if (isLocalDevApi()) {
+      const r = await backendApi.listProfiles().catch(() => ({ profiles: [] }));
+      return { profiles: r.profiles.map(profilFromLocal) };
+    }
     const records = await backendApi.listRecords<UserProfileRecordData>("user_profile");
     return { profiles: records.map(profilFromRecord) };
   },
 
   profilKaydet: async (data: { isim: string; kurumAdi: string; rol: string }) => {
+    if (isLocalDevApi()) {
+      const r = await backendApi.saveProfile(data);
+      await activityRecordOlustur("profile_saved", { source: "local_profiles" }).catch(() => null);
+      return { profile: profilFromLocal(r.profile) };
+    }
     const now = new Date().toISOString();
     const me = await backendApi.me().catch(() => null);
     const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
@@ -2086,7 +2145,12 @@ export const api = {
     return { profile: profilFromRecord(record) };
   },
 
-  profilSil: (id: string) => backendApi.deleteRecord(id),
+  profilSil: async (id: string) => {
+    if (isLocalDevApi()) {
+      return backendApi.deleteProfile(id);
+    }
+    return backendApi.deleteRecord(id);
+  },
 
   /** @deprecated Afiş kaydı devre dışı — sunucu 410 döner. UI çağırmamalı. */
   afisleriGetir: async () => ({ posters: [] as KayitliAfis[] }),

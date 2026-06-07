@@ -15,7 +15,7 @@ import { normalizeDistrictName } from "../lib/trackedDistricts";
 import { reconcileUsersWithInstitutions, resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
 
 const router: IRouter = Router();
-router.use(requireAdmin);
+router.use("/admin", requireAdmin);
 
 async function getRange(req: Request) {
   const settings = await loadPeriodSettings();

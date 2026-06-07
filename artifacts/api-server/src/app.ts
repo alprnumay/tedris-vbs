@@ -1,4 +1,5 @@
 ﻿import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import path from "node:path";
 import cookieParser from "cookie-parser";
 import { corsMiddleware } from "./lib/corsOrigins";
 import { useCrossSiteSessionCookie } from "./lib/sessionCookie";
@@ -39,6 +40,13 @@ app.use(corsMiddleware());
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(
+  "/uploads",
+  express.static(path.join(process.cwd(), "uploads"), {
+    maxAge: "7d",
+    fallthrough: true,
+  }),
+);
 
 app.get("/", (_req: Request, res: Response) => {
   const frontend =

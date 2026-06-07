@@ -30,6 +30,9 @@ node_modules
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Davet showcase uploads (api-server)
+uploads/
+
 # misc
 /.env
 .env
@@ -69,3 +72,7 @@ Thumbs.db
 .replitignore
 replit.md
 tedris-vbs-kodlar.tar.gz
+
+# Onarım / VPS yedekleri (hassas kayıt snapshot'ları)
+backups/
+backups/repair-baglarbasi-1163/

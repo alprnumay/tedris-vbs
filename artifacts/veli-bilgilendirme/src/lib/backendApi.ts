@@ -1,9 +1,11 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
 import { rejectClientSideRepair } from "./repairPolicy";
+import { isLocalDevApi, resolveApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+const API_BASE = resolveApiBaseUrl();
 const PROJECT_API_KEY = import.meta.env.VITE_PROJECT_API_KEY || "";
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -72,12 +74,15 @@ function headers(json = true, includeAuth = true): Headers {
 
 function tokenFrom(data: unknown): string | undefined {
   const d = data as { token?: unknown; jwt?: unknown; accessToken?: unknown; access_token?: unknown };
-  const raw = d.token ?? d.jwt ?? d.accessToken ?? d.access_token;
+  const raw = d.token ?? d.sessionToken ?? d.jwt ?? d.accessToken ?? d.access_token;
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 }
 
 async function request<T>(method: HttpMethod, path: string, body?: unknown, opts: { includeAuth?: boolean } = {}): Promise<T> {
-  if (!API_BASE || !PROJECT_API_KEY) {
+  if (!API_BASE) {
+    throw new Error("Sunucu bağlantı ayarları eksik.");
+  }
+  if (!PROJECT_API_KEY && !import.meta.env.DEV) {
     throw new Error("Sunucu bağlantı ayarları eksik.");
   }
 
@@ -87,8 +92,21 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown, opts
       method,
       headers: headers(body !== undefined, opts.includeAuth ?? true),
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: "include",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error("Sunucu yanıt vermedi. Lütfen bağlantınızı kontrol edip tekrar deneyin.");
+    }
+    const cause = (error as { cause?: { code?: string } })?.cause?.code;
+    if (cause === "ECONNRESET" || cause === "ECONNREFUSED") {
+      throw new Error(
+        import.meta.env.DEV
+          ? "Yerel API sunucusuna bağlanılamadı. `npm run dev` ile api (3001) ve web (3000) çalıştığından emin olun."
+          : "Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.",
+      );
+    }
     throw new Error("Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.");
   }
 
@@ -210,8 +228,12 @@ export const backendApi = {
     return [];
   },
 
-  createRecord: async <T>(recordType: string, data: T) =>
-    normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data })),
+  createRecord: async <T>(recordType: string, data: T) => {
+    if (isLocalDevApi()) {
+      throw new Error(`Yerel geliştirmede "${recordType}" kaydı VPS /records üzerinden desteklenmiyor.`);
+    }
+    return normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data }));
+  },
 
   fetchAllRecords: async <T>(recordType?: string, opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {}) =>
     backendApi.fetchAllRecordsFromPath<T>("/records", recordType, opts),
@@ -224,6 +246,9 @@ export const backendApi = {
     recordType?: string,
     opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {},
   ) => {
+    if (isLocalDevApi()) {
+      return [] as BackendRecord<T>[];
+    }
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 100);
     const maxPages = Math.min(Math.max(opts.maxPages ?? 100, 1), 500);
     const all: BackendRecord<T>[] = [];
@@ -342,7 +367,7 @@ export const backendApi = {
   },
 
   uploadFile: async (file: File, metadata?: Record<string, unknown>) => {
-    if (!API_BASE || !PROJECT_API_KEY) throw new Error("Sunucu bağlantı ayarları eksik.");
+    if (!API_BASE) throw new Error("Sunucu bağlantı ayarları eksik.");
     const body = new FormData();
     body.append("file", file);
     if (metadata) body.append("metadata", JSON.stringify(metadata));
@@ -350,6 +375,8 @@ export const backendApi = {
       method: "POST",
       headers: headers(false),
       body,
+      credentials: "include",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error("Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.");
     return res.json();
@@ -360,6 +387,23 @@ export const backendApi = {
   deleteFile: (id: string) =>
     request<{ ok?: boolean }>("DELETE", `/files/${encodeURIComponent(id)}`),
 
-  usageEvent: (eventType: string, metadata?: Record<string, unknown>) =>
-    request<{ ok?: boolean }>("POST", "/usage/event", { event_type: eventType, metadata }),
+  usageEvent: async (eventType: string, metadata?: Record<string, unknown>) => {
+    if (isLocalDevApi()) {
+      try {
+        return await request<{ ok?: boolean }>("POST", "/usage/event", { event_type: eventType, metadata });
+      } catch {
+        return { ok: true };
+      }
+    }
+    return request<{ ok?: boolean }>("POST", "/usage/event", { event_type: eventType, metadata });
+  },
+
+  listProfiles: () =>
+    request<{ profiles: Array<{ id: string; isim: string; kurumAdi: string; rol: string }> }>("GET", "/profiles"),
+
+  saveProfile: (data: { isim: string; kurumAdi: string; rol: string }) =>
+    request<{ profile: { id: string; isim: string; kurumAdi: string; rol: string } }>("POST", "/profiles", data),
+
+  deleteProfile: (id: string) =>
+    request<{ ok?: boolean }>("DELETE", `/profiles/${encodeURIComponent(id)}`),
 };

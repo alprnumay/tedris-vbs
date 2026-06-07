@@ -31,6 +31,7 @@ export default defineConfig({
   },
   server: {
     port,
+    strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
     fs: {
@@ -40,6 +41,13 @@ export default defineConfig({
     /** Yerel frontend → yerel API: tarayıcıda CORS yok, istek aynı origin `/api`. */
     proxy: {
       "/api": {
+        target:
+          process.env.VITE_API_PROXY_TARGET ||
+          "http://127.0.0.1:3001",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/uploads": {
         target:
           process.env.VITE_API_PROXY_TARGET ||
           "http://127.0.0.1:3001",
