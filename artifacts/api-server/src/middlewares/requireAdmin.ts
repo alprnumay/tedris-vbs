@@ -1,4 +1,5 @@
 import { type Request, type Response, type NextFunction } from "express";
+import { findLocalUserById, isLoginUserAdmin } from "../lib/localUserLookup";
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
@@ -22,14 +23,28 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.localUser?.id && !req.isAuthenticated()) {
     res.status(401).json({ error: "Giriş yapmanız gerekiyor." });
     return;
   }
-  if (!isRequestAdmin(req)) {
-    res.status(403).json({ error: "Bu işlem için yönetici yetkisi gerekir." });
+
+  if (req.localUser?.id) {
+    try {
+      const user = await findLocalUserById(req.localUser.id);
+      if (user && isLoginUserAdmin(user)) {
+        next();
+        return;
+      }
+    } catch (err) {
+      console.error("[requireAdmin] user reload failed:", err);
+    }
+  }
+
+  if (isRequestAdmin(req)) {
+    next();
     return;
   }
-  next();
+
+  res.status(403).json({ error: "Bu işlem için yönetici yetkisi gerekir." });
 }

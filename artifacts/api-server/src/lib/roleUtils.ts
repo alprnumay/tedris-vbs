@@ -4,7 +4,7 @@ export function normalizeRole(role?: string | null, isAdmin?: boolean): "user" |
   if (isAdmin) return "admin";
   if (!role) return "user";
   const r = role.toLowerCase().trim();
-  if (r === "admin" || ADMIN_ROLES.has(role ?? "")) return "admin";
+  if (r === "admin" || r === "super_admin" || ADMIN_ROLES.has(role ?? "")) return "admin";
   return "user";
 }
 

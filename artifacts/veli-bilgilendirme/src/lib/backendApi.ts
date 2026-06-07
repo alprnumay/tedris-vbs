@@ -195,6 +195,8 @@ export const backendApi = {
     return data;
   },
 
+  logout: () => request<{ ok?: boolean }>("POST", "/auth/logout"),
+
   me: () => request<{ user?: BackendUser }>("GET", "/auth/me"),
 
   resetAuthPassword: (id: string, body: { password?: string; generate?: boolean }) =>

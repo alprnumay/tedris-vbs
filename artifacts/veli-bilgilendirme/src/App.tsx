@@ -4,7 +4,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
-import { api, type KullaniciBilgisi } from "./lib/api";
+import { api, kullaniciAdminMi, type KullaniciBilgisi } from "./lib/api";
 import { backendApi, type PosterDraftData } from "./lib/backendApi";
 import FormAlani from "./components/FormAlani";
 import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
@@ -427,12 +427,13 @@ function MainApp() {
   }
 
   if (homeModu === "kategoriler") {
+    const adminMi = kullaniciAdminMi(kullanici);
     return (
       <>
         <Toaster position="top-center" richColors />
         <CategoryHome
           kullaniciAdi={kullanici.name}
-          isAdmin={Boolean(kullanici.isAdmin)}
+          isAdmin={adminMi}
           onVeliBilgilendirme={() => setHomeModu("veli")}
           onYakinda={(modulAdi) => {
             toast.info(`${modulAdi} modülü hazırlanıyor.`);
@@ -693,7 +694,7 @@ function MainApp() {
             </svg>
           </button>
 
-          {kullanici?.isAdmin && (
+          {kullaniciAdminMi(kullanici) && (
             <button
               onClick={() => setAktifSekme("yonetim")}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
@@ -741,7 +742,7 @@ function MainApp() {
       </header>
 
       <div className={`veli-desktop-workspace ${aktifSekme === "yonetim" ? "" : "veli-desktop-workspace--veli"} hidden lg:flex flex-1 min-h-0`}>
-        {aktifSekme === "yonetim" && kullanici?.isAdmin ? (
+        {aktifSekme === "yonetim" && kullaniciAdminMi(kullanici) ? (
           <div className="veli-desktop-inner veli-admin-desktop-inner w-full">
             <AdminSayfasi />
           </div>
@@ -891,7 +892,7 @@ function MainApp() {
           </div>
         )}
 
-        {aktifSekme === "yonetim" && kullanici?.isAdmin && (
+        {aktifSekme === "yonetim" && kullaniciAdminMi(kullanici) && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f1f5f9" }}>
             <AdminSayfasi />
           </div>
@@ -913,7 +914,7 @@ function MainApp() {
           setAktifSekme(sekme);
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}
-        adminGoster={Boolean(kullanici?.isAdmin)}
+        adminGoster={kullaniciAdminMi(kullanici)}
         onDestek={() => setDestekAcik(true)}
       />
 

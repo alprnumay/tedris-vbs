@@ -4,7 +4,7 @@ import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { logActivity } from "../lib/activityLog";
 import { isAdminRole } from "../lib/roleUtils";
-import { findLocalUserForLogin, type LoginUserRow } from "../lib/localUserLookup";
+import { findLocalUserForLogin, findLocalUserById, type LoginUserRow } from "../lib/localUserLookup";
 import {
   createSession,
   clearSession,
@@ -167,10 +167,7 @@ router.post("/auth/logout", async (req: Request, res: Response) => {
 router.get("/auth/me", async (req: Request, res: Response) => {
   if (req.localUser?.id) {
     try {
-      const [user] = await db
-        .select()
-        .from(localUsersTable)
-        .where(eq(localUsersTable.id, req.localUser.id));
+      const user = await findLocalUserById(req.localUser.id);
 
       if (user && !user.deletedAt && user.isActive !== false) {
         res.json({ user: mapLocalUserPublicProfile(user) });

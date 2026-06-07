@@ -98,6 +98,11 @@ export function CategoryHome({
               >
                 <p className="truncate border-b border-slate-100 px-3 py-2 text-[11px] font-medium text-slate-500">
                   {kullaniciAdi}
+                  {isAdmin ? (
+                    <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-800">
+                      Admin
+                    </span>
+                  ) : null}
                 </p>
                 <button
                   type="button"
@@ -150,6 +155,11 @@ export function CategoryHome({
 
           <div className="hidden items-center gap-2 md:flex">
             <span className="mr-1 max-w-[160px] truncate text-xs font-medium text-slate-500">{kullaniciAdi}</span>
+            {isAdmin ? (
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
+                Admin
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={onDestek}

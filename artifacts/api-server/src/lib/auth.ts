@@ -4,7 +4,7 @@ import { type Request, type Response } from "express";
 import { sql, eq } from "drizzle-orm";
 import { db, sessionsTable } from "@workspace/db";
 import type { AuthUser } from "@workspace/api-zod";
-import { sessionCookieOptions } from "./sessionCookie";
+import { sessionClearCookieOptions, sessionCookieOptions } from "./sessionCookie";
 
 export const ISSUER_URL = process.env.ISSUER_URL ?? "https://replit.com/oidc";
 export const SESSION_COOKIE = "sid";
@@ -107,9 +107,15 @@ export async function clearSession(
   res: Response,
   sid?: string,
 ): Promise<void> {
-  if (sid) await deleteSession(sid);
+  if (sid) {
+    try {
+      await deleteSession(sid);
+    } catch (err) {
+      console.warn("[clearSession] session delete failed:", err);
+    }
+  }
 
-  res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
+  res.clearCookie(SESSION_COOKIE, sessionClearCookieOptions());
 }
 
 export function getSessionId(req: Request): string | undefined {

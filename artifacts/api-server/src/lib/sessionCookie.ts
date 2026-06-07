@@ -35,6 +35,11 @@ export function sessionCookieOptions(maxAge?: number): CookieOptions {
   return { ...base, secure: false, sameSite: "lax" };
 }
 
+/** clearCookie — setCookie ile aynı path/secure/sameSite; maxAge=0 ile sil. */
+export function sessionClearCookieOptions(): CookieOptions {
+  return { ...sessionCookieOptions(), maxAge: 0 };
+}
+
 /** OIDC akış çerezleri (aynı API host üzerinde kalır). */
 export function oauthFlowCookieOptions(maxAge: number): CookieOptions {
   return {

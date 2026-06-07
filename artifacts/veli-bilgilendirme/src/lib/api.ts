@@ -54,6 +54,15 @@ function clearAuthState() {
   clearStoredSessionToken();
   clearBackendToken();
   viewerAdminCache = null;
+  try {
+    sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
+}
+
+export function kullaniciAdminMi(user: KullaniciBilgisi | null | undefined): boolean {
+  return isVpsAdminUser(user);
 }
 
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
@@ -537,11 +546,16 @@ function qs(params: Record<string, string | undefined>): string {
 
 function kullaniciFromBackend(user?: BackendUser | null): KullaniciBilgisi | null {
   if (!user) return null;
+  const email = String(user.email ?? "");
   const role = typeof user.role === "string" ? user.role : "";
-  const isAdmin = Boolean(user.isAdmin) || role === "admin" || role === "super_admin";
+  const isAdmin =
+    Boolean(user.isAdmin) ||
+    role === "admin" ||
+    role === "super_admin" ||
+    isPrimaryAdminEmail(email);
   return {
     id: String(user.id ?? user.email ?? ""),
-    email: String(user.email ?? ""),
+    email,
     name: String(user.name ?? user.email ?? "Kullanıcı"),
     role: role || undefined,
     isAdmin,
@@ -556,12 +570,22 @@ function kullaniciFromBackend(user?: BackendUser | null): KullaniciBilgisi | nul
 
 function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullanici | null): KullaniciBilgisi {
   if (!appUser) return user;
+  const isAdmin = kullaniciAdminMi({
+    ...user,
+    role: user.role ?? appUser.role,
+    isAdmin: Boolean(user.isAdmin) || Boolean(appUser.isAdmin),
+  });
+  const role = isAdmin
+    ? user.role === "super_admin" || appUser.role === "super_admin"
+      ? "super_admin"
+      : "admin"
+    : appUser.role ?? user.role;
   return {
     ...user,
     appUserId: appUser.id,
     name: appUser.name || user.name,
-    role: appUser.role,
-    isAdmin: appUser.isAdmin || user.isAdmin,
+    role,
+    isAdmin,
     isActive: appUser.isActive,
     district: appUser.district,
     province: appUser.province,
@@ -1955,15 +1979,19 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
+    const normalizeUser = (u: KullaniciBilgisi): KullaniciBilgisi => ({
+      ...u,
+      isAdmin: kullaniciAdminMi(u),
+    });
     if (isLocalDevApi()) {
       if (user.isActive === false) {
         clearAuthState();
         return { user: null };
       }
-      return { user };
+      return { user: normalizeUser(user) };
     }
     const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true }).catch(() => null);
-    return { user: mergeKullaniciWithAppUser(user, appUser) };
+    return { user: normalizeUser(mergeKullaniciWithAppUser(user, appUser)) };
   },
 
   girisYap: async (email: string, password: string) => {
@@ -2112,7 +2140,13 @@ export const api = {
   },
 
   cikisYap: async () => {
-    clearAuthState();
+    try {
+      await backendApi.logout();
+    } catch {
+      /* yerel state yine de temizlenir */
+    } finally {
+      clearAuthState();
+    }
     return { ok: true };
   },
 
