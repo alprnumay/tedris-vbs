@@ -7,6 +7,7 @@ import supportRouter from "./support";
 import adminRouter from "./admin";
 import adminReportsRouter from "./adminReports";
 import activityRouter from "./activity";
+import recordsRouter from "./records";
 import vpsRepairRouter from "./vpsRepair";
 import davetShowcaseRouter from "./davetShowcase";
 
@@ -16,6 +17,7 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(localAuthRouter);
 router.use(activityRouter);
+router.use(recordsRouter);
 router.use(postersRouter);
 router.use(supportRouter);
 router.use(vpsRepairRouter);
