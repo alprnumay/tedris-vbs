@@ -65,6 +65,24 @@ export function kullaniciAdminMi(user: KullaniciBilgisi | null | undefined): boo
   return isVpsAdminUser(user);
 }
 
+function normalizeAuthUser(u: KullaniciBilgisi): KullaniciBilgisi {
+  const isAdmin = kullaniciAdminMi(u);
+  return {
+    ...u,
+    isAdmin,
+    role: isAdmin
+      ? u.role === "super_admin"
+        ? "super_admin"
+        : "admin"
+      : u.role,
+  };
+}
+
+function backendHataMesaji(error: unknown): string {
+  const raw = error instanceof Error ? error.message : "login_failed";
+  return raw.replace(/^\d+\s+/, "").trim() || "Giriş başarısız.";
+}
+
 function isVpsAdminUser(user: KullaniciBilgisi | null | undefined): boolean {
   if (!user) return false;
   if (user.email?.trim().toLocaleLowerCase("tr-TR") === PRIMARY_ADMIN_EMAIL) return true;
@@ -1979,19 +1997,18 @@ export const api = {
       clearAuthState();
       return { user: null };
     }
-    const normalizeUser = (u: KullaniciBilgisi): KullaniciBilgisi => ({
-      ...u,
-      isAdmin: kullaniciAdminMi(u),
-    });
     if (isLocalDevApi()) {
       if (user.isActive === false) {
         clearAuthState();
         return { user: null };
       }
-      return { user: normalizeUser(user) };
+      return { user: normalizeAuthUser(user) };
+    }
+    if (kullaniciAdminMi(user)) {
+      return { user: normalizeAuthUser(user) };
     }
     const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true }).catch(() => null);
-    return { user: normalizeUser(mergeKullaniciWithAppUser(user, appUser)) };
+    return { user: normalizeAuthUser(mergeKullaniciWithAppUser(user, appUser)) };
   },
 
   girisYap: async (email: string, password: string) => {
@@ -2014,7 +2031,14 @@ export const api = {
         logLoginDiag(user, null);
         await activityRecordOlustur("login", { source: "local_auth_login" }).catch(() => null);
         logLoginLoadingFinalized(loginEmail, true);
-        return { user };
+        return { user: normalizeAuthUser(user) };
+      }
+
+      if (kullaniciAdminMi(user)) {
+        logLoginDiag(user, null);
+        await activityRecordOlustur("login", { source: "auth_login_admin" }).catch(() => null);
+        logLoginLoadingFinalized(loginEmail, true);
+        return { user: normalizeAuthUser(user) };
       }
 
       await logLoginRecordsScopeDiag({ id: user.id, email: user.email, name: user.name });
@@ -2087,7 +2111,7 @@ export const api = {
       logLoginDiag(user, appUser);
       await activityRecordOlustur("login", { source: "auth_login" }).catch(() => null);
       logLoginLoadingFinalized(loginEmail, true);
-      return { user: mergeKullaniciWithAppUser(user, appUser) };
+      return { user: normalizeAuthUser(mergeKullaniciWithAppUser(user, appUser)) };
     } catch (error) {
       clearAuthState();
       const raw = error instanceof Error ? error.message : "login_failed";
@@ -2104,7 +2128,7 @@ export const api = {
       if (!authUserFound && looksLikeBadCredentials) {
         logLoginFlowStop({
           email: loginEmail,
-          reason: "auth_login_failed_possible_no_auth",
+          reason: "auth_login_failed",
           authUserFound: false,
           appUserFound: false,
           attemptedAdminRepair: false,
@@ -2112,10 +2136,8 @@ export const api = {
           attemptedRegister: false,
           registerStatus: "skipped_login",
         });
-        logLoginLoadingFinalized(loginEmail, false, "auth_login_failed_possible_no_auth");
-        throw new Error(
-          "Giriş başarısız. Bu kullanıcı için giriş hesabı henüz oluşturulmamış olabilir; yönetici backend veri onarım endpointini çalıştırmalı.",
-        );
+        logLoginLoadingFinalized(loginEmail, false, "auth_login_failed");
+        throw new Error(backendHataMesaji(error));
       }
       logLoginLoadingFinalized(loginEmail, false, errorCode);
       throw error;

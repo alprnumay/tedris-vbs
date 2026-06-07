@@ -1,6 +1,33 @@
+import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { logger } from "./logger";
+import { findLocalUserForLogin } from "./localUserLookup";
+
+/** ADMIN_EMAIL + ADMIN_BOOTSTRAP_PASSWORD ile eksik admin hesabını oluşturur (şifreyi güncellemez). */
+async function ensureAdminBootstrapUser(): Promise<void> {
+  const email = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = (
+    process.env.ADMIN_BOOTSTRAP_PASSWORD ||
+    process.env.ADMIN_PASSWORD ||
+    ""
+  ).trim();
+  if (!email || !password) return;
+
+  const existing = await findLocalUserForLogin(email).catch(() => null);
+  if (existing) return;
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const name = (process.env.ADMIN_NAME || "Yönetici").trim() || "Yönetici";
+
+  await db.execute(sql`
+    INSERT INTO local_users (email, password_hash, name, role, is_admin, is_active)
+    VALUES (${email}, ${passwordHash}, ${name}, 'admin', true, true)
+    ON CONFLICT (email) DO NOTHING
+  `);
+
+  logger.info({ email }, "Admin bootstrap kullanıcısı oluşturuldu (local_users)");
+}
 
 /**
  * Drizzle şeması ile gerçek PostgreSQL tablosunu uyumlu hale getirir.
@@ -199,6 +226,8 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS showcase_posts_created_at_idx ON showcase_posts (created_at DESC)
     `);
+
+    await ensureAdminBootstrapUser();
 
     logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, showcase_posts)");
     return { ok: true };
