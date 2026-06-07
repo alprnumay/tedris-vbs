@@ -1,8 +1,8 @@
 import * as client from "openid-client";
 import crypto from "crypto";
 import { type Request, type Response } from "express";
+import { sql, eq } from "drizzle-orm";
 import { db, sessionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import type { AuthUser } from "@workspace/api-zod";
 import { sessionCookieOptions } from "./sessionCookie";
 
@@ -37,14 +37,37 @@ export async function getOidcConfig(): Promise<client.Configuration> {
   return oidcConfig;
 }
 
+async function ensureSessionsTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid varchar PRIMARY KEY,
+      sess jsonb NOT NULL,
+      expire timestamptz NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)
+  `);
+}
+
 export async function createSession(data: SessionData): Promise<string> {
   const sid = crypto.randomBytes(32).toString("hex");
+  const expire = new Date(Date.now() + SESSION_TTL);
 
-  await db.insert(sessionsTable).values({
-    sid,
-    sess: data as unknown as Record<string, unknown>,
-    expire: new Date(Date.now() + SESSION_TTL),
-  });
+  try {
+    await db.insert(sessionsTable).values({
+      sid,
+      sess: data as unknown as Record<string, unknown>,
+      expire,
+    });
+  } catch (err) {
+    console.warn("[createSession] drizzle insert failed, ensuring table", err);
+    await ensureSessionsTable();
+    await db.execute(sql`
+      INSERT INTO sessions (sid, sess, expire)
+      VALUES (${sid}, ${JSON.stringify(data)}::jsonb, ${expire.toISOString()}::timestamptz)
+    `);
+  }
 
   return sid;
 }

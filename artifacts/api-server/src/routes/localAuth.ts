@@ -1,9 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { logActivity } from "../lib/activityLog";
 import { isAdminRole } from "../lib/roleUtils";
+import { findLocalUserForLogin, type LoginUserRow } from "../lib/localUserLookup";
 import {
   createSession,
   clearSession,
@@ -16,10 +17,11 @@ import { sessionCookieOptions } from "../lib/sessionCookie";
 const router: IRouter = Router();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
-function mapLocalUserPublicProfile(user: typeof localUsersTable.$inferSelect) {
+function mapLocalUserPublicProfile(user: LoginUserRow) {
   const role = user.role ?? "hoca";
   const isAdmin =
     user.email?.toLowerCase() === ADMIN_EMAIL ||
+    user.isAdmin ||
     isAdminRole(role, user.isAdmin);
   return {
     id: user.id,
@@ -103,10 +105,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
 
     const normalizedEmail = email.toLowerCase();
 
-    const [user] = await db
-      .select()
-      .from(localUsersTable)
-      .where(eq(localUsersTable.email, normalizedEmail));
+    const user = await findLocalUserForLogin(normalizedEmail);
 
     if (!user) {
       res.status(401).json({ error: "E-posta veya şifre hatalı." });
@@ -125,10 +124,9 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     }
 
     try {
-      await db
-        .update(localUsersTable)
-        .set({ lastLoginAt: new Date() })
-        .where(eq(localUsersTable.id, user.id));
+      await db.execute(sql`
+        UPDATE local_users SET last_login_at = now() WHERE id = ${user.id}
+      `);
       await logActivity(user, "login");
     } catch (err) {
       console.error("[auth/login] lastLoginAt veya activity log güncellenemedi:", err);

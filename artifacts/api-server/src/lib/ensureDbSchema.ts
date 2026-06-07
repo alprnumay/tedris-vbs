@@ -6,7 +6,7 @@ import { logger } from "./logger";
  * Drizzle şeması ile gerçek PostgreSQL tablosunu uyumlu hale getirir.
  * Mevcut veriyi silmez; eksik tablo/kolonları idempotent ekler.
  */
-export async function ensureDbSchema(): Promise<void> {
+export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }> {
   try {
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS institutions (
@@ -201,7 +201,10 @@ export async function ensureDbSchema(): Promise<void> {
     `);
 
     logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, showcase_posts)");
+    return { ok: true };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logger.error({ err }, "Veritabanı şema senkronizasyonu başarısız — admin raporları çalışmayabilir");
+    return { ok: false, error: message };
   }
 }

@@ -8,6 +8,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
 import { db } from "@workspace/db";
+import { ensureDbSchema } from "./lib/ensureDbSchema";
 
 const app: Express = express();
 
@@ -89,6 +90,31 @@ app.get("/api/db-check", async (_req: Request, res: Response) => {
       error: String(err),
     });
   }
+});
+
+/** VPS deploy sonrası şema onarımı — SETUP_SECRET header veya ?token= ile */
+app.post("/api/setup-schema", async (req: Request, res: Response) => {
+  const secret = process.env.SETUP_SECRET?.trim();
+  const token =
+    (typeof req.headers["x-setup-token"] === "string" ? req.headers["x-setup-token"] : "") ||
+    (typeof req.query.token === "string" ? req.query.token : "") ||
+    (typeof req.body?.token === "string" ? req.body.token : "");
+
+  if (secret && token !== secret) {
+    res.status(403).json({ ok: false, error: "Geçersiz setup token." });
+    return;
+  }
+
+  const result = await ensureDbSchema();
+  const columns = await db.execute(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'local_users' ORDER BY ordinal_position
+  `);
+
+  res.status(result.ok ? 200 : 500).json({
+    ...result,
+    localUserColumns: (columns as { rows?: { column_name: string }[] }).rows?.map((r) => r.column_name) ?? [],
+  });
 });
 
 app.use(authMiddleware);
