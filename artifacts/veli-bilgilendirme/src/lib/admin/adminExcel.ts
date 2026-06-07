@@ -167,12 +167,13 @@ export async function indirAdminExcel(opts: {
 
   if (opts.users?.length) {
     const sh = wb.addWorksheet("Kullanıcılar");
-    const hdr = sh.addRow(["Ad Soyad", "E-posta", "Mıntıka", "Yurt / Kurum", "Rol", "Son giriş", "Durum"]);
+    const hdr = sh.addRow(["Ad Soyad", "E-posta", "İl", "Mıntıka", "Yurt / Kurum", "Rol", "Son giriş", "Durum"]);
     styleHeaderRow(hdr);
     for (const u of opts.users) {
       sh.addRow([
         u.name,
         u.email,
+        u.province ?? "—",
         u.district ?? "—",
         u.institutionName ?? "—",
         u.role,
@@ -183,14 +184,35 @@ export async function indirAdminExcel(opts: {
     autoWidth(sh);
   }
 
+  const loginLogs = (opts.activityLogs ?? []).filter((l) => l.action === "login");
+  if (loginLogs.length) {
+    const sh = wb.addWorksheet("Girişler");
+    const hdr = sh.addRow(["Tarih / Saat", "Kullanıcı", "E-posta", "İl", "Mıntıka", "Yurt / Kurum", "İşlem"]);
+    styleHeaderRow(hdr);
+    for (const l of loginLogs) {
+      sh.addRow([
+        new Date(l.createdAt).toLocaleString("tr-TR"),
+        l.userName ?? "—",
+        l.userEmail ?? "—",
+        l.province ?? "—",
+        l.district ?? "—",
+        l.institutionName ?? l.institutionCode ?? "—",
+        "Giriş yaptı",
+      ]);
+    }
+    sh.autoFilter = { from: "A1", to: "G1" };
+    autoWidth(sh);
+  }
+
   if (opts.activityLogs?.length) {
     const sh = wb.addWorksheet("Aktivite");
-    const hdr = sh.addRow(["Tarih", "Kullanıcı", "Mıntıka", "Yurt / Kurum", "İşlem"]);
+    const hdr = sh.addRow(["Tarih", "Kullanıcı", "İl", "Mıntıka", "Yurt / Kurum", "İşlem"]);
     styleHeaderRow(hdr);
     for (const l of opts.activityLogs) {
       sh.addRow([
         new Date(l.createdAt).toLocaleString("tr-TR"),
         l.userName ?? "—",
+        l.province ?? "—",
         l.district ?? "—",
         l.institutionName ?? l.institutionCode ?? "—",
         l.action,

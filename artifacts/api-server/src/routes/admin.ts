@@ -830,7 +830,7 @@ router.get(
   const rows = await db.execute(sql`
     SELECT sr.id, sr.user_id, sr.user_email, sr.user_name, sr.message,
            sr.status, sr.admin_note, sr.created_at,
-           lu.province, lu.district, lu.institution_name, lu.institution_code
+           lu.province, lu.district_name AS district, lu.institution_name, lu.institution_code
     FROM support_requests sr
     LEFT JOIN local_users lu ON lu.id::text = sr.user_id
     ORDER BY sr.created_at DESC

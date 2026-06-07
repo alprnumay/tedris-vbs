@@ -148,9 +148,14 @@ router.post("/auth/login", async (req: Request, res: Response) => {
 
     res.json({ user: publicUser, sessionToken: sid });
   } catch (err) {
-    console.error("[auth/login]", err);
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[auth/login]", detail, err);
+    const schemaHint =
+      /column|relation|does not exist|undefined column/i.test(detail)
+        ? " Veritabanı şeması güncel değil — API sunucusunu yeniden başlatın (ensureDbSchema) veya pnpm db:push çalıştırın."
+        : "";
     res.status(500).json({
-      error: "Giriş işlemi tamamlanamadı. Veritabanı şeması güncel mi? (pnpm db:push)",
+      error: `Giriş işlemi tamamlanamadı.${schemaHint}`,
     });
   }
 });

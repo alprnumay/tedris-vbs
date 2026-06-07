@@ -46,13 +46,97 @@ export async function ensureDbSchema(): Promise<void> {
     `);
 
     await db.execute(sql`
-      ALTER TABLE local_users
-      ADD COLUMN IF NOT EXISTS institution_id varchar
+      CREATE TABLE IF NOT EXISTS sessions (
+        sid varchar PRIMARY KEY,
+        sess jsonb NOT NULL,
+        expire timestamptz NOT NULL
+      )
     `);
 
     await db.execute(sql`
-      ALTER TABLE local_users
-      ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+      CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON sessions (expire)
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS local_users (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        email varchar UNIQUE NOT NULL,
+        password_hash varchar NOT NULL,
+        name varchar NOT NULL,
+        is_admin boolean NOT NULL DEFAULT false,
+        province varchar,
+        district_name varchar,
+        institution_id varchar,
+        institution_name varchar,
+        institution_code varchar,
+        role varchar NOT NULL DEFAULT 'hoca',
+        is_active boolean NOT NULL DEFAULT true,
+        deleted_at timestamptz,
+        last_login_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS institution_id varchar
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS province varchar
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS district_name varchar
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS last_login_at timestamptz
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS role varchar NOT NULL DEFAULT 'hoca'
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true
+    `);
+
+    /* Eski drizzle push ile oluşmuş district sütununu district_name'e taşı */
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'local_users' AND column_name = 'district'
+        ) AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'local_users' AND column_name = 'district_name'
+        ) THEN
+          UPDATE local_users
+          SET district_name = district
+          WHERE district_name IS NULL AND district IS NOT NULL;
+        ELSIF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'local_users' AND column_name = 'district'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'local_users' AND column_name = 'district_name'
+        ) THEN
+          ALTER TABLE local_users RENAME COLUMN district TO district_name;
+        END IF;
+      END $$
     `);
 
     await db.execute(sql`

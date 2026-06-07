@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   api,
-  ADMIN_PANEL_READ_ONLY_MESSAGE,
   type AdminKullanici,
   type AdminDestek,
   type AdminDashboard,
@@ -9,13 +8,17 @@ import {
   type AdminYurtMetrik,
   type AdminVeriSagligi,
   type AdminAktiviteResponse,
+  type AdminAktiviteLog,
+  type AdminImportCommitResponse,
   type AdminYurtKayit,
 } from "../lib/api";
 import { TRACKED_DISTRICTS } from "../lib/admin/trackedDistricts";
 import { hatirlatmaMesaji, yurtHatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
 import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
 import { indirAdminExcel } from "../lib/admin/adminExcel";
+import { excelKurumImportOku, type KurumImportSatiri } from "../lib/admin/adminExcelImport";
 import { AppBrand } from "./AppBrand";
+import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
 import {
   StatKart,
   DurumRozet,
@@ -78,7 +81,7 @@ export default function AdminSayfasi() {
   const [kurumKayitlari, setKurumKayitlari] = useState<AdminYurtKayit[]>([]);
   const [veriSagligi, setVeriSagligi] = useState<AdminVeriSagligi | null>(null);
   const [aktivite, setAktivite] = useState<AdminAktiviteResponse | null>(null);
-  const [bugunGirisler, setBugunGirisler] = useState<AdminKullanici[]>([]);
+  const [girisLoglari, setGirisLoglari] = useState<AdminAktiviteLog[]>([]);
   const [kullanicilar, setKullanicilar] = useState<AdminKullanici[]>([]);
   const [kullaniciListeHata, setKullaniciListeHata] = useState<string | null>(null);
   const [kullaniciListeOzet, setKullaniciListeOzet] = useState<{ rawCount: number; filteredCount: number } | null>(null);
@@ -96,6 +99,12 @@ export default function AdminSayfasi() {
   const [donemBitis, setDonemBitis] = useState("");
   const [sezonBaslangic, setSezonBaslangic] = useState("");
   const [sezonBitis, setSezonBitis] = useState("");
+  const [silinecekKullanici, setSilinecekKullanici] = useState<AdminKullanici | null>(null);
+  const [importRows, setImportRows] = useState<KurumImportSatiri[]>([]);
+  const [importYukleniyor, setImportYukleniyor] = useState(false);
+  const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(true);
+  const [importSifre, setImportSifre] = useState("Nehari2026");
+  const [importSonuc, setImportSonuc] = useState<AdminImportCommitResponse | null>(null);
   const filtreParams = useCallback(
     () => ({
       district: mintika || undefined,
@@ -120,7 +129,6 @@ export default function AdminSayfasi() {
     try {
       const jobs: Promise<void>[] = [
         api.adminDashboard(fp).then(setDashboard),
-        api.adminBugunGirisler(fp).then((r) => setBugunGirisler(r.logins)),
         api.adminYurtKayitlari().then((r) => setKurumKayitlari(r.institutions)),
         api
           .adminKullanicilar({
@@ -152,6 +160,13 @@ export default function AdminSayfasi() {
           api
             .adminAktivite({ ...fp, action: aktiviteAction || undefined })
             .then(setAktivite),
+        );
+      }
+      if (aktifSekme === "genel" || aktifSekme === "mintika" || aktifSekme === "excel") {
+        jobs.push(
+          api
+            .adminAktivite({ ...fp, action: "login" })
+            .then((r) => setGirisLoglari(r.logs)),
         );
       }
 
@@ -188,6 +203,99 @@ export default function AdminSayfasi() {
     setKullaniciKurum(code);
     setAktifSekme("kullanicilar");
   };
+
+  const kullaniciPasif = async (u: AdminKullanici) => {
+    await api.adminKullaniciGuncelle(u.id, { isActive: !u.isActive } as Partial<AdminKullanici>);
+    veriYukle();
+  };
+
+  const sifreSifirla = async (u: AdminKullanici) => {
+    try {
+      const r = await api.adminSifreSifirla(u.id, { generate: true });
+      alert(`Yeni geçici şifre: ${r.password ?? "—"}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Şifre sıfırlanamadı.");
+    }
+  };
+
+  const kullaniciSil = async () => {
+    if (!silinecekKullanici) return;
+    await api.adminKullaniciSil(silinecekKullanici.id);
+    setSilinecekKullanici(null);
+    await veriYukle();
+  };
+
+  const mevcutEpostalar = useMemo(
+    () => kullanicilar.map((u) => u.email.toLowerCase()),
+    [kullanicilar],
+  );
+
+  const excelImportSec = async (file?: File) => {
+    if (!file) return;
+    setImportYukleniyor(true);
+    setImportSonuc(null);
+    try {
+      const rows = await excelKurumImportOku(
+        file,
+        kurumSecenekleriTum.map((k) => k.institutionCode),
+        mevcutEpostalar,
+        kurumKayitlari.map((k) => ({
+          institutionCode: k.institutionCode,
+          institutionName: k.institutionName,
+          districtName: k.districtName,
+          province: k.province,
+        })),
+      );
+      setImportRows(rows);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Excel okunamadı.");
+    } finally {
+      setImportYukleniyor(false);
+    }
+  };
+
+  const importBaslat = async () => {
+    const aktarilacak = importRows.filter((r) => r.durum === "yeni" || r.durum === "email_cakisiyor");
+    if (aktarilacak.length === 0) {
+      alert("İçe aktarılacak yeni satır yok.");
+      return;
+    }
+    setImportYukleniyor(true);
+    try {
+      const sonuc = await api.adminTopluKurumImport({
+        rows: aktarilacak.map((r) => ({
+          rowNumber: r.rowNumber,
+          district: r.district,
+          institutionName: r.cleanInstitutionName || r.institutionName,
+          institutionCode: r.institutionCode,
+          email: r.email,
+          province: r.province,
+        })),
+        createUsers: importKullaniciOlustur,
+        defaultPassword: importSifre,
+      });
+      setImportSonuc(sonuc);
+      setImportRows([]);
+      await veriYukle();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "İçe aktarma başarısız.");
+    } finally {
+      setImportYukleniyor(false);
+    }
+  };
+
+  const hataliSatirlariKopyala = () => {
+    const text = importRows
+      .filter((r) => r.durum !== "yeni" && r.durum !== "email_cakisiyor")
+      .map((r) => `${r.rowNumber}\t${r.district}\t${r.institutionName}\t${r.durumMetni}`)
+      .join("\n");
+    void navigator.clipboard.writeText(text || "Hatalı satır yok.");
+  };
+
+  const mintikaGirisLoglari = useMemo(
+    () => (mintika ? girisLoglari.filter((l) => l.district === mintika) : girisLoglari),
+    [girisLoglari, mintika],
+  );
 
   const kurumSecenekleriTum = useMemo(
     () => {
@@ -226,6 +334,11 @@ export default function AdminSayfasi() {
       tip === "yurt" ? "Yurt Takibi Raporu" :
       tip === "kullanici" ? "Kullanıcı Raporu" :
       tip === "aktivite" ? "Aktivite Raporu" : "Veri Sağlığı Raporu";
+    const raporGirisleri =
+      tip === "genel" ? girisLoglari :
+      tip === "mintika" ? mintikaGirisLoglari :
+      tip === "aktivite" ? aktivite?.logs :
+      undefined;
     await indirAdminExcel({
       raporAdi,
       rangeLabel: dashboard?.range.label ?? tarihAralik,
@@ -236,11 +349,12 @@ export default function AdminSayfasi() {
         "Bugün aktif yurt": ozet?.todayActiveYurts ?? 0,
         "7+ gün pasif yurt": ozet?.passive7dYurts ?? 0,
         "Açık destek": ozet?.openSupport ?? 0,
+        "Giriş kaydı": raporGirisleri?.length ?? 0,
       },
       mintikalar: tip !== "yurt" ? mintikalar : undefined,
       yurts: tip !== "mintika" ? yurts : undefined,
       users: tip === "kullanici" ? kullanicilar : undefined,
-      activityLogs: tip === "aktivite" ? aktivite?.logs : undefined,
+      activityLogs: raporGirisleri,
       issues: tip === "veri" ? veriSagligi?.issues : undefined,
     });
   };
@@ -324,7 +438,7 @@ export default function AdminSayfasi() {
           </div>
         )}
         <div style={{ padding: 12, borderRadius: 10, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 12, marginBottom: 12, lineHeight: 1.55 }}>
-          {ADMIN_PANEL_READ_ONLY_MESSAGE}
+          Genel Bakış tüm mıntıkaların girişlerini; Mıntıka Panosu seçili mıntıkanın girişlerini listeler. Excel raporlarında her giriş ayrı satır olarak yer alır.
         </div>
 
         <div className="admin-tabbar">
@@ -394,23 +508,30 @@ export default function AdminSayfasi() {
             )}
 
             <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Bugün giriş yapanlar</div>
-              {bugunGirisler.length === 0 ? (
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Genel giriş kayıtları</div>
+              <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 10px" }}>
+                Seçili tarih aralığındaki tüm girişler — {dashboard?.range.label ?? tarihAralik}
+              </p>
+              {girisLoglari.length === 0 ? (
                 <p style={{ color: "#94a3b8", fontSize: 13 }}>Veri yok</p>
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 6 }}>Saat</th><th>Kullanıcı</th><th>Yurt</th><th>Mıntıka</th></tr></thead>
+                  <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 6 }}>Tarih / Saat</th><th>Kullanıcı</th><th>İl</th><th>Mıntıka</th><th>Yurt</th></tr></thead>
                   <tbody>
-                    {bugunGirisler.map((u) => (
-                      <tr key={u.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: 6 }}>{u.login_time || "—"}</td>
-                        <td>{u.name}</td>
-                        <td>{u.institutionName || "—"}</td>
-                        <td>{u.district || "—"}</td>
+                    {girisLoglari.slice(0, 50).map((l) => (
+                      <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: 6 }}>{formatTarih(l.createdAt)}</td>
+                        <td>{l.userName || "—"}</td>
+                        <td>{l.province || "—"}</td>
+                        <td>{l.district || "—"}</td>
+                        <td>{l.institutionName || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+              {girisLoglari.length > 50 && (
+                <p style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>İlk 50 kayıt gösteriliyor. Tümünü Excel Genel Bakış raporundan indirebilirsiniz.</p>
               )}
             </div>
           </div>
@@ -418,6 +539,11 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "mintika" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {mintika && (
+              <div style={{ background: "#eff6ff", borderRadius: 12, padding: 12, border: "1px solid #bfdbfe", fontSize: 12, color: "#1e3a8a" }}>
+                Mıntıka filtresi: <strong>{mintika}</strong> — {mintikaGirisLoglari.length} giriş kaydı
+              </div>
+            )}
             {mintikalar.length === 0 ? <p style={{ color: "#94a3b8" }}>Veri yok</p> : mintikalar.map((m) => (
               <div key={m.districtName} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -447,6 +573,29 @@ export default function AdminSayfasi() {
                 </button>
               </div>
             ))}
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>
+                {mintika ? `${mintika} giriş kayıtları` : "Mıntıka giriş kayıtları"}
+              </div>
+              {mintikaGirisLoglari.length === 0 ? (
+                <p style={{ color: "#94a3b8", fontSize: 13 }}>Veri yok</p>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 6 }}>Tarih / Saat</th><th>Kullanıcı</th><th>İl</th><th>Mıntıka</th><th>Yurt</th></tr></thead>
+                  <tbody>
+                    {mintikaGirisLoglari.slice(0, 100).map((l) => (
+                      <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: 6 }}>{formatTarih(l.createdAt)}</td>
+                        <td>{l.userName || "—"}</td>
+                        <td>{l.province || "—"}</td>
+                        <td>{l.district || "—"}</td>
+                        <td>{l.institutionName || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 
@@ -502,11 +651,58 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "kullanicilar" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1.5px solid #e2e8f0" }}>
-              <div style={{ fontSize: 14, fontWeight: 800 }}>Kullanıcı listesi (salt okunur)</div>
-              <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 12, lineHeight: 1.5 }}>
-                Kullanıcı ekleme, Excel içe aktarma, şifre sıfırlama ve silme işlemleri geçici olarak kapalıdır. Veriler yalnızca okunur.
-              </p>
+            <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
+            <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>Excel ile kurum ve kullanıcı ekle</div>
+                  <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 12 }}>
+                    Güncel Talebe sayfasındaki B sütunundan mıntıka, C sütunundan kurum okunur. İl otomatik eşleştirilir.
+                  </p>
+                </div>
+                <label style={{ padding: "9px 14px", borderRadius: 10, background: "#1e3a5f", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                  Excel ile Kurum Ekle
+                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => void excelImportSec(e.target.files?.[0])} />
+                </label>
+              </div>
+              {importRows.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>
+                      <input type="checkbox" checked={importKullaniciOlustur} onChange={(e) => setImportKullaniciOlustur(e.target.checked)} /> Her kurum için kullanıcı hesabı oluştur
+                    </label>
+                    <input style={{ ...inputStyle, maxWidth: 160 }} value={importSifre} onChange={(e) => setImportSifre(e.target.value)} placeholder="Ortak şifre" />
+                    <button type="button" onClick={importBaslat} disabled={importYukleniyor} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                      {importYukleniyor ? "İşleniyor..." : "İçe aktarmayı başlat"}
+                    </button>
+                    <button type="button" onClick={() => setImportRows([])} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 700 }}>İptal</button>
+                    <button type="button" onClick={hataliSatirlariKopyala} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #fed7aa", background: "#fff7ed", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>Hatalı satırları kopyala</button>
+                  </div>
+                  <div style={{ overflow: "auto", maxHeight: 280, border: "1px solid #e2e8f0", borderRadius: 12 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead><tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}><th style={{ padding: 8 }}>Sıra</th><th>Mıntıka</th><th>İl</th><th>Kurum</th><th>Kurum Kodu</th><th>E-posta</th><th>Durum</th></tr></thead>
+                      <tbody>
+                        {importRows.map((r) => (
+                          <tr key={r.rowNumber} style={{ borderTop: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: 8 }}>{r.sira || r.rowNumber}</td>
+                            <td>{r.district || "—"}</td>
+                            <td>{r.province || "—"}</td>
+                            <td>{r.cleanInstitutionName || r.institutionName || "—"}</td>
+                            <td>{r.institutionCode || "—"}</td>
+                            <td>{r.email || "—"}</td>
+                            <td>{r.durumMetni}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {importSonuc && (
+                <p style={{ fontSize: 12, color: "#166534", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 10, padding: 10, marginTop: 10 }}>
+                  {importSonuc.readRows} satır okundu. {importSonuc.addedInstitutions} kurum eklendi. {importSonuc.existingInstitutions} kurum zaten vardı. {importSonuc.skippedRows} satır atlandı. {importSonuc.createdUsers} kullanıcı oluşturuldu.
+                </p>
+              )}
             </div>
             <FiltreSatir>
               <FiltreAlan label="Ara"><input style={inputStyle} value={arama} onChange={(e) => setArama(e.target.value)} placeholder="Ad, e-posta, kurum" /></FiltreAlan>
@@ -551,6 +747,10 @@ export default function AdminSayfasi() {
             )}
             <RaporTablo
               kullanicilar={kullanicilar}
+              onPasif={kullaniciPasif}
+              onSifre={sifreSifirla}
+              onSil={setSilinecekKullanici}
+              showActions
               showRol
               showDurum
               bosMesaj={
@@ -601,12 +801,13 @@ export default function AdminSayfasi() {
             )}
             <div style={{ background: "#fff", borderRadius: 14, border: "1.5px solid #e2e8f0", overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tarih / Saat</th><th>Kullanıcı</th><th>Mıntıka</th><th>Yurt / Kurum</th><th>İşlem</th><th>Detay</th></tr></thead>
+                <thead><tr style={{ color: "#64748b" }}><th style={{ padding: 8 }}>Tarih / Saat</th><th>Kullanıcı</th><th>İl</th><th>Mıntıka</th><th>Yurt / Kurum</th><th>İşlem</th><th>Detay</th></tr></thead>
                 <tbody>
                   {(aktivite?.logs ?? []).map((l) => (
                     <tr key={l.id} style={{ borderTop: "1px solid #f1f5f9" }}>
                       <td style={{ padding: 8 }}>{formatTarih(l.createdAt)}</td>
                       <td>{l.userName || "—"}</td>
+                      <td>{l.province || "—"}</td>
                       <td>{l.district || "—"}</td>
                       <td>{l.institutionName || l.institutionCode || "—"}</td>
                       <td>{aktiviteEtiket(l.action)}</td>
@@ -702,6 +903,21 @@ export default function AdminSayfasi() {
         )}
         </div>
       </div>
+      {silinecekKullanici && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#991b1b" }}>Kullanıcıyı sil / pasifleştir</div>
+            <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.55 }}>
+              Bu kullanıcı silinecek. Activity log kayıtları korunur; kullanıcı raporlarda aktif sayılmaz.
+            </p>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{silinecekKullanici.name} · {silinecekKullanici.email}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setSilinecekKullanici(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
+              <button type="button" onClick={kullaniciSil} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#dc2626", color: "#fff", fontWeight: 800 }}>Evet, sil</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -735,7 +951,7 @@ function RaporTablo({
         <thead>
           <tr style={{ background: "#f8fafc", textAlign: "left", color: "#64748b" }}>
             {onSec && <th style={{ padding: 10, width: 36 }}>Seç</th>}
-            <th style={{ padding: 10 }}>Ad</th><th>Yurt</th><th>Mıntıka</th>
+            <th style={{ padding: 10 }}>Ad</th><th>Yurt</th><th>İl</th><th>Mıntıka</th>
             {showRol && <th>Rol</th>}
             <th>Son giriş</th><th>Durum</th>
             {showActions && <th>İşlem</th>}
@@ -760,6 +976,7 @@ function RaporTablo({
                 {!u.institutionCode && <span style={{ fontSize: 9, color: "#b45309", fontWeight: 700 }}>Yurt eşleşmemiş</span>}
               </td>
               <td>{u.institutionName || "—"}</td>
+              <td>{u.province || "—"}</td>
               <td>{u.district || "—"}</td>
               {showRol && <td>{ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}</td>}
               <td>{formatTarih(u.lastLoginAt)}</td>

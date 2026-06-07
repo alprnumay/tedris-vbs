@@ -12,7 +12,9 @@ export const localUsersTable = pgTable("local_users", {
   name: varchar("name").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),
   province: varchar("province"),
-  district: varchar("district"),
+  /** VPS/backend_platform tablosunda sütun adı district_name */
+  district: varchar("district_name"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   institutionId: varchar("institution_id").references(() => institutionsTable.id, {
     onDelete: "set null",
   }),

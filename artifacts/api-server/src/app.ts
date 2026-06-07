@@ -81,8 +81,7 @@ app.get("/api/db-check", async (_req: Request, res: Response) => {
 
     res.json({
       ok: true,
-      columns: result,
-      databaseUrlPrefix: process.env.DATABASE_URL?.slice(0, 80),
+      columns: (result as { rows?: { column_name: string }[] }).rows?.map((r) => r.column_name) ?? result,
     });
   } catch (err) {
     res.status(500).json({

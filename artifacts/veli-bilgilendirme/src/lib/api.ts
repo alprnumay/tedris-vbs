@@ -1109,7 +1109,6 @@ function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecor
 }
 
 async function registerAuthUserSafely(data: { email: string; password: string; name: string }) {
-  rejectClientSideRepair("api.registerAuthUserSafely");
   const currentToken = getBackendToken();
   try {
     return await backendApi.register(data);
@@ -2293,7 +2292,6 @@ export const api = {
     isActive?: boolean;
     isAdmin?: boolean;
   }) => {
-    rejectClientSideRepair("api.adminKullaniciOlustur");
     const canonicalEmail = normalizeEmail(data.email);
     if (!canonicalEmail) throw new Error("Geçerli bir e-posta adresi girin.");
 
@@ -2375,7 +2373,6 @@ export const api = {
   },
 
   adminKullaniciGuncelle: async (id: string, data: Partial<AdminKullanici>) => {
-    rejectClientSideRepair("api.adminKullaniciGuncelle");
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const role = data.role ?? currentData.role ?? (data.isAdmin || currentData.isAdmin ? "admin" : "user");
@@ -2407,7 +2404,6 @@ export const api = {
   },
 
   adminSifreSifirla: async (id: string, opts?: { password?: string; generate?: boolean }) => {
-    rejectClientSideRepair("api.adminSifreSifirla");
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const appUser = appUserFromRecord(current);
@@ -2489,7 +2485,6 @@ export const api = {
   },
 
   adminKullaniciSil: async (id: string) => {
-    rejectClientSideRepair("api.adminKullaniciSil");
     const userBeforeDelete = await getAppUserRecord(id).then(appUserFromRecord).catch(() => null);
     const r = await api.adminKullaniciGuncelle(id, {
       isActive: false,
@@ -2514,7 +2509,6 @@ export const api = {
   },
 
   adminTopluKurumImport: async (data: AdminImportCommitRequest) => {
-    rejectClientSideRepair("api.adminTopluKurumImport");
     const institutions = await institutionRecords();
     const institutionCodes = new Set(institutions.map((i) => normalizeImportKey(i.institutionCode)));
     const institutionKeys = new Set(institutions.map((i) => institutionCompositeKey(i)));
