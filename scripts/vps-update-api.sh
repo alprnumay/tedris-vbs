@@ -15,6 +15,9 @@ git fetch origin
 git checkout "$BRANCH"
 git pull origin "$BRANCH"
 
+export DEPLOY_COMMIT="$(git rev-parse --short HEAD)"
+echo "==> Deploy commit: $DEPLOY_COMMIT"
+
 pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 pnpm --filter @workspace/api-server run build
 

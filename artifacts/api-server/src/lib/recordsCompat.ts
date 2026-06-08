@@ -6,11 +6,13 @@ import {
   supportRequestsTable,
   adminSettingsTable,
   activityLogsTable,
+  savedProfilesTable,
   type LocalUser,
   type Institution,
   type SupportRequest,
   type AdminSetting,
   type ActivityLog,
+  type SavedProfile,
 } from "@workspace/db";
 import { normalizeRole } from "./roleUtils";
 
@@ -20,6 +22,8 @@ export const RECORD_TYPES = new Set([
   "support_request",
   "admin_setting",
   "activity_log",
+  "user_profile",
+  "poster_draft",
 ]);
 
 export type CompatRecord = {
@@ -86,9 +90,23 @@ function localUserToAppUserRecord(u: LocalUser): CompatRecord {
   };
 }
 
+function institutionStatusFromDb(status: string | null | undefined): string {
+  const s = String(status ?? "").toLowerCase();
+  if (s === "aktif" || s === "active") return "active";
+  if (s === "pasif" || s === "inactive" || s === "kapali") return "inactive";
+  return status ?? "active";
+}
+
+function supportStatusFromDb(status: string | null | undefined): string {
+  const s = String(status ?? "").toLowerCase();
+  if (s === "yeni") return "open";
+  return status ?? "open";
+}
+
 function institutionToRecord(row: Institution): CompatRecord {
   const createdAt = row.createdAt.toISOString();
   const updatedAt = row.updatedAt.toISOString();
+  const status = institutionStatusFromDb(row.status);
   return {
     id: row.id,
     record_type: "institution",
@@ -103,11 +121,11 @@ function institutionToRecord(row: Institution): CompatRecord {
       districtName: row.districtName,
       province: row.province ?? null,
       expectedUserCount: row.expectedUserCount ?? null,
-      status: row.status,
+      status,
       notes: row.notes ?? null,
       createdAt,
       updatedAt,
-      deletedAt: null,
+      deletedAt: status === "inactive" ? updatedAt : null,
     },
   };
 }
@@ -129,7 +147,7 @@ function supportToRecord(row: SupportRequest): CompatRecord {
       userName: row.userName ?? null,
       message: row.message,
       imageBase64: row.imageBase64 ?? undefined,
-      status: row.status ?? "yeni",
+      status: supportStatusFromDb(row.status ?? "yeni"),
       adminNote: row.adminNote ?? null,
       createdAt,
       updatedAt: createdAt,
@@ -386,6 +404,118 @@ async function listActivityLogs(opts: ListOpts): Promise<{ records: CompatRecord
   }
 }
 
+function savedProfileToRecord(row: SavedProfile): CompatRecord {
+  const createdAt = row.createdAt.toISOString();
+  return {
+    id: row.id,
+    record_type: "user_profile",
+    recordType: "user_profile",
+    userId: row.userId,
+    createdAt,
+    updatedAt: createdAt,
+    created_at: createdAt,
+    updated_at: createdAt,
+    data: {
+      userId: row.userId,
+      isim: row.isim,
+      kurumAdi: row.kurumAdi,
+      rol: row.rol,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  };
+}
+
+function compatJsonToRecord(
+  recordType: string,
+  row: { id: string; user_id: string | null; data: unknown; created_at: Date | string; updated_at: Date | string },
+): CompatRecord {
+  const createdAt = new Date(row.created_at).toISOString();
+  const updatedAt = new Date(row.updated_at).toISOString();
+  const data =
+    row.data && typeof row.data === "object" && !Array.isArray(row.data)
+      ? (row.data as Record<string, unknown>)
+      : {};
+  return {
+    id: row.id,
+    record_type: recordType,
+    recordType,
+    userId: row.user_id,
+    createdAt,
+    updatedAt,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    data: {
+      ...data,
+      savedAt: data.savedAt ?? updatedAt,
+    },
+  };
+}
+
+async function listUserProfiles(opts: ListOpts): Promise<{ records: CompatRecord[]; total: number }> {
+  try {
+    let rows: SavedProfile[];
+    if (opts.admin) {
+      rows = await db.select().from(savedProfilesTable).orderBy(desc(savedProfilesTable.createdAt));
+    } else if (opts.viewerId) {
+      rows = await db
+        .select()
+        .from(savedProfilesTable)
+        .where(eq(savedProfilesTable.userId, opts.viewerId))
+        .orderBy(desc(savedProfilesTable.createdAt));
+    } else {
+      return { records: [], total: 0 };
+    }
+    const total = rows.length;
+    return { records: rows.slice(opts.offset, opts.offset + opts.limit).map(savedProfileToRecord), total };
+  } catch (err) {
+    console.warn("[recordsCompat] user_profile list failed", err);
+    return { records: [], total: 0 };
+  }
+}
+
+async function listPosterDrafts(opts: ListOpts): Promise<{ records: CompatRecord[]; total: number }> {
+  try {
+    const result = opts.admin
+      ? await db.execute(sql`
+          SELECT id, user_id, data, created_at, updated_at
+          FROM compat_records
+          WHERE record_type = 'poster_draft'
+          ORDER BY updated_at DESC
+        `)
+      : opts.viewerId
+        ? await db.execute(sql`
+            SELECT id, user_id, data, created_at, updated_at
+            FROM compat_records
+            WHERE record_type = 'poster_draft' AND user_id = ${opts.viewerId}
+            ORDER BY updated_at DESC
+          `)
+        : { rows: [] };
+
+    const rows = ((result as { rows?: Record<string, unknown>[] }).rows ?? []).map((row) => ({
+      id: String(row.id),
+      user_id: row.user_id != null ? String(row.user_id) : null,
+      data: row.data,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+    const mapped = rows.map((row) =>
+      compatJsonToRecord("poster_draft", {
+        id: row.id,
+        user_id: row.user_id,
+        data: row.data,
+        created_at: new Date(String(row.created_at)),
+        updated_at: new Date(String(row.updated_at)),
+      }),
+    );
+    const total = mapped.length;
+    return { records: mapped.slice(opts.offset, opts.offset + opts.limit), total };
+  } catch (err) {
+    console.warn("[recordsCompat] poster_draft list failed", err);
+    return { records: [], total: 0 };
+  }
+}
+
 export async function listCompatRecords(
   recordType: string,
   opts: ListOpts,
@@ -401,6 +531,10 @@ export async function listCompatRecords(
       return listAdminSettings(opts);
     case "activity_log":
       return listActivityLogs(opts);
+    case "user_profile":
+      return listUserProfiles(opts);
+    case "poster_draft":
+      return listPosterDrafts(opts);
     default:
       return { records: [], total: 0 };
   }
@@ -451,6 +585,27 @@ export async function getCompatRecord(
         createdAt: new Date(String(row.created_at)),
         userEmail: row.user_email != null ? String(row.user_email) : null,
         userName: row.user_name != null ? String(row.user_name) : null,
+      });
+    }
+    case "user_profile": {
+      const [row] = await db.select().from(savedProfilesTable).where(eq(savedProfilesTable.id, id)).limit(1);
+      return row ? savedProfileToRecord(row) : null;
+    }
+    case "poster_draft": {
+      const result = await db.execute(sql`
+        SELECT id, user_id, data, created_at, updated_at
+        FROM compat_records
+        WHERE id = ${id} AND record_type = 'poster_draft'
+        LIMIT 1
+      `);
+      const row = (result as { rows?: Record<string, unknown>[] }).rows?.[0];
+      if (!row) return null;
+      return compatJsonToRecord("poster_draft", {
+        id: String(row.id),
+        user_id: row.user_id != null ? String(row.user_id) : null,
+        data: row.data,
+        created_at: new Date(String(row.created_at)),
+        updated_at: new Date(String(row.updated_at)),
       });
     }
     default:

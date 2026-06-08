@@ -68,6 +68,9 @@ app.get("/api/health", (_req: Request, res: Response) => {
     ok: true,
     message: "API çalışıyor",
     adminRoutes: true,
+    recordsCrud: true,
+    commit: process.env.DEPLOY_COMMIT || process.env.GIT_SHA || null,
+    schemaVersion: 4,
   });
 });
 
