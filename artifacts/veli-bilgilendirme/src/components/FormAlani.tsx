@@ -17,7 +17,7 @@ import { InfoTip } from "./veli/InfoTip";
 import { FormAkordeon } from "./veli/FormAkordeon";
 import { WizardStepper } from "./veli/wizard/WizardStepper";
 import { WizardStepCard } from "./veli/wizard/WizardStepCard";
-import { FAALIYET_CHIPLERI, VELI_WIZARD_STEPS, type VeliWizardStep } from "@/lib/veli/veliWizardSteps";
+import { FAALIYET_CHIPLERI, VELI_WIZARD_STEPS, VELI_WIZARD_LAST_STEP } from "@/lib/veli/veliWizardSteps";
 
 type BolumDurumu = { tip: "eksik" | "dikkat" | "tamam"; metin: string };
 
@@ -35,8 +35,8 @@ interface Props {
   onTasarimaGec?: () => void;
   onAdimChange?: (adim: 1 | 2) => void;
   onGorselYuklendi?: (adet: number) => void;
-  wizardStep?: VeliWizardStep;
-  onWizardStepChange?: (step: VeliWizardStep) => void;
+  activeStep?: number;
+  onActiveStepChange?: (step: number) => void;
   stepUyari?: string | null;
   onTaslakKaydet?: () => void;
   taslakKaydediliyor?: boolean;
@@ -346,18 +346,18 @@ export default function FormAlani({
   onTasarimaGec,
   onAdimChange,
   onGorselYuklendi,
-  wizardStep: wizardStepProp,
-  onWizardStepChange,
+  activeStep: activeStepProp,
+  onActiveStepChange,
   stepUyari,
   onTaslakKaydet,
   taslakKaydediliyor,
   onWizardIleri,
   onWizardGeri,
 }: Props) {
-  const [internalWizardStep, setInternalWizardStep] = useState<VeliWizardStep>(1);
-  const wizardStep = wizardStepProp ?? internalWizardStep;
-  const setWizardStep = onWizardStepChange ?? setInternalWizardStep;
-  const wizardMode = wizardStepProp != null || mobilMod || desktopMod;
+  const [internalActiveStep, setInternalActiveStep] = useState(0);
+  const activeStep = activeStepProp ?? internalActiveStep;
+  const setActiveStep = onActiveStepChange ?? setInternalActiveStep;
+  const wizardMode = (mobilMod || desktopMod) && activeStepProp !== undefined;
   const [adim, setAdim] = useState<1 | 2>(1);
   const [digerFaaliyetAcik, setDigerFaaliyetAcik] = useState(false);
   const [ekAciklamaAcik, setEkAciklamaAcik] = useState(false);
@@ -540,7 +540,7 @@ export default function FormAlani({
   const tasarimOzet = `${seciliSablonMeta?.ad ?? "Şablon seçilmedi"} · ${form.metinTonu === "sicak" ? "Sıcak ton" : form.metinTonu === "aciklayici" ? "Açıklayıcı ton" : "Kurumsal ton"}`;
   const gorselOzet = form.gorseller.length > 0 ? `${form.gorseller.length}/${maxGorsel} görsel yüklü` : "Görsel yok";
   const metinOzet = `${form.metinUzunlugu === "kisa" ? "Kısa" : "Detaylı"} · ${form.metinTonu === "sicak" ? "Sıcak" : form.metinTonu === "aciklayici" ? "Açıklayıcı" : "Kurumsal"}`;
-  const wizardMeta = VELI_WIZARD_STEPS.find((s) => s.id === wizardStep);
+  const wizardMeta = VELI_WIZARD_STEPS[activeStep];
 
   const faaliyetChipSec = (chip: string) => {
     if (chip === "Diğer") {
@@ -747,28 +747,28 @@ export default function FormAlani({
   );
 
   const wizardStepContent = (() => {
-    switch (wizardStep) {
-      case 1: return wizardKimlikStep;
-      case 2: return wizardCalismaStep;
-      case 3: return wizardTasarimStep;
-      case 4: return wizardGorselStep;
-      case 5: return wizardOnizlemeStep;
+    switch (activeStep) {
+      case 0: return wizardKimlikStep;
+      case 1: return wizardCalismaStep;
+      case 2: return wizardTasarimStep;
+      case 3: return wizardGorselStep;
+      case 4: return wizardOnizlemeStep;
       default: return null;
     }
   })();
 
   const wizardDesktopNav = (
     <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
-      {wizardStep > 1 ? (
-        <button type="button" onClick={onWizardGeri ?? (() => setWizardStep((wizardStep - 1) as VeliWizardStep))} style={secondaryBtn}>Geri</button>
+      {activeStep > 0 ? (
+        <button type="button" onClick={onWizardGeri ?? (() => setActiveStep(activeStep - 1))} style={secondaryBtn}>Geri</button>
       ) : <span />}
       {onTaslakKaydet ? (
         <button type="button" onClick={onTaslakKaydet} disabled={taslakKaydediliyor} style={{ ...secondaryBtn, flex: "0 0 auto", padding: "10px 12px", fontSize: 11 }}>
           {taslakKaydediliyor ? "..." : "Taslak"}
         </button>
       ) : null}
-      {wizardStep < 5 ? (
-        <button type="button" onClick={onWizardIleri ?? (() => setWizardStep((wizardStep + 1) as VeliWizardStep))} style={{ ...primaryBtn, flex: 1 }}>Devam Et</button>
+      {activeStep < VELI_WIZARD_LAST_STEP ? (
+        <button type="button" onClick={onWizardIleri ?? (() => setActiveStep(activeStep + 1))} style={{ ...primaryBtn, flex: 1 }}>Devam Et</button>
       ) : (
         onWizardGeri ? <button type="button" onClick={onWizardGeri} style={{ ...secondaryBtn, flex: 1 }}>Düzenlemeye Dön</button> : null
       )}
@@ -1188,12 +1188,12 @@ export default function FormAlani({
   if (wizardMode) {
     return (
       <div className="veli-wizard-form flex flex-col gap-4">
-        <WizardStepper step={wizardStep} onStepClick={(s) => s < wizardStep && setWizardStep(s)} compact={mobilMod} />
+        <WizardStepper activeStep={activeStep} onStepClick={setActiveStep} compact={mobilMod} />
         {wizardMeta && mobilMod ? (
-          <p className="text-sm font-semibold text-slate-700">{wizardMeta.subtitle}</p>
+          <p className="text-sm font-semibold text-slate-700">{wizardMeta.title}</p>
         ) : null}
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={wizardStep} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: stepEase }}>
+          <motion.div key={activeStep} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: stepEase }}>
             {wizardStepContent}
           </motion.div>
         </AnimatePresence>

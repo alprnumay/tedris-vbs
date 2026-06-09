@@ -1,22 +1,22 @@
 import { cn } from "@/lib/utils";
-import { VELI_WIZARD_STEPS, wizardProgress, type VeliWizardStep } from "@/lib/veli/veliWizardSteps";
+import { VELI_WIZARD_STEPS, VELI_WIZARD_STEP_COUNT, wizardProgress } from "@/lib/veli/veliWizardSteps";
 
 type Props = {
-  step: VeliWizardStep;
-  onStepClick?: (step: VeliWizardStep) => void;
+  activeStep: number;
+  onStepClick?: (step: number) => void;
   compact?: boolean;
 };
 
-export function WizardStepper({ step, onStepClick, compact }: Props) {
-  const current = VELI_WIZARD_STEPS.find((s) => s.id === step);
-  const pct = wizardProgress(step);
+export function WizardStepper({ activeStep, onStepClick, compact }: Props) {
+  const current = VELI_WIZARD_STEPS[activeStep];
+  const pct = wizardProgress(activeStep);
 
   return (
     <div className="veli-wizard-stepper space-y-2.5">
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="font-bold text-slate-700">
-          Adım {step} / 5
-          {!compact && current ? ` · ${current.subtitle}` : ""}
+          Adım {activeStep + 1} / {VELI_WIZARD_STEP_COUNT}
+          {!compact && current ? ` · ${current.title}` : ""}
         </span>
         <span className="font-semibold text-blue-600">%{pct} tamamlandı</span>
       </div>
@@ -28,16 +28,16 @@ export function WizardStepper({ step, onStepClick, compact }: Props) {
       </div>
       {!compact && (
         <div className="grid grid-cols-5 gap-1">
-          {VELI_WIZARD_STEPS.map((s) => {
-            const done = s.id < step;
-            const active = s.id === step;
-            const clickable = onStepClick && s.id <= step;
+          {VELI_WIZARD_STEPS.map((s, idx) => {
+            const done = idx < activeStep;
+            const active = idx === activeStep;
+            const clickable = Boolean(onStepClick);
             return (
               <button
                 key={s.id}
                 type="button"
                 disabled={!clickable}
-                onClick={() => clickable && onStepClick(s.id)}
+                onClick={() => clickable && onStepClick?.(idx)}
                 className={cn(
                   "rounded-lg px-1 py-1.5 text-[10px] font-bold leading-tight transition-colors",
                   active && "bg-blue-600 text-white shadow-sm",
@@ -46,7 +46,7 @@ export function WizardStepper({ step, onStepClick, compact }: Props) {
                   clickable && !active && "hover:bg-blue-100",
                 )}
               >
-                {s.title}
+                {s.title.split(" ")[0]}
               </button>
             );
           })}

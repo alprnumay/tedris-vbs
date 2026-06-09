@@ -1,14 +1,16 @@
 import type { FormData } from "@/types";
 
-export type VeliWizardStep = 1 | 2 | 3 | 4 | 5;
-
 export const VELI_WIZARD_STEPS = [
-  { id: 1 as const, title: "Kimlik", subtitle: "Kimlik Bilgileri" },
-  { id: 2 as const, title: "Çalışma", subtitle: "Çalışma Bilgileri" },
-  { id: 3 as const, title: "Tasarım", subtitle: "Tasarım / Şablon" },
-  { id: 4 as const, title: "Görsel", subtitle: "Görsel Ekle" },
-  { id: 5 as const, title: "Önizleme", subtitle: "Önizleme ve Çıktı" },
-];
+  { id: "identity", title: "Kimlik Bilgileri" },
+  { id: "work", title: "Çalışma Bilgileri" },
+  { id: "design", title: "Tasarım / Şablon" },
+  { id: "media", title: "Görsel Ekle" },
+  { id: "preview", title: "Önizleme ve Çıktı" },
+] as const;
+
+export type VeliWizardStepId = (typeof VELI_WIZARD_STEPS)[number]["id"];
+export const VELI_WIZARD_STEP_COUNT = VELI_WIZARD_STEPS.length;
+export const VELI_WIZARD_LAST_STEP = VELI_WIZARD_STEP_COUNT - 1;
 
 export const FAALIYET_CHIPLERI = [
   "Etüt",
@@ -20,22 +22,22 @@ export const FAALIYET_CHIPLERI = [
   "Diğer",
 ] as const;
 
-export function wizardProgress(step: VeliWizardStep): number {
-  return Math.round((step / 5) * 100);
+export function wizardProgress(activeStep: number): number {
+  return Math.round(((activeStep + 1) / VELI_WIZARD_STEP_COUNT) * 100);
 }
 
 export function validateVeliWizardStep(
-  step: VeliWizardStep,
+  activeStep: number,
   form: FormData,
 ): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
   const f0 = form.faaliyetler[0];
 
-  if (step === 1) {
+  if (activeStep === 0) {
     if (!form.isim.trim()) missing.push("Ad Soyad");
     if (!form.kurumAdi.trim()) missing.push("Kurum / Yurt Adı");
     if (!form.rol.trim()) missing.push("Ünvan / Görev");
-  } else if (step === 2) {
+  } else if (activeStep === 1) {
     if (!f0?.tur?.trim()) missing.push("Faaliyet türü");
     if (!f0?.alan?.trim()) missing.push("Ders / alan");
   }

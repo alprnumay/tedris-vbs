@@ -12,7 +12,7 @@ import { VeliMobilNav } from "./components/veli/VeliMobilNav";
 import { VeliOnizlemeMobil } from "./components/veli/VeliOnizlemeMobil";
 import { SABLON_LISTESI } from "./lib/sablonlar";
 import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
-import { validateVeliWizardStep, type VeliWizardStep } from "./lib/veli/veliWizardSteps";
+import { validateVeliWizardStep, VELI_WIZARD_STEPS, VELI_WIZARD_LAST_STEP } from "./lib/veli/veliWizardSteps";
 import { PreviewPanel } from "./components/veli/wizard/PreviewPanel";
 import { QualityPanel } from "./components/veli/wizard/QualityPanel";
 import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
@@ -73,7 +73,7 @@ function MainApp() {
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
   const [formAdim, setFormAdim] = useState<1 | 2>(1);
-  const [wizardStep, setWizardStep] = useState<VeliWizardStep>(1);
+  const [activeStep, setActiveStep] = useState(0);
   const [stepUyari, setStepUyari] = useState<string | null>(null);
   const [mobilOnizlemeAcik, setMobilOnizlemeAcik] = useState(false);
   const [taslakMenuAcik, setTaslakMenuAcik] = useState(false);
@@ -129,33 +129,33 @@ function MainApp() {
     try {
       localStorage.setItem(
         "veli_wizard_draft",
-        JSON.stringify({ form, seciliSablon, wizardStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
+        JSON.stringify({ form, seciliSablon, activeStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
       );
     } catch {
       /* localStorage kapalı */
     }
-  }, [form, seciliSablon, wizardStep, metinDuzenlendi, homeModu]);
+  }, [form, seciliSablon, activeStep, metinDuzenlendi, homeModu]);
 
   useEffect(() => {
-    setFormAdim(wizardStep <= 2 ? 1 : 2);
-  }, [wizardStep]);
+    setFormAdim(activeStep <= 1 ? 1 : 2);
+  }, [activeStep]);
 
   const wizardIleri = () => {
-    if (wizardStep >= 5) return;
-    const { ok, missing } = validateVeliWizardStep(wizardStep, form);
-    if (!ok) {
-      setStepUyari(`Bu adımda ${missing.length} zorunlu alan eksik: ${missing.join(", ")}`);
-      return;
+    if (activeStep >= VELI_WIZARD_LAST_STEP) return;
+    const { missing } = validateVeliWizardStep(activeStep, form);
+    if (missing.length > 0) {
+      setStepUyari(`Eksik alanlar: ${missing.join(", ")} (yine de devam edebilirsiniz)`);
+    } else {
+      setStepUyari(null);
     }
-    setStepUyari(null);
-    setWizardStep((wizardStep + 1) as VeliWizardStep);
+    setActiveStep((s) => Math.min(s + 1, VELI_WIZARD_LAST_STEP));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const wizardGeri = () => {
-    if (wizardStep <= 1) return;
+    if (activeStep <= 0) return;
     setStepUyari(null);
-    setWizardStep((wizardStep - 1) as VeliWizardStep);
+    setActiveStep((s) => Math.max(s - 1, 0));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -808,7 +808,7 @@ function MainApp() {
                   <TaslakMenu />
                   <span className="veli-desktop-pill">
                     <span className="veli-desktop-pill__label">Adım</span>
-                    {wizardStep}/5
+                    {activeStep + 1}/{VELI_WIZARD_STEPS.length} · {VELI_WIZARD_STEPS[activeStep]?.title}
                   </span>
                   <span className="veli-desktop-pill">
                     <span className="veli-desktop-pill__label">Şablon</span>
@@ -835,8 +835,8 @@ function MainApp() {
                       kullaniciId={kullanici.id}
                       adim2Ref={adim2Ref}
                       desktopMod
-                      wizardStep={wizardStep}
-                      onWizardStepChange={(s) => { setStepUyari(null); setWizardStep(s); }}
+                      activeStep={activeStep}
+                      onActiveStepChange={(s) => { setStepUyari(null); setActiveStep(s); }}
                       stepUyari={stepUyari}
                       onTaslakKaydet={() => void taslakKaydet()}
                       taslakKaydediliyor={taslakIslem === "kaydet"}
@@ -869,7 +869,7 @@ function MainApp() {
                       </div>
                     </div>
                   </PreviewPanel>
-                  {wizardStep === 5 ? (
+                  {activeStep === VELI_WIZARD_LAST_STEP ? (
                     <>
                       <QualityPanel form={form} seciliSablon={seciliSablon} full />
                       <div className="veli-studio-actions veli-studio-actions--exports">
@@ -887,14 +887,14 @@ function MainApp() {
       </div>
 
       <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
-        {aktifSekme === "form" && wizardStep < 5 && (
+        {aktifSekme === "form" && activeStep < VELI_WIZARD_LAST_STEP && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
             <div className="p-4 pb-32">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="text-sm font-bold text-slate-800">Veli Bilgilendirme</p>
                 <TaslakMenu />
               </div>
-              {wizardStep >= 2 && wizardStep < 5 && (
+              {activeStep >= 1 && activeStep < VELI_WIZARD_LAST_STEP && (
                 <button
                   type="button"
                   onClick={() => setMobilOnizlemeAcik(true)}
@@ -913,16 +913,18 @@ function MainApp() {
                 kullaniciId={kullanici.id}
                 adim2Ref={adim2Ref}
                 mobilMod
-                wizardStep={wizardStep}
-                onWizardStepChange={(s) => { setStepUyari(null); setWizardStep(s); }}
+                activeStep={activeStep}
+                onActiveStepChange={(s) => { setStepUyari(null); setActiveStep(s); }}
                 stepUyari={stepUyari}
+                onWizardIleri={wizardIleri}
+                onWizardGeri={wizardGeri}
                 onGorselYuklendi={(adet) => backendEvent("image_uploaded", { count: adet })}
               />
             </div>
           </div>
         )}
 
-        {aktifSekme === "form" && wizardStep === 5 && (
+        {aktifSekme === "form" && activeStep === VELI_WIZARD_LAST_STEP && (
           <div className="flex-1 overflow-y-auto pb-32" style={{ background: "#f8fafc" }}>
             <div className="p-4 space-y-4">
               <QualityPanel form={form} seciliSablon={seciliSablon} full />
@@ -937,7 +939,7 @@ function MainApp() {
           </div>
         )}
 
-        {mobilOnizlemeAcik && wizardStep < 5 && (
+        {mobilOnizlemeAcik && activeStep < VELI_WIZARD_LAST_STEP && (
           <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 p-3 backdrop-blur-sm">
             <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -960,19 +962,19 @@ function MainApp() {
         {aktifSekme === "form" && (
           <BottomActionBar
             left={
-              wizardStep > 1 ? (
+              activeStep > 0 ? (
                 <button type="button" onClick={wizardGeri} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-600">Geri</button>
               ) : null
             }
             center={
-              wizardStep < 5 ? (
+              activeStep < VELI_WIZARD_LAST_STEP ? (
                 <button type="button" onClick={() => void taslakKaydet()} disabled={Boolean(taslakIslem)} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-bold text-slate-600">
                   Kaydet
                 </button>
               ) : null
             }
             right={
-              wizardStep < 5 ? (
+              activeStep < VELI_WIZARD_LAST_STEP ? (
                 <button type="button" onClick={wizardIleri} className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm">Devam Et</button>
               ) : (
                 <div className="flex gap-1">
