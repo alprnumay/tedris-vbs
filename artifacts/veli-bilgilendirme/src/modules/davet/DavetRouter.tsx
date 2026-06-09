@@ -1,5 +1,4 @@
-import { Router, Route, Switch, Link } from "wouter";
-import { Button } from "@/components/davet-ui/button";
+import { Router, Route, Switch } from "wouter";
 import HomePage from "@/modules/davet/home/HomePage";
 import InvitePage from "@/modules/davet/invite/InvitePage";
 import BoardingProgramPage from "@/modules/davet/boarding/BoardingProgramPage";
@@ -8,16 +7,15 @@ import PublishedShowcasePage from "@/modules/davet/showcase/PublishedShowcasePag
 import CalismaOnayPage from "@/modules/davet/admin/CalismaOnayPage";
 import { RequireDavetAdmin } from "@/modules/davet/guards/RequireDavetAdmin";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
+import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 
 function DavetNotFound() {
   return (
     <DavetLayout>
-      <p className="text-muted-foreground">Sayfa bulunamadı.</p>
-      <Link href="/">
-        <Button variant="outline" className="mt-4">
-          Nehari ana sayfa
-        </Button>
-      </Link>
+      <div className="space-y-4">
+        <BackButton label="Nehari Platformu" href="/" />
+        <p className="text-muted-foreground">Sayfa bulunamadı.</p>
+      </div>
     </DavetLayout>
   );
 }

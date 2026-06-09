@@ -1,6 +1,7 @@
 ﻿import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { ModuleCard } from "@/modules/davet/layout/ModuleCard";
 import { ModuleGrid } from "@/modules/davet/layout/ModuleGrid";
+import { ModulePageHeader } from "@/modules/davet/layout/ModulePageHeader";
 import { NehariHomeHero } from "@/modules/davet/layout/NehariHomeHero";
 import { davetHomeModules } from "@/modules/davet/layout/moduleAccents";
 
@@ -10,6 +11,7 @@ export default function HomePage() {
   return (
     <DavetLayout variant="home">
       <div className="space-y-6 pb-10 sm:space-y-8">
+        <ModulePageHeader variant="platform-home" />
         <NehariHomeHero />
 
         <div className="space-y-4">

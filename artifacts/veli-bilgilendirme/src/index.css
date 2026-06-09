@@ -1586,4 +1586,25 @@
     transform: rotate(-4deg) scale(1.04);
     transition: transform 0.3s ease, opacity 0.3s ease;
   }
+
+  .nehari-module-page-header--platform-home {
+    margin-bottom: 0.25rem;
+  }
+
+  .nehari-module-page-header--platform-home .nehari-back-button {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.92);
+    color: #1e3a5f;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  }
+
+  .nehari-back-button {
+    max-width: 100%;
+  }
+
+  .nehari-breadcrumb ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
 }

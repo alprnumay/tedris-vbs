@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/davet-ui/card";
-import { Button } from "@/components/davet-ui/button";
+import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { ShieldAlert } from "lucide-react";
 import { api, type KullaniciBilgisi } from "@/lib/api";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
@@ -33,7 +32,10 @@ export function RequireDavetAdmin({ children }: { children: ReactNode }) {
   if (status === "loading") {
     return (
       <DavetLayout>
-        <p className="text-sm text-muted-foreground">Yetki kontrol ediliyor…</p>
+        <div className="space-y-4">
+          <BackButton label="Nehari Platformu" href="/" />
+          <p className="text-sm text-muted-foreground">Yetki kontrol ediliyor…</p>
+        </div>
       </DavetLayout>
     );
   }
@@ -49,10 +51,8 @@ export function RequireDavetAdmin({ children }: { children: ReactNode }) {
             <CardTitle>Çalışma Onayı</CardTitle>
             <CardDescription>Bu alan yalnızca yetkili kullanıcılar içindir.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Link href="/">
-              <Button variant="outline">Nehari ana sayfaya dön</Button>
-            </Link>
+          <CardContent className="space-y-3">
+            <BackButton label="Nehari Platformu" href="/" />
           </CardContent>
         </Card>
       </DavetLayout>
