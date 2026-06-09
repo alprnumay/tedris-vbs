@@ -1,5 +1,5 @@
 import type { InviteRenderModel } from "@/modules/davet/invite/inviteTemplateHelpers";
-import { resolveLogoPlacement } from "@/modules/davet/invite/inviteTemplateHelpers";
+import { resolveLogoPlacement, resolveOptionalBlocks } from "@/modules/davet/invite/inviteTemplateHelpers";
 
 type SharedProps = {
   model: InviteRenderModel;
