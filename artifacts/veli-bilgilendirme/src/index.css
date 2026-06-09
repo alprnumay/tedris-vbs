@@ -1390,3 +1390,200 @@
     }
   }
 }
+
+/* ─── Nehari Platformu ana modül ekranı (/davet) ─── */
+@layer components {
+  .nehari-platform-home {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(37, 99, 235, 0.12), transparent 55%),
+      linear-gradient(180deg, #f8fafc 0%, #eef2ff 38%, #f1f5f9 100%);
+    overflow-x: hidden;
+  }
+
+  .nehari-home-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.25rem;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 42%, #2563eb 100%);
+    box-shadow:
+      0 24px 48px -20px rgba(15, 23, 42, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .nehari-home-hero__pattern {
+    position: absolute;
+    inset: 0;
+    opacity: 0.14;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.35) 0 1px, transparent 1px),
+      radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.25) 0 1px, transparent 1px);
+    background-size: 24px 24px, 32px 32px;
+    pointer-events: none;
+  }
+
+  .nehari-home-hero__glow {
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    filter: blur(48px);
+    pointer-events: none;
+  }
+
+  .nehari-home-hero__glow--left {
+    top: -80px;
+    left: -40px;
+    background: rgba(96, 165, 250, 0.35);
+  }
+
+  .nehari-home-hero__glow--right {
+    bottom: -90px;
+    right: -30px;
+    background: rgba(129, 140, 248, 0.28);
+  }
+
+  .nehari-home-hero__inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding: 1.35rem 1.25rem;
+  }
+
+  @media (min-width: 768px) {
+    .nehari-home-hero__inner {
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+      padding: 1.75rem 2rem;
+    }
+  }
+
+  .nehari-home-hero__content {
+    min-width: 0;
+    max-width: 36rem;
+  }
+
+  .nehari-home-hero__eyebrow {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.62);
+  }
+
+  .nehari-home-hero__title {
+    margin: 0.45rem 0 0;
+    font-size: 1.65rem;
+    line-height: 1.15;
+    font-weight: 850;
+    letter-spacing: -0.03em;
+    color: #fff;
+    text-wrap: balance;
+  }
+
+  @media (min-width: 640px) {
+    .nehari-home-hero__title {
+      font-size: 2rem;
+    }
+  }
+
+  .nehari-home-hero__desc {
+    margin: 0.65rem 0 0;
+    max-width: 32rem;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .nehari-home-hero__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .nehari-home-hero__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    backdrop-filter: blur(8px);
+  }
+
+  .nehari-module-card {
+    background: linear-gradient(145deg, var(--nm-gradient-from), var(--nm-gradient-to));
+    border-color: var(--nm-border);
+    box-shadow:
+      0 10px 28px -14px rgba(15, 23, 42, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+
+  .nehari-module-card__watermark {
+    position: absolute;
+    right: -0.75rem;
+    bottom: -1.25rem;
+    color: var(--nm-accent);
+    opacity: 0.07;
+    pointer-events: none;
+    transform: rotate(-8deg);
+  }
+
+  .nehari-module-card__watermark svg {
+    width: 7.5rem;
+    height: 7.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .nehari-module-card__watermark svg {
+      width: 8.5rem;
+      height: 8.5rem;
+    }
+  }
+
+  .nehari-module-card__orb {
+    position: absolute;
+    top: -2.5rem;
+    right: -2rem;
+    width: 8rem;
+    height: 8rem;
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--nm-accent-glow) 0%, transparent 68%);
+    pointer-events: none;
+  }
+
+  .nehari-module-card__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .nehari-module-card__cta {
+    white-space: nowrap;
+  }
+
+  .nehari-module-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .nehari-module-card:hover .nehari-module-card__watermark {
+    opacity: 0.1;
+    transform: rotate(-4deg) scale(1.04);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+  }
+}
