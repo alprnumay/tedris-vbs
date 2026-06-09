@@ -35,6 +35,8 @@ async function ensureAdminBootstrapUser(): Promise<void> {
  */
 export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }> {
   try {
+    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS institutions (
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,6 +141,10 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
 
     await db.execute(sql`
       ALTER TABLE local_users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ALTER COLUMN id SET DEFAULT gen_random_uuid()::text
     `);
 
     /* Eski drizzle push ile oluşmuş district sütununu district_name'e taşı */
