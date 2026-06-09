@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { DavetLayout } from '@/modules/davet/layout/DavetLayout';
+import { PageHeader } from '@/modules/davet/layout/PageHeader';
+import { SectionCard } from '@/modules/davet/layout/SectionCard';
 import { Button } from '@/components/davet-ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/davet-ui/form';
 import { Input } from '@/components/davet-ui/input';
@@ -498,12 +500,16 @@ export default function InvitePage() {
 
   return (
     <DavetLayout>
-      <div className="space-y-6 pb-12">
-        <h1 className="text-2xl font-bold">Veliye Davet Hazırla</h1>
-        
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+      <div className="space-y-5 pb-12">
+        <PageHeader
+          accent="blue"
+          title="Veliye Davet Hazırla"
+          description="Veli toplantısı, tanıtım ve özel programlar için davet görseli oluşturun."
+        />
+
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8">
           <div className="xl:col-span-4 space-y-6">
-            <div className="bg-card border rounded-lg p-6 max-h-[85vh] overflow-y-auto">
+            <SectionCard className="max-h-[85vh] overflow-y-auto">
               <Form {...form}>
                 <form className="space-y-4">
                   <FormField control={form.control} name="kurumAdi" render={({ field }) => (
@@ -626,7 +632,7 @@ export default function InvitePage() {
 
                 </form>
               </Form>
-            </div>
+            </SectionCard>
           </div>
 
           <div className="xl:col-span-8 space-y-4">

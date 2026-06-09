@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import { DavetLayout } from '@/modules/davet/layout/DavetLayout';
+import { PageHeader } from '@/modules/davet/layout/PageHeader';
 import { ShowcasePost } from '@/modules/davet/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/davet-ui/tabs';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/davet-ui/card';
@@ -165,9 +166,13 @@ export default function CalismaOnayPage() {
 
   return (
     <DavetLayout>
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Çalışma Onayı</h1>
-        
+      <div className="space-y-5 pb-8">
+        <PageHeader
+          accent="rose"
+          title="Çalışma Onayı"
+          description="Onay bekleyen çalışmaları inceleyin, yayına alın veya revize isteyin."
+        />
+
         <Tabs defaultValue="onay-bekliyor">
           <TabsList className="mb-6 bg-card border flex-wrap h-auto">
             <TabsTrigger value="onay-bekliyor">Onay Bekleyenler ({posts.filter(p => p.durum === 'onay-bekliyor').length})</TabsTrigger>

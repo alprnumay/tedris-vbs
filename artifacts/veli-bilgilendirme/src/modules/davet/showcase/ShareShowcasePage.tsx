@@ -3,6 +3,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { DavetLayout } from '@/modules/davet/layout/DavetLayout';
+import { PageHeader } from '@/modules/davet/layout/PageHeader';
+import { SectionCard } from '@/modules/davet/layout/SectionCard';
 import { Button } from '@/components/davet-ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/davet-ui/form';
 import { Input } from '@/components/davet-ui/input';
@@ -133,13 +135,14 @@ export default function ShareShowcasePage() {
 
   return (
     <DavetLayout>
-      <div className="space-y-6 max-w-4xl mx-auto pb-12">
-        <div>
-          <h1 className="text-2xl font-bold">Faydalı Çalışma Paylaş</h1>
-          <p className="text-muted-foreground mt-1">Yurdunuzda yaptığınız güzel bir çalışmayı diğer yurtlara örnek olması için paylaşın.</p>
-        </div>
+      <div className="space-y-5 max-w-4xl mx-auto pb-24 md:pb-12">
+        <PageHeader
+          accent="emerald"
+          title="Faydalı Çalışma Paylaş"
+          description="Yurdunuzda yaptığınız güzel bir çalışmayı diğer yurtlara örnek olması için paylaşın."
+        />
 
-        <div className="bg-card border rounded-lg p-6">
+        <SectionCard>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               
@@ -246,12 +249,14 @@ export default function ShareShowcasePage() {
                 )}
               </div>
 
-              <Button type="submit" className="w-full" size="lg" disabled={gonderiliyor}>
-                {gonderiliyor ? 'Gönderiliyor…' : 'Onaya Gönder'}
-              </Button>
+              <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card/95 px-4 py-3 backdrop-blur-sm md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+                <Button type="submit" className="w-full" size="lg" disabled={gonderiliyor}>
+                  {gonderiliyor ? 'Gönderiliyor…' : 'Onaya Gönder'}
+                </Button>
+              </div>
             </form>
           </Form>
-        </div>
+        </SectionCard>
       </div>
     </DavetLayout>
   );

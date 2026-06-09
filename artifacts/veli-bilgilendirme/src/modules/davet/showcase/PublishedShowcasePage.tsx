@@ -1,5 +1,7 @@
 ﻿import React, { useState, useEffect, useCallback } from 'react';
 import { DavetLayout } from '@/modules/davet/layout/DavetLayout';
+import { PageHeader } from '@/modules/davet/layout/PageHeader';
+import { SectionCard } from '@/modules/davet/layout/SectionCard';
 import { ShowcasePost } from '@/modules/davet/types';
 import { Card, CardContent, CardFooter } from '@/components/davet-ui/card';
 import { Badge } from '@/components/davet-ui/badge';
@@ -72,11 +74,12 @@ export default function PublishedShowcasePage() {
 
   return (
     <DavetLayout>
-      <div className="space-y-6 pb-12">
-        <div>
-          <h1 className="text-2xl font-bold">Yayındaki Çalışmalar</h1>
-          <p className="text-muted-foreground mt-1">Diğer kurumların başarılı uygulamalarını inceleyin, ilham alın.</p>
-        </div>
+      <div className="space-y-5 pb-12">
+        <PageHeader
+          accent="cyan"
+          title="Yayındaki Çalışmalar"
+          description="Diğer kurumların başarılı uygulamalarını inceleyin, ilham alın."
+        />
 
         {loadError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
@@ -85,7 +88,7 @@ export default function PublishedShowcasePage() {
           </div>
         )}
 
-        <div className="bg-card p-4 rounded-lg border flex flex-col lg:flex-row gap-4 items-center justify-between">
+        <SectionCard bodyClassName="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col md:flex-row gap-4 w-full flex-1">
             <Input 
               placeholder="Ara..." 
@@ -116,7 +119,7 @@ export default function PublishedShowcasePage() {
               </SelectContent>
             </Select>
           </div>
-        </div>
+        </SectionCard>
 
         {loading ? (
           <div className="py-16 text-center text-muted-foreground">Yükleniyor…</div>
