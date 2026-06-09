@@ -12,14 +12,14 @@ export function VeliOnizlemeMobil({
   zoom,
   wrapperRef,
   onSablonOner,
-  paylasBtnlari,
+  paylasBtnlari = null,
 }: {
   form: FormData;
   sablon: SablonTuru;
   zoom: number;
   wrapperRef: RefObject<HTMLDivElement | null>;
   onSablonOner: (id: SablonTuru) => void;
-  paylasBtnlari: React.ReactNode;
+  paylasBtnlari?: React.ReactNode;
 }) {
   const [detayAcik, setDetayAcik] = useState(false);
 

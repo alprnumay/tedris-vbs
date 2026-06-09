@@ -8,11 +8,14 @@ import { api, kullaniciAdminMi, type KullaniciBilgisi } from "./lib/api";
 import { backendApi, type PosterDraftData } from "./lib/backendApi";
 import FormAlani from "./components/FormAlani";
 import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
-import { VeliYanPanel } from "./components/veli/VeliYanPanel";
 import { VeliMobilNav } from "./components/veli/VeliMobilNav";
 import { VeliOnizlemeMobil } from "./components/veli/VeliOnizlemeMobil";
 import { SABLON_LISTESI } from "./lib/sablonlar";
 import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
+import { validateVeliWizardStep, type VeliWizardStep } from "./lib/veli/veliWizardSteps";
+import { PreviewPanel } from "./components/veli/wizard/PreviewPanel";
+import { QualityPanel } from "./components/veli/wizard/QualityPanel";
+import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
@@ -70,6 +73,10 @@ function MainApp() {
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
   const [formAdim, setFormAdim] = useState<1 | 2>(1);
+  const [wizardStep, setWizardStep] = useState<VeliWizardStep>(1);
+  const [stepUyari, setStepUyari] = useState<string | null>(null);
+  const [mobilOnizlemeAcik, setMobilOnizlemeAcik] = useState(false);
+  const [taslakMenuAcik, setTaslakMenuAcik] = useState(false);
   const [taslakIslem, setTaslakIslem] = useState<"kaydet" | "yukle" | "sil" | null>(null);
   const [sonTaslakId, setSonTaslakId] = useState<string | number | null>(null);
 
@@ -116,6 +123,41 @@ function MainApp() {
       void api.activityLog("open_veli_module").catch(() => {});
     }
   }, [homeModu, kullanici?.id]);
+
+  useEffect(() => {
+    if (homeModu !== "veli") return;
+    try {
+      localStorage.setItem(
+        "veli_wizard_draft",
+        JSON.stringify({ form, seciliSablon, wizardStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
+      );
+    } catch {
+      /* localStorage kapalı */
+    }
+  }, [form, seciliSablon, wizardStep, metinDuzenlendi, homeModu]);
+
+  useEffect(() => {
+    setFormAdim(wizardStep <= 2 ? 1 : 2);
+  }, [wizardStep]);
+
+  const wizardIleri = () => {
+    if (wizardStep >= 5) return;
+    const { ok, missing } = validateVeliWizardStep(wizardStep, form);
+    if (!ok) {
+      setStepUyari(`Bu adımda ${missing.length} zorunlu alan eksik: ${missing.join(", ")}`);
+      return;
+    }
+    setStepUyari(null);
+    setWizardStep((wizardStep + 1) as VeliWizardStep);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const wizardGeri = () => {
+    if (wizardStep <= 1) return;
+    setStepUyari(null);
+    setWizardStep((wizardStep - 1) as VeliWizardStep);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   useEffect(() => {
     if (logoGelistirmeAcik && kullanici && new URLSearchParams(window.location.search).get("modul") === "logo") {
@@ -538,9 +580,8 @@ function MainApp() {
     cursor: aktif ? "wait" : "pointer",
   });
 
-  const PaylasBtnlari = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", gap: 8 }}>
+  const PaylasCiktiBtnlari = () => (
+    <div style={{ display: "flex", gap: 8 }}>
       <button
         onClick={afisiIndir}
         disabled={indiriliyor}
@@ -613,18 +654,25 @@ function MainApp() {
         </svg>
         WA
       </button>
-      </div>
-      <div style={{ display: "flex", gap: 6 }}>
-        <button type="button" onClick={taslakKaydet} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "kaydet")}>
-          {taslakIslem === "kaydet" ? "Kaydediliyor..." : "Taslağı Kaydet"}
-        </button>
-        <button type="button" onClick={sonTaslagiYukle} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "yukle")}>
-          {taslakIslem === "yukle" ? "Yükleniyor..." : "Son Taslağı Yükle"}
-        </button>
-        <button type="button" onClick={taslakSil} disabled={Boolean(taslakIslem)} style={draftBtnStil(taslakIslem === "sil")}>
-          {taslakIslem === "sil" ? "Siliniyor..." : "Taslağı Sil"}
-        </button>
-      </div>
+    </div>
+  );
+
+  const TaslakMenu = () => (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setTaslakMenuAcik((v) => !v)}
+        className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+      >
+        Taslak ▾
+      </button>
+      {taslakMenuAcik && (
+        <div className="absolute right-0 top-full z-20 mt-1 min-w-[11rem] rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+          <button type="button" onClick={() => { void taslakKaydet(); setTaslakMenuAcik(false); }} disabled={Boolean(taslakIslem)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Kaydet</button>
+          <button type="button" onClick={() => { void sonTaslagiYukle(); setTaslakMenuAcik(false); }} disabled={Boolean(taslakIslem)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Son taslağı yükle</button>
+          <button type="button" onClick={() => { void taslakSil(); setTaslakMenuAcik(false); }} disabled={Boolean(taslakIslem)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-600 hover:bg-red-50">Sil</button>
+        </div>
+      )}
     </div>
   );
 
@@ -757,9 +805,10 @@ function MainApp() {
                   </p>
                 </div>
                 <div className="veli-studio-toolbar__meta">
+                  <TaslakMenu />
                   <span className="veli-desktop-pill">
                     <span className="veli-desktop-pill__label">Adım</span>
-                    {formAdim === 1 ? "Bilgiler" : "Tasarım"}
+                    {wizardStep}/5
                   </span>
                   <span className="veli-desktop-pill">
                     <span className="veli-desktop-pill__label">Şablon</span>
@@ -786,68 +835,51 @@ function MainApp() {
                       kullaniciId={kullanici.id}
                       adim2Ref={adim2Ref}
                       desktopMod
-                      onAdimChange={setFormAdim}
+                      wizardStep={wizardStep}
+                      onWizardStepChange={(s) => { setStepUyari(null); setWizardStep(s); }}
+                      stepUyari={stepUyari}
+                      onTaslakKaydet={() => void taslakKaydet()}
+                      taslakKaydediliyor={taslakIslem === "kaydet"}
+                      onWizardIleri={wizardIleri}
+                      onWizardGeri={wizardGeri}
                       onGorselYuklendi={(adet) => backendEvent("image_uploaded", { count: adet })}
                     />
                   </div>
                 </div>
 
                 <div className="veli-desktop-preview-col">
-                  <div className="veli-studio-stage">
-                    <div className="veli-stage-toolbar">
-                      <div className="veli-stage-toolbar__left">
-                        <span className="veli-stage-toolbar__label">Önizleme</span>
-                        <span className="veli-stage-toolbar__sub">Canlı afiş görünümü</span>
-                      </div>
-                      <div className="veli-stage-toolbar__right">
-                        <button type="button" className="veli-stage-btn" onClick={desktopSigdir}>
-                          Sığdır
-                        </button>
-                        <span className="veli-stage-zoom">{Math.round(desktopZoom * 100)}%</span>
-                      </div>
-                    </div>
-                    <div ref={desktopSahneRef} className="veli-studio-sahne">
+                  <PreviewPanel
+                    stageRef={desktopSahneRef}
+                    zoomLabel={`${Math.round(desktopZoom * 100)}%`}
+                    onFit={desktopSigdir}
+                  >
+                    <div
+                      className="veli-studio-poster-wrap"
+                      style={{ width: desktopScaledW, height: desktopScaledH, flexShrink: 0 }}
+                    >
                       <div
-                        className="veli-studio-poster-wrap"
-                        style={{ width: desktopScaledW, height: desktopScaledH, flexShrink: 0 }}
+                        ref={posterInnerRef}
+                        style={{
+                          width: POSTER_W,
+                          transform: `scale(${desktopZoom})`,
+                          transformOrigin: "top center",
+                        }}
                       >
-                        <div
-                          ref={posterInnerRef}
-                          style={{
-                            width: POSTER_W,
-                            transform: `scale(${desktopZoom})`,
-                            transformOrigin: "top center",
-                          }}
-                        >
-                          <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
-                        </div>
+                        <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
                       </div>
                     </div>
-                    <p className="veli-studio-hint">Formu doldurdukça afiş canlı güncellenir.</p>
-                  </div>
-                  <div className="veli-studio-actions">
-                    <PaylasBtnlari />
-                  </div>
-                  <div className="veli-desktop-aside-below">
-                    <VeliYanPanel
-                      form={form}
-                      seciliSablon={seciliSablon}
-                      onSablonOner={setSeciliSablon}
-                      studio
-                    />
-                  </div>
+                  </PreviewPanel>
+                  {wizardStep === 5 ? (
+                    <>
+                      <QualityPanel form={form} seciliSablon={seciliSablon} full />
+                      <div className="veli-studio-actions veli-studio-actions--exports">
+                        <PaylasCiktiBtnlari />
+                      </div>
+                    </>
+                  ) : (
+                    <QualityPanel form={form} seciliSablon={seciliSablon} />
+                  )}
                 </div>
-
-                <aside className="veli-desktop-aside-col" aria-label="Yardımcı panel">
-                  <div className="veli-desktop-aside-sticky">
-                    <VeliYanPanel
-                      form={form}
-                      seciliSablon={seciliSablon}
-                      onSablonOner={setSeciliSablon}
-                      studio
-                    />
-                  </div>
-                </aside>
               </div>
             </div>
           </div>
@@ -855,9 +887,22 @@ function MainApp() {
       </div>
 
       <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
-        {aktifSekme === "form" && (
+        {aktifSekme === "form" && wizardStep < 5 && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
-            <div className="p-4 pb-28">
+            <div className="p-4 pb-32">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-slate-800">Veli Bilgilendirme</p>
+                <TaslakMenu />
+              </div>
+              {wizardStep >= 2 && wizardStep < 5 && (
+                <button
+                  type="button"
+                  onClick={() => setMobilOnizlemeAcik(true)}
+                  className="mb-3 w-full rounded-xl border border-blue-200 bg-blue-50 py-2.5 text-sm font-bold text-blue-700"
+                >
+                  Önizlemeyi Aç
+                </button>
+              )}
               <FormAlani
                 form={form}
                 setForm={setForm}
@@ -868,27 +913,41 @@ function MainApp() {
                 kullaniciId={kullanici.id}
                 adim2Ref={adim2Ref}
                 mobilMod
+                wizardStep={wizardStep}
+                onWizardStepChange={(s) => { setStepUyari(null); setWizardStep(s); }}
+                stepUyari={stepUyari}
                 onGorselYuklendi={(adet) => backendEvent("image_uploaded", { count: adet })}
-                onTasarimaGec={() => {
-                  adim2Ref.current?.();
-                  setAktifSekme("onizleme");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
               />
             </div>
           </div>
         )}
 
-        {aktifSekme === "onizleme" && (
-          <div className="flex-1 overflow-y-auto">
-            <VeliOnizlemeMobil
-              form={form}
-              sablon={seciliSablon}
-              zoom={zoom}
-              wrapperRef={wrapperRef}
-              onSablonOner={setSeciliSablon}
-              paylasBtnlari={<PaylasBtnlari />}
-            />
+        {aktifSekme === "form" && wizardStep === 5 && (
+          <div className="flex-1 overflow-y-auto pb-32" style={{ background: "#f8fafc" }}>
+            <div className="p-4 space-y-4">
+              <QualityPanel form={form} seciliSablon={seciliSablon} full />
+              <VeliOnizlemeMobil
+                form={form}
+                sablon={seciliSablon}
+                zoom={zoom}
+                wrapperRef={wrapperRef}
+                onSablonOner={setSeciliSablon}
+              />
+            </div>
+          </div>
+        )}
+
+        {mobilOnizlemeAcik && wizardStep < 5 && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 p-3 backdrop-blur-sm">
+            <div className="mx-auto flex h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <strong className="text-sm text-slate-800">Önizleme</strong>
+                <button type="button" onClick={() => setMobilOnizlemeAcik(false)} className="text-sm font-bold text-blue-600">Kapat</button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3">
+                <VeliOnizlemeMobil form={form} sablon={seciliSablon} zoom={zoom} wrapperRef={wrapperRef} onSablonOner={setSeciliSablon} />
+              </div>
+            </div>
           </div>
         )}
 
@@ -896,6 +955,34 @@ function MainApp() {
           <div className="flex-1 overflow-y-auto" style={{ background: "#f1f5f9" }}>
             <AdminSayfasi />
           </div>
+        )}
+
+        {aktifSekme === "form" && (
+          <BottomActionBar
+            left={
+              wizardStep > 1 ? (
+                <button type="button" onClick={wizardGeri} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-600">Geri</button>
+              ) : null
+            }
+            center={
+              wizardStep < 5 ? (
+                <button type="button" onClick={() => void taslakKaydet()} disabled={Boolean(taslakIslem)} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-bold text-slate-600">
+                  Kaydet
+                </button>
+              ) : null
+            }
+            right={
+              wizardStep < 5 ? (
+                <button type="button" onClick={wizardIleri} className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm">Devam Et</button>
+              ) : (
+                <div className="flex gap-1">
+                  <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="rounded-lg bg-blue-600 px-2 py-2 text-[10px] font-bold text-white">PNG</button>
+                  <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="rounded-lg bg-red-600 px-2 py-2 text-[10px] font-bold text-white">PDF</button>
+                  <button type="button" onClick={whatsappPaylas} className="rounded-lg bg-emerald-600 px-2 py-2 text-[10px] font-bold text-white">WA</button>
+                </div>
+              )
+            }
+          />
         )}
       </div>
 
@@ -907,16 +994,17 @@ function MainApp() {
         </div>
       )}
 
-      <VeliMobilNav
-        aktifSekme={aktifSekme}
-        onSekme={(sekme) => {
-          if (sekme === "form" && aktifSekme === "onizleme") adim2Ref.current?.();
-          setAktifSekme(sekme);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-        adminGoster={kullaniciAdminMi(kullanici)}
-        onDestek={() => setDestekAcik(true)}
-      />
+      {aktifSekme === "yonetim" && (
+        <VeliMobilNav
+          aktifSekme={aktifSekme}
+          onSekme={(sekme) => {
+            setAktifSekme(sekme);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          adminGoster={kullaniciAdminMi(kullanici)}
+          onDestek={() => setDestekAcik(true)}
+        />
+      )}
 
       {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
     </div>

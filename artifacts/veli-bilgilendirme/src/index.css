@@ -721,15 +721,25 @@
       width: 100%;
       min-height: 0;
       flex: 1;
-      gap: 0.85rem;
+      gap: 1rem;
       align-items: stretch;
-      grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
+      grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
     }
 
     .veli-desktop-form-col {
       min-width: 0;
       min-height: 0;
       display: flex;
+    }
+
+    .veli-wizard-form input,
+    .veli-wizard-form select,
+    .veli-wizard-form textarea {
+      min-height: 44px;
+    }
+
+    .veli-wizard-step-card {
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
     }
 
     .veli-desktop-form-shell {
@@ -838,10 +848,11 @@
       text-align: right;
     }
 
+    .veli-preview-stage,
     .veli-studio-sahne {
       flex: 1 1 auto;
-      min-height: 280px;
-      max-height: calc(100dvh - 300px);
+      min-height: 520px;
+      max-height: calc(100dvh - 220px);
       padding: 0.75rem;
       display: flex;
       align-items: center;
@@ -898,21 +909,24 @@
 
   @media (min-width: 1280px) {
     .veli-studio-workspace {
-      grid-template-columns: minmax(315px, 360px) minmax(560px, 1fr) minmax(280px, 320px);
-      gap: 0.9rem;
+      grid-template-columns: minmax(380px, 460px) minmax(0, 1fr);
+      gap: 1.1rem;
     }
 
+    .veli-preview-stage,
     .veli-studio-sahne {
       padding: 0.85rem;
     }
 
-    .veli-desktop-aside-col {
-      display: block;
-      min-width: 0;
+    .veli-desktop-aside-col,
+    .veli-desktop-aside-below {
+      display: none !important;
     }
 
-    .veli-desktop-aside-below {
-      display: none;
+    .veli-studio-actions--exports {
+      position: static;
+      background: transparent;
+      padding: 0;
     }
 
     .veli-desktop-aside-sticky {

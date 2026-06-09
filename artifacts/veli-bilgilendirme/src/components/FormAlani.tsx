@@ -15,7 +15,9 @@ import { inputStyle, labelStyle, primaryBtn, secondaryBtn } from "../lib/veli/ve
 import { gorselBoyutOku, dikeyGorselSablonOner } from "../lib/veli/gorselOrientasyon";
 import { InfoTip } from "./veli/InfoTip";
 import { FormAkordeon } from "./veli/FormAkordeon";
-import { VeliCanliOnizleme } from "./veli/VeliCanliOnizleme";
+import { WizardStepper } from "./veli/wizard/WizardStepper";
+import { WizardStepCard } from "./veli/wizard/WizardStepCard";
+import { FAALIYET_CHIPLERI, VELI_WIZARD_STEPS, type VeliWizardStep } from "@/lib/veli/veliWizardSteps";
 
 type BolumDurumu = { tip: "eksik" | "dikkat" | "tamam"; metin: string };
 
@@ -33,6 +35,13 @@ interface Props {
   onTasarimaGec?: () => void;
   onAdimChange?: (adim: 1 | 2) => void;
   onGorselYuklendi?: (adet: number) => void;
+  wizardStep?: VeliWizardStep;
+  onWizardStepChange?: (step: VeliWizardStep) => void;
+  stepUyari?: string | null;
+  onTaslakKaydet?: () => void;
+  taslakKaydediliyor?: boolean;
+  onWizardIleri?: () => void;
+  onWizardGeri?: () => void;
 }
 
 function dosyayaBase64Cevir(file: File): Promise<string> {
@@ -337,8 +346,21 @@ export default function FormAlani({
   onTasarimaGec,
   onAdimChange,
   onGorselYuklendi,
+  wizardStep: wizardStepProp,
+  onWizardStepChange,
+  stepUyari,
+  onTaslakKaydet,
+  taslakKaydediliyor,
+  onWizardIleri,
+  onWizardGeri,
 }: Props) {
+  const [internalWizardStep, setInternalWizardStep] = useState<VeliWizardStep>(1);
+  const wizardStep = wizardStepProp ?? internalWizardStep;
+  const setWizardStep = onWizardStepChange ?? setInternalWizardStep;
+  const wizardMode = wizardStepProp != null || mobilMod || desktopMod;
   const [adim, setAdim] = useState<1 | 2>(1);
+  const [digerFaaliyetAcik, setDigerFaaliyetAcik] = useState(false);
+  const [ekAciklamaAcik, setEkAciklamaAcik] = useState(false);
   const [profiller, setProfiller] = useState<KayitliProfil[]>([]);
   const [profilYukleniyor, setProfilYukleniyor] = useState(false);
   const [profillerAcik, setProfillerAcik] = useState(false);
@@ -518,6 +540,240 @@ export default function FormAlani({
   const tasarimOzet = `${seciliSablonMeta?.ad ?? "Şablon seçilmedi"} · ${form.metinTonu === "sicak" ? "Sıcak ton" : form.metinTonu === "aciklayici" ? "Açıklayıcı ton" : "Kurumsal ton"}`;
   const gorselOzet = form.gorseller.length > 0 ? `${form.gorseller.length}/${maxGorsel} görsel yüklü` : "Görsel yok";
   const metinOzet = `${form.metinUzunlugu === "kisa" ? "Kısa" : "Detaylı"} · ${form.metinTonu === "sicak" ? "Sıcak" : form.metinTonu === "aciklayici" ? "Açıklayıcı" : "Kurumsal"}`;
+  const wizardMeta = VELI_WIZARD_STEPS.find((s) => s.id === wizardStep);
+
+  const faaliyetChipSec = (chip: string) => {
+    if (chip === "Diğer") {
+      setDigerFaaliyetAcik(true);
+      return;
+    }
+    setDigerFaaliyetAcik(false);
+    updateFaaliyet(0, "tur", chip);
+  };
+
+  const wizardKimlikStep = (
+    <WizardStepCard
+      title="Kimlik Bilgileri"
+      description="Kimin adına, hangi kurumdan veli bilgilendirmesi hazırlanıyor?"
+      error={stepUyari}
+    >
+      <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+        <summary className="cursor-pointer font-semibold text-slate-600">Hızlı başlangıç / kayıtlı profil</summary>
+        <div className="mt-3 space-y-2">
+          <button type="button" onClick={() => { setMetinDuzenlendi(false); setForm(hizliOrnekForm()); onMetinYenile(); }}
+            className="w-full rounded-xl border border-amber-200 bg-amber-50 py-2 text-xs font-bold text-amber-900">
+            Hızlı örnek doldur
+          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={profilKaydet} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Profili kaydet</button>
+            {profiller.length > 0 && (
+              <button type="button" onClick={() => setProfillerAcik(!profillerAcik)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                Kayıtlı profiller
+              </button>
+            )}
+          </div>
+          {profillerAcik && profiller.map((p) => (
+            <button key={p.id} type="button" onClick={() => profilYukle(p)} className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs">
+              <strong>{p.isim}</strong> · {[p.kurumAdi, p.rol].filter(Boolean).join(" · ")}
+            </button>
+          ))}
+        </div>
+      </details>
+      <div>
+        <AlanEtiketi label={ALAN_YARDIM.isim.label} ipucu={ALAN_YARDIM.isim.aciklama} />
+        <input type="text" value={form.isim} onChange={(e) => update("isim", e.target.value)} placeholder={ALAN_YARDIM.isim.placeholder} style={inputStyle} />
+      </div>
+      <div>
+        <AlanEtiketi label={ALAN_YARDIM.kurumAdi.label} ipucu={ALAN_YARDIM.kurumAdi.aciklama} />
+        <input type="text" value={form.kurumAdi} onChange={(e) => update("kurumAdi", e.target.value)} placeholder={ALAN_YARDIM.kurumAdi.placeholder} style={inputStyle} />
+      </div>
+      <div>
+        <AlanEtiketi label={ALAN_YARDIM.rol.label} ipucu={ALAN_YARDIM.rol.aciklama} />
+        <input type="text" value={form.rol} onChange={(e) => update("rol", e.target.value)} placeholder={ALAN_YARDIM.rol.placeholder} style={inputStyle} />
+      </div>
+    </WizardStepCard>
+  );
+
+  const wizardCalismaStep = (
+    <WizardStepCard title="Çalışma Bilgileri" description="Velilere iletilecek faaliyet ve mesajı tanımlayın." error={stepUyari}>
+      <div>
+        <AlanEtiketi label={ALAN_YARDIM.faaliyetTuru.label} ipucu={ALAN_YARDIM.faaliyetTuru.aciklama} />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {FAALIYET_CHIPLERI.map((chip) => {
+            const secili = ilkFaaliyet.tur === chip || (chip === "Diğer" && digerFaaliyetAcik);
+            return (
+              <button key={chip} type="button" onClick={() => faaliyetChipSec(chip)}
+                className={`rounded-xl border px-2 py-2.5 text-xs font-bold transition-colors ${secili ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>
+                {chip}
+              </button>
+            );
+          })}
+        </div>
+        {(digerFaaliyetAcik || !FAALIYET_CHIPLERI.includes(ilkFaaliyet.tur as typeof FAALIYET_CHIPLERI[number])) && (
+          <select value={ilkFaaliyet.tur} onChange={(e) => updateFaaliyet(0, "tur", e.target.value)} style={{ ...inputStyle, marginTop: 8 }}>
+            <option value="">Diğer tür seçin...</option>
+            {FAALIYET_TURLERI.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
+      </div>
+      <div>
+        <AlanEtiketi label={ALAN_YARDIM.alan.label} ipucu={ALAN_YARDIM.alan.aciklama} />
+        <input type="text" value={ilkFaaliyet.alan} onChange={(e) => updateFaaliyet(0, "alan", e.target.value)} placeholder={ALAN_YARDIM.alan.placeholder} style={inputStyle} />
+      </div>
+      <button type="button" onClick={() => setEkAciklamaAcik(!ekAciklamaAcik)} className="text-xs font-bold text-blue-600">
+        {ekAciklamaAcik ? "Ek açıklamayı gizle" : "+ Ek açıklama ve başlık"}
+      </button>
+      {ekAciklamaAcik && (
+        <>
+          <div>
+            <AlanEtiketi label={ALAN_YARDIM.ozelNot.label} ipucu={ALAN_YARDIM.ozelNot.aciklama} />
+            <input type="text" value={ilkFaaliyet.ozelNot} onChange={(e) => updateFaaliyet(0, "ozelNot", e.target.value)} placeholder={ALAN_YARDIM.ozelNot.placeholder} style={inputStyle} />
+          </div>
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-indigo-900">{ALAN_YARDIM.baslik.label}</span>
+              <button type="button" onClick={() => setBaslikAcik(!baslikAcik)} className="text-xs font-bold text-indigo-600">{baslikAcik ? "Kapat" : "Değiştir"}</button>
+            </div>
+            <p className="mt-1 text-sm font-semibold text-slate-800">{basliklar[form.seciliBaslikIdx ?? 0]}</p>
+            {baslikAcik && basliklar.map((b, i) => (
+              <button key={i} type="button" onClick={() => { update("seciliBaslikIdx", i); setBaslikAcik(false); }}
+                className={`mt-2 block w-full rounded-lg border px-3 py-2 text-left text-xs ${(form.seciliBaslikIdx ?? 0) === i ? "border-indigo-500 bg-white font-bold" : "border-indigo-100 bg-white/80"}`}>
+                {b}
+              </button>
+            ))}
+          </div>
+          <div>
+            <AlanEtiketi label={ALAN_YARDIM.ekNot.label} ipucu={ALAN_YARDIM.ekNot.aciklama} />
+            <input type="text" value={form.ekNot} onChange={(e) => update("ekNot", e.target.value)} placeholder={ALAN_YARDIM.ekNot.placeholder} style={inputStyle} />
+          </div>
+        </>
+      )}
+    </WizardStepCard>
+  );
+
+  const wizardTasarimStep = (
+    <WizardStepCard title="Tasarım / Şablon" description="Afiş görünümünü ve metin üslubunu seçin." error={stepUyari}>
+      <div className="veli-template-current-card">
+        <div className="veli-template-current-card__preview">
+          <SablonMiniThumbnail id={seciliSablon} renk={seciliSablonMeta?.chipRenk ?? "#2563eb"} />
+        </div>
+        <div className="veli-template-current-card__body">
+          <span>Seçili şablon</span>
+          <strong>{seciliSablonMeta?.ad ?? seciliSablon}</strong>
+          <p>{seciliSablonMeta?.kullanim ?? "Afiş görünümünü belirler."}</p>
+        </div>
+        <button type="button" onClick={() => setSablonGaleriAcik(true)}>Şablon seç</button>
+      </div>
+      <div>
+        <label style={labelStyle}>Metin Uzunluğu</label>
+        <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 10, padding: 3 }}>
+          {(["detayli", "kisa"] as const).map((uz) => {
+            const secili = (form.metinUzunlugu ?? "detayli") === uz;
+            return (
+              <button key={uz} type="button" onClick={() => { setMetinDuzenlendi(false); update("metinUzunlugu", uz); }}
+                style={{ flex: 1, padding: "9px 8px", borderRadius: 8, fontSize: 12, fontWeight: 700, border: "none", background: secili ? "#fff" : "transparent", color: secili ? "#1d4ed8" : "#94a3b8", cursor: "pointer" }}>
+                {uz === "detayli" ? "Detaylı" : "Kısa"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <label style={labelStyle}>Metin Tonu</label>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+          {([
+            { id: "kurumsal", label: "Kurumsal" },
+            { id: "sicak", label: "Sıcak" },
+            { id: "aciklayici", label: "Açıklayıcı" },
+          ] as const).map(({ id, label }) => {
+            const secili = (form.metinTonu ?? "kurumsal") === id;
+            return (
+              <button key={id} type="button" onClick={() => { setMetinDuzenlendi(false); update("metinTonu", id); }}
+                style={{ padding: "10px 4px", borderRadius: 12, fontSize: 11, fontWeight: 700, border: secili ? "2px solid #1d4ed8" : "1px solid #e2e8f0", background: secili ? "#eff6ff" : "#fff", color: secili ? "#1d4ed8" : "#64748b", cursor: "pointer" }}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <AlanEtiketi label={ALAN_YARDIM.posterMetni.label} ipucu={ALAN_YARDIM.posterMetni.aciklama} />
+          <button type="button" onClick={() => { setMetinDuzenlendi(false); onMetinYenile(); }} style={{ fontSize: 12, fontWeight: 600, border: "1px solid #cbd5e1", borderRadius: 8, padding: "5px 10px", background: "#f8fafc", cursor: "pointer" }}>Yenile</button>
+        </div>
+        <textarea value={form.posterMetni} onChange={(e) => { setMetinDuzenlendi(true); update("posterMetni", e.target.value); }} rows={4} style={{ ...inputStyle, resize: "vertical", lineHeight: 1.7 }} />
+      </div>
+    </WizardStepCard>
+  );
+
+  const wizardGorselStep = (
+    <WizardStepCard title="Görsel Ekle" description="Görsel eklemeden de afiş oluşturabilirsiniz. Görsel eklemek afişi daha etkili hale getirir." error={stepUyari}>
+      <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Önerilen: en fazla <strong>{maxGorsel}</strong> görsel · yatay fotoğraflar daha iyi görünür.
+      </p>
+      {form.gorseller.length < maxGorsel && (
+        <label style={{ display: "block", cursor: "pointer" }}>
+          <div style={{ border: "2px dashed #cbd5e1", borderRadius: 14, padding: "20px", textAlign: "center", background: "#f8fafc" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#475569", margin: 0 }}>Fotoğraf yükle</p>
+            <p style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>veya görselsiz devam edin</p>
+          </div>
+          <input type="file" accept="image/*" multiple onChange={gorselEkle} style={{ display: "none" }} />
+        </label>
+      )}
+      {form.gorseller.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-slate-500">Yüklenen görseller ({form.gorseller.length}/{maxGorsel})</p>
+          {form.gorseller.map((g, i) => (
+            <div key={i} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+              <img src={g} alt="" className="h-12 w-12 rounded-lg object-cover" />
+              <span className="flex-1 text-xs font-semibold text-slate-600">Görsel {i + 1}</span>
+              <button type="button" onClick={() => gorselSil(i)} className="text-xs font-bold text-red-600">Sil</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </WizardStepCard>
+  );
+
+  const wizardOnizlemeStep = (
+    <WizardStepCard
+      title="Önizleme ve Çıktı"
+      description="Afişinizi kontrol edin; indirme ve paylaşım seçenekleri sağ panelde."
+    >
+      <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        Form tamamlandı. Canlı önizleme {desktopMod ? "sağda" : "aşağıda"} görünüyor.
+      </p>
+    </WizardStepCard>
+  );
+
+  const wizardStepContent = (() => {
+    switch (wizardStep) {
+      case 1: return wizardKimlikStep;
+      case 2: return wizardCalismaStep;
+      case 3: return wizardTasarimStep;
+      case 4: return wizardGorselStep;
+      case 5: return wizardOnizlemeStep;
+      default: return null;
+    }
+  })();
+
+  const wizardDesktopNav = (
+    <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+      {wizardStep > 1 ? (
+        <button type="button" onClick={onWizardGeri ?? (() => setWizardStep((wizardStep - 1) as VeliWizardStep))} style={secondaryBtn}>Geri</button>
+      ) : <span />}
+      {onTaslakKaydet ? (
+        <button type="button" onClick={onTaslakKaydet} disabled={taslakKaydediliyor} style={{ ...secondaryBtn, flex: "0 0 auto", padding: "10px 12px", fontSize: 11 }}>
+          {taslakKaydediliyor ? "..." : "Taslak"}
+        </button>
+      ) : null}
+      {wizardStep < 5 ? (
+        <button type="button" onClick={onWizardIleri ?? (() => setWizardStep((wizardStep + 1) as VeliWizardStep))} style={{ ...primaryBtn, flex: 1 }}>Devam Et</button>
+      ) : (
+        onWizardGeri ? <button type="button" onClick={onWizardGeri} style={{ ...secondaryBtn, flex: 1 }}>Düzenlemeye Dön</button> : null
+      )}
+    </div>
+  );
 
   /* ─── ADIM 1 ─── */
   const adim1 = (
@@ -929,6 +1185,58 @@ export default function FormAlani({
     </div>
   );
 
+  if (wizardMode) {
+    return (
+      <div className="veli-wizard-form flex flex-col gap-4">
+        <WizardStepper step={wizardStep} onStepClick={(s) => s < wizardStep && setWizardStep(s)} compact={mobilMod} />
+        {wizardMeta && mobilMod ? (
+          <p className="text-sm font-semibold text-slate-700">{wizardMeta.subtitle}</p>
+        ) : null}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div key={wizardStep} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: stepEase }}>
+            {wizardStepContent}
+          </motion.div>
+        </AnimatePresence>
+        {desktopMod ? wizardDesktopNav : null}
+        {sablonGaleriAcik && (
+          <div className="veli-template-modal" role="dialog" aria-modal="true">
+            <div className="veli-template-modal__panel">
+              <div className="veli-template-modal__head">
+                <div>
+                  <h3>Şablon Galerisi</h3>
+                  <p>Seçim anında önizlemeye uygulanır.</p>
+                </div>
+                <button type="button" onClick={() => setSablonGaleriAcik(false)}>Kapat</button>
+              </div>
+              <div className="veli-template-filter-row veli-template-filter-row--modal">
+                {sablonFiltreleri.map((t) => (
+                  <button key={t} type="button" className={sablonFiltre === t ? "is-active" : ""} onClick={() => setSablonFiltre(t)}>{t}</button>
+                ))}
+              </div>
+              <div className="veli-template-gallery-grid">
+                {filtreliSablonlar.map((s) => {
+                  const secili = seciliSablon === s.id;
+                  return (
+                    <motion.button key={s.id} type="button" whileTap={{ scale: 0.98 }}
+                      onClick={() => { setSeciliSablon(s.id); setDikeyGorselUyarisi(null); setSablonGaleriAcik(false); }}
+                      className={`veli-template-gallery-card${secili ? " is-selected" : ""}`}
+                      style={{ ["--template-accent" as string]: s.chipRenk }}>
+                      <div className="veli-template-gallery-card__thumb"><SablonMiniThumbnail id={s.id} renk={s.chipRenk} /></div>
+                      <div className="veli-template-gallery-card__content">
+                        <strong>{s.ad}</strong>
+                        <p>{s.kullanim || `${s.maxGorsel} görsel`}</p>
+                      </div>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (desktopMod) {
     return (
       <div className="veli-form-desktop-stack">
@@ -943,26 +1251,14 @@ export default function FormAlani({
   }
 
   return (
-    <div
-      style={{ display: "flex", flexDirection: "column", paddingBottom: mobilMod ? 8 : 0 }}
-      onTouchStart={desktopMod ? undefined : onTouchStart}
-      onTouchEnd={desktopMod ? undefined : onTouchEnd}
-    >
+    <div style={{ display: "flex", flexDirection: "column", paddingBottom: mobilMod ? 8 : 0 }}
+      onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <AdimGostergesi adim={adim} setAdim={adimDegistir} desktopMod={desktopMod} />
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={adim}
-          initial={{ opacity: 0, x: adim === 2 ? 48 : -48 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: adim === 2 ? -48 : 48 }}
-          transition={{ duration: 0.22, ease: stepEase }}
-        >
+        <motion.div key={adim} initial={{ opacity: 0, x: adim === 2 ? 48 : -48 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: adim === 2 ? -48 : 48 }} transition={{ duration: 0.22, ease: stepEase }}>
           {adim === 1 ? adim1 : adim2}
         </motion.div>
       </AnimatePresence>
-      {mobilMod && (
-        <VeliCanliOnizleme form={form} sablon={seciliSablon} onTasarimaGec={onTasarimaGec} />
-      )}
     </div>
   );
 }
