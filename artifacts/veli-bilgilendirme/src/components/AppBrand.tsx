@@ -1,12 +1,15 @@
 ﻿export function AppBrand({
   kullaniciAdi,
   kompakt = false,
+  mobilSatir = false,
 }: {
   kullaniciAdi?: string;
   kompakt?: boolean;
+  /** Mobilde alt satırda tam marka (logo + başlık + kullanıcı). */
+  mobilSatir?: boolean;
 }) {
   return (
-    <div className={`tedris-brand${kompakt ? " tedris-brand--compact" : ""}`}>
+    <div className={`tedris-brand${kompakt ? " tedris-brand--compact" : ""}${mobilSatir ? " tedris-brand--mobile-row" : ""}`}>
       <div className="tedris-brand__mark" aria-hidden="true">
         <svg viewBox="0 0 48 48" role="img">
           <defs>
@@ -23,7 +26,10 @@
         </svg>
       </div>
       <div className="tedris-brand__text">
-        <h1>Nehari Veli Bilgilendirme</h1>
+        <h1>
+          <span className="tedris-brand__title-short">Veli Bilgilendirme</span>
+          <span className="tedris-brand__title-full">Nehari Veli Bilgilendirme</span>
+        </h1>
         <p>{kullaniciAdi || "kurum iletişim paneli"}</p>
       </div>
     </div>

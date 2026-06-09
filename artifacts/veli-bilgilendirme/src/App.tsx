@@ -682,110 +682,95 @@ function MainApp() {
     desktopKalite.durum === "hazir" ? "Hazır" : desktopKalite.durum === "dikkat" ? "Dikkat" : "Eksik";
 
   return (
-    <div className="flex flex-col" style={{ height: "100dvh", background: "#f1f5f9" }}>
+    <div className="veli-app-shell flex flex-col overflow-x-hidden" style={{ height: "100dvh", background: "#f1f5f9" }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <Toaster position="top-center" richColors />
 
       <header
-        className="tedris-app-header flex-shrink-0 flex items-center justify-between px-4"
+        className={`tedris-app-header flex-shrink-0${aktifSekme === "yonetim" ? " tedris-app-header--admin" : ""}`}
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)",
-          minHeight: aktifSekme === "yonetim" ? 60 : 54,
-          paddingTop: aktifSekme === "yonetim" ? 10 : 7,
-          paddingBottom: aktifSekme === "yonetim" ? 10 : 7,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            type="button"
-            onClick={() => {
-              setHomeModu("kategoriler");
-              setAktifSekme("form");
-            }}
-            className="flex shrink-0 items-center gap-1 rounded-xl border border-white/25 bg-white/10 px-2.5 py-2 text-[11px] font-bold text-white/95 transition hover:bg-white/20 sm:gap-1.5 sm:px-3 sm:text-xs"
-            title="Kategori seçim ekranına dön"
-          >
-            <svg className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="hidden min-[380px]:inline">Ana sayfaya dön</span>
-            <span className="min-[380px]:hidden">Ana</span>
-          </button>
-          <AppBrand kullaniciAdi={kullanici.name} />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={() => setDestekAcik(true)}
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.2)",
-              background: "rgba(255,255,255,0.12)",
-              color: "#fff",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-            title="Destek"
-          >
-            <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
-          </button>
-
-          {kullaniciAdminMi(kullanici) && (
+        <div className="tedris-app-header__toolbar">
+          <div className="tedris-app-header__start">
             <button
-              onClick={() => setAktifSekme("yonetim")}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-              style={{
-                background:
-                  aktifSekme === "yonetim" ? "rgba(124,58,237,0.25)" : "rgba(255,255,255,0.15)",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.2)",
-                cursor: "pointer",
+              type="button"
+              onClick={() => {
+                setHomeModu("kategoriler");
+                setAktifSekme("form");
               }}
+              className="tedris-app-header__back flex shrink-0 items-center gap-1 rounded-xl border border-white/25 bg-white/10 px-2.5 py-2 text-[11px] font-bold text-white/95 transition hover:bg-white/20 md:gap-1.5 md:px-3 md:text-xs"
+              title="Kategori seçim ekranına dön"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="tedris-app-header__back-label">Ana sayfaya dön</span>
+            </button>
+
+            <div className="tedris-app-header__brand-desktop hidden md:flex min-w-0">
+              <AppBrand kullaniciAdi={kullanici.name} />
+            </div>
+          </div>
+
+          <div className="tedris-app-header__actions">
+            <button
+              type="button"
+              onClick={() => setDestekAcik(true)}
+              className="tedris-header-icon-btn"
+              title="Destek"
+            >
+              <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
                 />
               </svg>
-              Yönetim
             </button>
-          )}
 
-          <button
-            onClick={cikisYap}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-            style={{
-              background: "rgba(255,255,255,0.12)",
-              color: "rgba(255,255,255,0.85)",
-              border: "1px solid rgba(255,255,255,0.18)",
-              cursor: "pointer",
-            }}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            <span className="hidden sm:inline">Çıkış</span>
-          </button>
+            {kullaniciAdminMi(kullanici) && (
+              <button
+                type="button"
+                onClick={() => setAktifSekme("yonetim")}
+                className={`tedris-header-pill-btn${aktifSekme === "yonetim" ? " is-active" : ""}`}
+                title="Yönetim"
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"
+                  />
+                </svg>
+                <span className="tedris-header-pill-btn__label">Yönetim</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={cikisYap}
+              className="tedris-header-pill-btn tedris-header-pill-btn--muted"
+              title="Çıkış"
+            >
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+              <span className="tedris-header-pill-btn__label">Çıkış</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="tedris-app-header__brand-mobile md:hidden">
+          <AppBrand kullaniciAdi={kullanici.name} mobilSatir />
         </div>
       </header>
 
@@ -889,7 +874,7 @@ function MainApp() {
       <div className="lg:hidden flex-1 overflow-hidden flex flex-col">
         {aktifSekme === "form" && activeStep < VELI_WIZARD_LAST_STEP && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
-            <div className="p-4 pb-32">
+            <div className="veli-wizard-mobile-content p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="text-sm font-bold text-slate-800">Veli Bilgilendirme</p>
                 <TaslakMenu />
@@ -925,7 +910,7 @@ function MainApp() {
         )}
 
         {aktifSekme === "form" && activeStep === VELI_WIZARD_LAST_STEP && (
-          <div className="flex-1 overflow-y-auto pb-32" style={{ background: "#f8fafc" }}>
+          <div className="veli-wizard-mobile-content flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
             <div className="p-4 space-y-4">
               <QualityPanel form={form} seciliSablon={seciliSablon} full />
               <VeliOnizlemeMobil
@@ -961,26 +946,36 @@ function MainApp() {
 
         {aktifSekme === "form" && (
           <BottomActionBar
+            hasBack={activeStep > 0}
             left={
               activeStep > 0 ? (
-                <button type="button" onClick={wizardGeri} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-600">Geri</button>
+                <button type="button" onClick={wizardGeri} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--secondary">
+                  Geri
+                </button>
               ) : null
             }
             center={
               activeStep < VELI_WIZARD_LAST_STEP ? (
-                <button type="button" onClick={() => void taslakKaydet()} disabled={Boolean(taslakIslem)} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-bold text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => void taslakKaydet()}
+                  disabled={Boolean(taslakIslem)}
+                  className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--secondary"
+                >
                   Kaydet
                 </button>
               ) : null
             }
             right={
               activeStep < VELI_WIZARD_LAST_STEP ? (
-                <button type="button" onClick={wizardIleri} className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm">Devam Et</button>
+                <button type="button" onClick={wizardIleri} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--primary">
+                  Devam Et
+                </button>
               ) : (
-                <div className="flex gap-1">
-                  <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="rounded-lg bg-blue-600 px-2 py-2 text-[10px] font-bold text-white">PNG</button>
-                  <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="rounded-lg bg-red-600 px-2 py-2 text-[10px] font-bold text-white">PDF</button>
-                  <button type="button" onClick={whatsappPaylas} className="rounded-lg bg-emerald-600 px-2 py-2 text-[10px] font-bold text-white">WA</button>
+                <div className="veli-wizard-bottom-bar__exports">
+                  <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--primary veli-wizard-bottom-bar__btn--compact">PNG</button>
+                  <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--danger veli-wizard-bottom-bar__btn--compact">PDF</button>
+                  <button type="button" onClick={whatsappPaylas} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">WA</button>
                 </div>
               )
             }
