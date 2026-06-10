@@ -1,5 +1,15 @@
-import type { InviteRenderModel } from "@/modules/davet/invite/inviteTemplateHelpers";
-import { InviteLogo, InviteMetaCards, InvitePhotoLayer, InviteQrPanel, InviteStudentBanner } from "@/modules/davet/invite/InviteSharedParts";
+import { getInviteTemplateConfig } from "@/modules/davet/invite/inviteTemplateConfig";
+import {
+  AccentBar,
+  DescriptionZone,
+  GoldRule,
+  ImageZone,
+  InfoCardsRow,
+  LogoZone,
+  QrZone,
+  StudentZone,
+  TitleZone,
+} from "@/modules/davet/invite/InvitePosterZones";
 
 export type InviteTemplateProps = {
   model: InviteRenderModel;
@@ -8,137 +18,158 @@ export type InviteTemplateProps = {
   qrDataUrl: string | null;
 };
 
-export function KurumsalKlasikTemplate({ model, logoPreview }: InviteTemplateProps) {
-  return (
-    <div className="relative flex h-full w-full overflow-hidden bg-[#f8fafc] text-slate-900">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-slate-300 via-slate-400 to-slate-300" />
-      <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-slate-300 via-slate-400 to-slate-300" />
+export function KurumsalDavetTemplate(props: InviteTemplateProps) {
+  const tokens = getInviteTemplateConfig("kurumsal-davet").tokens;
+  const zp = { ...props, tokens };
 
-      <div className="flex h-full w-full flex-col px-12 py-10">
-        <header className="flex items-start justify-between gap-6 border-b border-slate-200 pb-6">
-          <InviteLogo model={model} logoPreview={logoPreview} photoPreview={null} qrDataUrl={null} />
-          <div className="hidden shrink-0 text-right md:block">
-            <div className={`${model.metaLabelClass} text-slate-400`}>Program Daveti</div>
+  return (
+    <div className="relative flex h-full w-full flex-col overflow-hidden" style={{ background: tokens.canvas }}>
+      <AccentBar tokens={tokens} position="top" />
+
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.35]"
+        style={{
+          backgroundImage: "radial-gradient(circle at 85% 15%, #dbeafe 0%, transparent 42%)",
+        }}
+        aria-hidden
+      />
+
+      <div className="relative z-10 flex h-full flex-col px-14 pb-12 pt-10">
+        <header className="flex shrink-0 items-start justify-between gap-6 border-b pb-7" style={{ borderColor: tokens.cardBorder }}>
+          <LogoZone {...zp} variant="light" />
+          <div
+            className="shrink-0 rounded-lg px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em]"
+            style={{ background: tokens.accentSoft, color: tokens.accent }}
+          >
+            Resmi Davet
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col justify-center py-6">
-          <h1 className={`font-serif font-bold text-slate-900 ${model.titleClass}`}>{model.baslikText}</h1>
-          <InviteStudentBanner model={model} />
-          <p className={`mt-5 max-w-4xl whitespace-pre-line ${model.bodyClass} text-slate-600`}>{model.bodyText}</p>
+        <div className="flex min-h-0 flex-1 flex-col justify-center py-8">
+          <TitleZone {...zp} />
+          <StudentZone {...zp} variant="light" />
+          <div className="mt-5 max-w-[920px]">
+            <DescriptionZone {...zp} />
+          </div>
         </div>
 
-        <footer className="border-t border-slate-200 pt-6">
-          <InviteMetaCards model={model} className="grid-cols-1 sm:grid-cols-3" />
+        <footer className="shrink-0 space-y-4 border-t pt-6" style={{ borderColor: tokens.cardBorder }}>
+          <InfoCardsRow {...zp} variant="light" columns={4} />
+          {props.model.hasQr ? (
+            <div className="flex justify-end">
+              <QrZone {...zp} variant="light" />
+            </div>
+          ) : null}
         </footer>
       </div>
+
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 top-0 w-[6px]"
+        style={{ background: tokens.frame }}
+        aria-hidden
+      />
     </div>
   );
 }
 
-export function ModernBolmeliTemplate({ model, logoPreview }: InviteTemplateProps) {
-  return (
-    <div className="flex h-full w-full overflow-hidden bg-gradient-to-br from-[#eef2ff] via-white to-[#f8fafc]">
-      <div className="flex w-[58%] flex-col justify-center px-12 py-10 min-h-0">
-        <InviteLogo model={model} logoPreview={logoPreview} photoPreview={null} qrDataUrl={null} />
-        <h1 className={`mt-8 font-bold text-slate-900 ${model.titleClass}`}>{model.baslikText}</h1>
-        <InviteStudentBanner model={model} />
-        <p className={`mt-5 whitespace-pre-line ${model.bodyClass} text-slate-600 max-w-2xl`}>{model.bodyText}</p>
-      </div>
-      <div className="flex w-[42%] flex-col justify-center border-l border-indigo-100 bg-white/70 px-10 py-10 backdrop-blur-sm min-h-0">
-        <div className="mb-4 text-[13px] font-bold uppercase tracking-[0.18em] text-indigo-500">Program Bilgileri</div>
-        <InviteMetaCards model={model} tone="panel" />
-      </div>
-    </div>
-  );
-}
+export function PremiumLacivertTemplate(props: InviteTemplateProps) {
+  const tokens = getInviteTemplateConfig("premium-lacivert").tokens;
+  const zp = { ...props, tokens };
 
-export function PremiumLacivertTemplate({ model, logoPreview }: InviteTemplateProps) {
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-gradient-to-br from-[#0b1f3a] via-[#122847] to-[#1a365d] text-white">
-      <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-[#d4af37]/10 blur-3xl" aria-hidden />
-      <div className="absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-blue-400/10 blur-3xl" aria-hidden />
+    <div
+      className="relative flex h-full w-full flex-col overflow-hidden"
+      style={{ background: "linear-gradient(145deg, #071526 0%, #0b1f3a 38%, #122847 100%)" }}
+    >
+      <div className="pointer-events-none absolute -right-20 -top-20 h-96 w-96 rounded-full bg-[#d4af37]/10 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -bottom-24 -left-16 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" aria-hidden />
+      <AccentBar tokens={tokens} position="top" />
 
-      <div className="relative z-10 flex h-full flex-col px-12 py-10">
-        <header className="flex items-start justify-between gap-8 border-b border-white/10 pb-6">
-          <InviteLogo model={model} logoPreview={logoPreview} photoPreview={null} qrDataUrl={null} variant="dark" />
-          {model.showTarih ? (
-            <div className="shrink-0 rounded-2xl border border-[#d4af37]/25 bg-white/5 px-6 py-4 text-right backdrop-blur-sm">
-              <div className={`${model.metaLabelClass} text-white/50`}>Tarih</div>
-              <div className="max-w-[320px] text-[26px] font-serif leading-tight text-[#d4af37] line-clamp-2">{model.tarihLine}</div>
-              {model.showSaat ? (
+      <div className="relative z-10 flex h-full flex-col px-14 pb-11 pt-10">
+        <header className="flex shrink-0 items-start justify-between gap-8 border-b border-white/10 pb-7">
+          <LogoZone {...zp} variant="dark" />
+          {props.model.zones.date ? (
+            <div className="shrink-0 rounded-2xl border px-6 py-4 text-right backdrop-blur-sm" style={{ borderColor: tokens.cardBorder, background: tokens.cardBg }}>
+              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/50">Tarih</div>
+              <div className="mt-1 max-w-[340px] font-serif text-[24px] leading-tight line-clamp-2" style={{ color: tokens.accent }}>
+                {props.model.tarihLine}
+              </div>
+              {props.model.zones.time ? (
                 <>
-                  <div className={`${model.metaLabelClass} mt-3 text-white/50`}>Saat</div>
-                  <div className="text-[22px] text-white/90">{model.saatLine}</div>
+                  <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.22em] text-white/50">Saat</div>
+                  <div className="text-[20px] font-semibold text-white/90">{props.model.saatLine}</div>
                 </>
               ) : null}
             </div>
           ) : null}
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col justify-center py-6">
-          <h1 className={`font-serif font-bold text-white ${model.titleClass}`}>{model.baslikText}</h1>
-          <InviteStudentBanner model={model} tone="gold" />
-          <p className={`mt-5 max-w-4xl whitespace-pre-line ${model.bodyClass} text-slate-300`}>{model.bodyText}</p>
+        <div className="flex min-h-0 flex-1 flex-col justify-center py-7">
+          <GoldRule className="mb-5" />
+          <TitleZone {...zp} />
+          <StudentZone {...zp} variant="dark" />
+          <div className="mt-5 max-w-[900px]">
+            <DescriptionZone {...zp} />
+          </div>
         </div>
 
-        <footer className="grid gap-4 border-t border-white/10 pt-6 md:grid-cols-[1fr_auto] md:items-end">
-          <InviteMetaCards model={model} tone="dark" className="md:grid-cols-2" excludeKeys={["tarih", "saat"]} />
+        <footer className="shrink-0 border-t border-white/10 pt-6">
+          <div className="flex items-end gap-5">
+            <div className="min-w-0 flex-1">
+              <InfoCardsRow {...zp} variant="glass" columns={3} excludeKeys={["date", "time"]} />
+            </div>
+            {props.model.hasQr ? <QrZone {...zp} variant="dark" /> : null}
+          </div>
         </footer>
       </div>
     </div>
   );
 }
 
-export function FotografliTemplate({ model, logoPreview, photoPreview }: InviteTemplateProps) {
+export function GorselliDavetTemplate(props: InviteTemplateProps) {
+  const tokens = getInviteTemplateConfig("gorselli-davet").tokens;
+  const zp = { ...props, tokens };
+
   return (
-    <div className="relative h-full w-full overflow-hidden text-white">
-      <InvitePhotoLayer model={model} logoPreview={logoPreview} photoPreview={photoPreview} qrDataUrl={null} />
-
-      <div className="relative z-10 flex h-full flex-col justify-between px-12 py-10">
-        <InviteLogo model={model} logoPreview={logoPreview} photoPreview={photoPreview} qrDataUrl={null} variant="dark" />
-
-        <div className="max-w-3xl rounded-3xl border border-white/10 bg-slate-950/45 p-8 backdrop-blur-md">
-          <h1 className={`font-bold ${model.titleClass}`}>{model.baslikText}</h1>
-          <InviteStudentBanner model={model} tone="dark" />
-          <p className={`mt-4 whitespace-pre-line ${model.bodyClass} text-white/85`}>{model.bodyText}</p>
-        </div>
-
-        <InviteMetaCards model={model} tone="dark" className="max-w-2xl md:grid-cols-3" />
-      </div>
-    </div>
-  );
-}
-
-export function QrKayitTemplate({ model, logoPreview, qrDataUrl }: InviteTemplateProps) {
-  const hasQrPanel = model.hasQr && qrDataUrl;
-  return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#f1f5f9]">
-      <div className="flex h-24 shrink-0 items-center justify-between border-b border-slate-200 bg-[#0f172a] px-10 text-white">
-        <InviteLogo model={model} logoPreview={logoPreview} photoPreview={null} qrDataUrl={null} variant="dark" />
-        {model.showTarih || model.showSaat ? (
-          <div className="text-right">
-            {model.showTarih ? <div className="text-[22px] font-semibold">{model.tarihLine}</div> : null}
-            {model.showSaat ? <div className="text-[18px] text-slate-300">{model.saatLine}</div> : null}
-          </div>
-        ) : null}
+    <div className="flex h-full w-full overflow-hidden" style={{ background: tokens.canvas }}>
+      <div className="relative h-full w-[52%] shrink-0">
+        <ImageZone {...zp} />
       </div>
 
-      <div className={`flex min-h-0 flex-1 ${hasQrPanel ? "flex-row" : "flex-col"} p-10 gap-8`}>
-        <div className={`flex flex-col justify-center min-h-0 overflow-hidden ${hasQrPanel ? "w-[68%]" : "w-full"}`}>
-          <h1 className={`font-bold text-slate-900 ${model.titleClass}`}>{model.baslikText}</h1>
-          <InviteStudentBanner model={model} />
-          <p className={`mt-5 whitespace-pre-line ${model.bodyClass} text-slate-600`}>{model.bodyText}</p>
-          <div className="mt-6 max-w-xl">
-            <InviteMetaCards model={model} tone="panel" />
+      <div
+        className="relative flex h-full w-[48%] shrink-0 flex-col overflow-hidden px-10 py-9"
+        style={{ background: tokens.cardBg }}
+      >
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-px"
+          style={{ background: tokens.cardBorder }}
+          aria-hidden
+        />
+
+        <header className="shrink-0 pb-5">
+          <LogoZone {...zp} variant="light" />
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col justify-center py-4">
+          <TitleZone {...zp} />
+          <StudentZone {...zp} variant="light" />
+          <div className="mt-4">
+            <DescriptionZone {...zp} />
           </div>
         </div>
 
-        {hasQrPanel ? (
-          <div className="flex w-[32%] items-center justify-center border-l border-slate-200 pl-8">
-            <InviteQrPanel model={model} logoPreview={logoPreview} photoPreview={null} qrDataUrl={qrDataUrl} />
-          </div>
-        ) : null}
+        <footer className="shrink-0 space-y-4 border-t pt-5" style={{ borderColor: tokens.cardBorder }}>
+          <InfoCardsRow
+            {...zp}
+            variant="light"
+            columns={Math.min(2, Math.max(props.model.infoFields.length, 1))}
+          />
+          {props.model.hasQr ? (
+            <div className="flex justify-center">
+              <QrZone {...zp} variant="light" />
+            </div>
+          ) : null}
+        </footer>
       </div>
     </div>
   );

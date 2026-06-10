@@ -1,21 +1,12 @@
 import type { StudentRecord } from "@/modules/davet/types";
 import {
   clampLines,
-  getPosterBodyClass,
-  getPosterKurumClass,
-  getPosterMetaClass,
-  getPosterMetaLabelClass,
-  getPosterTitleClass,
   hasValue,
+  TARIH_LATER,
   truncateText,
 } from "@/modules/davet/utils/layoutUtils";
 
-export type InviteTemplateId =
-  | "kurumsal-klasik"
-  | "modern-bolmeli"
-  | "premium-lacivert"
-  | "fotografli"
-  | "qr-kayit";
+export type InviteTemplateId = "kurumsal-davet" | "premium-lacivert" | "gorselli-davet";
 
 export type InviteFormSlice = {
   kurumAdi: string;
@@ -29,34 +20,99 @@ export type InviteFormSlice = {
   qrLink?: string;
 };
 
+export type InviteFieldKey =
+  | "logo"
+  | "institution"
+  | "title"
+  | "description"
+  | "student"
+  | "date"
+  | "time"
+  | "place"
+  | "note"
+  | "contact"
+  | "qr"
+  | "image";
+
+export type InviteInfoField = {
+  key: InviteFieldKey;
+  label: string;
+  value: string;
+};
+
 export type InviteRenderModel = {
   kurumLabel: string;
   baslikText: string;
   titleClass: string;
   bodyText: string;
   bodyClass: string;
-  kurumClass: string;
-  metaClass: string;
-  metaLabelClass: string;
-  tarihLine: string | null;
+  tarihLine: string;
   saatLine: string | null;
   yerText: string | null;
-  showYer: boolean;
-  showTarih: boolean;
-  showSaat: boolean;
   katilimText: string;
   iletisimTelefon: string;
-  showKatilim: boolean;
-  showIletisim: boolean;
-  hasQr: boolean;
   hasLogo: boolean;
-  hasPhoto: boolean;
+  hasImage: boolean;
+  hasQr: boolean;
   selectedStudent: StudentRecord | null;
-  metaBlocks: Array<{ key: string; label: string; value: string }>;
+  infoFields: InviteInfoField[];
+  zones: Record<InviteFieldKey, boolean>;
 };
 
-export function formatInviteDateDisplay(tarih: string): string | null {
-  if (!hasValue(tarih)) return null;
+export function getTextSizeByLength(
+  length: number,
+  tiers: Array<{ max: number; className: string }>,
+  fallback: string,
+): string {
+  for (const tier of tiers) {
+    if (length <= tier.max) return tier.className;
+  }
+  return fallback;
+}
+
+export function getTitleClass(text: string): string {
+  const len = text.trim().length;
+  return getTextSizeByLength(
+    len,
+    [
+      { max: 28, className: "text-[62px] leading-[1.04] tracking-tight" },
+      { max: 45, className: "text-[52px] leading-[1.06] tracking-tight" },
+      { max: 70, className: "text-[44px] leading-[1.1] tracking-tight" },
+    ],
+    "text-[38px] leading-[1.12] tracking-tight line-clamp-2",
+  );
+}
+
+export function getBodyClass(text: string): string {
+  const len = text.trim().length;
+  return getTextSizeByLength(
+    len,
+    [
+      { max: 100, className: "text-[26px] leading-[1.45]" },
+      { max: 180, className: "text-[23px] leading-[1.45]" },
+      { max: 260, className: "text-[21px] leading-[1.42]" },
+    ],
+    "text-[19px] leading-[1.4] line-clamp-4",
+  );
+}
+
+export function getInstitutionClass(): string {
+  return "text-[18px] font-bold uppercase tracking-[0.2em]";
+}
+
+export function getMetaLabelClass(): string {
+  return "text-[11px] font-bold uppercase tracking-[0.22em]";
+}
+
+export function getMetaValueClass(value: string): string {
+  const len = value.length;
+  if (len <= 24) return "text-[26px] font-semibold leading-tight";
+  if (len <= 48) return "text-[22px] font-semibold leading-snug line-clamp-2";
+  return "text-[19px] font-semibold leading-snug line-clamp-2";
+}
+
+export function formatInviteDateDisplay(tarih: string): string {
+  if (!hasValue(tarih)) return TARIH_LATER;
   const raw = tarih.trim();
   const d = new Date(`${raw}T12:00:00`);
   if (Number.isNaN(d.getTime())) return raw;
@@ -70,43 +126,37 @@ export function formatInviteDateDisplay(tarih: string): string | null {
 
 export function formatInviteTimeDisplay(saat: string): string | null {
   if (!hasValue(saat)) return null;
-  const raw = saat.trim();
-  if (/^\d{2}:\d{2}$/.test(raw)) return raw;
-  return raw;
+  return saat.trim();
 }
 
 export function fitTitleText(text: string): { text: string; className: string } {
   const t = truncateText(text, 90);
-  return { text: t, className: getPosterTitleClass(t) };
+  return { text: t, className: getTitleClass(t) };
 }
 
-export function fitBodyText(text: string, maxLines = 4, maxChars = 280): { text: string; className: string } {
+export function fitBodyText(text: string, maxLines = 4, maxChars = 300): { text: string; className: string } {
   const t = clampLines(text, maxLines, maxChars);
-  return { text: t, className: getPosterBodyClass(t) };
+  return { text: t, className: getBodyClass(t) };
 }
 
-export function resolveOptionalBlocks(
-  model: InviteRenderModel,
-  excludeKeys: string[] = [],
-): InviteRenderModel["metaBlocks"] {
-  if (excludeKeys.length === 0) return model.metaBlocks;
-  return model.metaBlocks.filter((block) => !excludeKeys.includes(block.key));
-}
-
-export function resolveLogoPlacement(hasLogo: boolean) {
-  return {
-    showLogo: hasLogo,
-    logoClass: "h-[72px] max-h-[88px] w-auto max-w-[220px] object-contain object-left",
-    logoClassCompact: "h-[56px] max-h-[64px] w-auto max-w-[180px] object-contain",
-    logoFrameClass: "rounded-xl bg-white/95 p-2 ring-1 ring-black/5 shadow-sm",
-  };
+export function resolveOptionalFields(model: Pick<
+  InviteRenderModel,
+  "tarihLine" | "saatLine" | "yerText" | "katilimText" | "iletisimTelefon" | "hasQr"
+>): InviteInfoField[] {
+  const fields: InviteInfoField[] = [];
+  fields.push({ key: "date", label: "Tarih", value: model.tarihLine });
+  if (model.saatLine) fields.push({ key: "time", label: "Saat", value: model.saatLine });
+  if (model.yerText) fields.push({ key: "place", label: "Yer", value: model.yerText });
+  if (model.katilimText) fields.push({ key: "note", label: "Not", value: model.katilimText });
+  if (model.iletisimTelefon) fields.push({ key: "contact", label: "İletişim", value: model.iletisimTelefon });
+  return fields;
 }
 
 export function buildInviteRenderModel(
   values: InviteFormSlice,
   aciklama: string,
   selectedStudent: StudentRecord | null,
-  opts: { hasLogo: boolean; hasPhoto: boolean; hasQr: boolean },
+  opts: { hasLogo: boolean; hasImage: boolean; hasQr: boolean },
 ): InviteRenderModel {
   const title = fitTitleText(values.davetBasligi);
   const body = fitBodyText(aciklama);
@@ -116,34 +166,46 @@ export function buildInviteRenderModel(
   const katilimText = hasValue(values.katilimNotu) ? truncateText(values.katilimNotu!, 120) : "";
   const iletisimTelefon = values.iletisimTelefon?.trim() ?? "";
 
-  const metaBlocks: InviteRenderModel["metaBlocks"] = [];
-  if (tarihLine) metaBlocks.push({ key: "tarih", label: "Tarih", value: tarihLine });
-  if (saatLine) metaBlocks.push({ key: "saat", label: "Saat", value: saatLine });
-  if (yerText) metaBlocks.push({ key: "yer", label: "Yer", value: yerText });
+  const partial = { tarihLine, saatLine, yerText, katilimText, iletisimTelefon, hasQr: opts.hasQr };
+  const infoFields = resolveOptionalFields(partial);
+
+  const zones: InviteRenderModel["zones"] = {
+    logo: opts.hasLogo,
+    institution: true,
+    title: true,
+    description: Boolean(body.text),
+    student: Boolean(selectedStudent),
+    date: true,
+    time: Boolean(saatLine),
+    place: Boolean(yerText),
+    note: Boolean(katilimText),
+    contact: Boolean(iletisimTelefon),
+    qr: opts.hasQr,
+    image: opts.hasImage,
+  };
 
   return {
-    kurumLabel: truncateText(values.kurumAdi, 48),
+    kurumLabel: truncateText(values.kurumAdi, 52),
     baslikText: title.text,
     titleClass: title.className,
     bodyText: body.text,
     bodyClass: body.className,
-    kurumClass: getPosterKurumClass(),
-    metaClass: getPosterMetaClass(),
-    metaLabelClass: getPosterMetaLabelClass(),
     tarihLine,
     saatLine,
     yerText,
-    showYer: Boolean(yerText),
-    showTarih: Boolean(tarihLine),
-    showSaat: Boolean(saatLine),
     katilimText,
     iletisimTelefon,
-    showKatilim: Boolean(katilimText),
-    showIletisim: Boolean(iletisimTelefon),
-    hasQr: opts.hasQr,
     hasLogo: opts.hasLogo,
-    hasPhoto: opts.hasPhoto,
+    hasImage: opts.hasImage,
+    hasQr: opts.hasQr,
     selectedStudent,
-    metaBlocks,
+    infoFields,
+    zones,
   };
 }
+
+export const LOGO_MAX = {
+  width: 200,
+  height: 72,
+  compactHeight: 56,
+};

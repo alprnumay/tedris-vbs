@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -31,6 +31,7 @@ import {
   INVITE_TEMPLATES,
   migrateLegacyInviteTemplateId,
 } from '@/modules/davet/invite/inviteTemplates';
+import { InviteTemplatePicker } from '@/modules/davet/invite/InviteTemplatePicker';
 import { Alert, AlertDescription } from '@/components/davet-ui/alert';
 import { Label } from '@/components/davet-ui/label';
 
@@ -218,7 +219,7 @@ export default function InvitePage() {
       selectedStudent,
       {
         hasLogo: Boolean(logoPreview),
-        hasPhoto: Boolean(photoPreview),
+        hasImage: Boolean(photoPreview),
         hasQr: Boolean(values.qrLink?.trim() && qrDataUrl),
       },
     );
@@ -293,23 +294,13 @@ export default function InvitePage() {
                     <FormItem><FormLabel>İletişim (Opsiyonel)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
 
-                  <div className="space-y-2 pt-2 border-t">
+                  <div className="space-y-2.5 pt-2 border-t">
                     <label className="text-sm font-medium">Şablon Seçimi</label>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {INVITE_TEMPLATES.map((tpl) => (
-                        <Button
-                          key={tpl.id}
-                          type="button"
-                          variant={migrateLegacyInviteTemplateId(values.sablon) === tpl.id ? 'default' : 'outline'}
-                          size="sm"
-                          className="h-auto min-h-10 whitespace-normal py-2 text-left justify-start"
-                          onClick={() => form.setValue('sablon', tpl.id)}
-                        >
-                          <span className="block font-semibold">{tpl.label}</span>
-                          <span className="block text-[10px] font-normal opacity-80">{tpl.description}</span>
-                        </Button>
-                      ))}
-                    </div>
+                    <InviteTemplatePicker
+                      templates={INVITE_TEMPLATES}
+                      value={migrateLegacyInviteTemplateId(values.sablon)}
+                      onChange={(id) => form.setValue('sablon', id)}
+                    />
                   </div>
 
                   <div className="space-y-2 pt-2 border-t">
@@ -320,7 +311,7 @@ export default function InvitePage() {
                   <div className="space-y-2 pt-2 border-t">
                     <label className="text-sm font-medium">Arka Plan Görseli (Opsiyonel)</label>
                     <Input type="file" accept="image/*" onChange={handlePhotoUpload} />
-                    <p className="text-[11px] text-muted-foreground">Fotoğraflı Davetiye şablonunda kullanılır.</p>
+                    <p className="text-[11px] text-muted-foreground">Görselli Davet şablonunda kullanılır.</p>
                   </div>
 
                   <FormField control={form.control} name="qrLink" render={({ field }) => (
@@ -393,8 +384,8 @@ export default function InvitePage() {
               <Button type="button" onClick={downloadImage}><Download className="w-4 h-4 mr-2" /> PNG İndir</Button>
             </div>
             
-            <div className="bg-muted/30 border rounded-lg p-4 md:p-8 flex items-start justify-center min-h-[600px] w-full min-w-0">
-              <PosterCanvas ref={exportRef} aspect="invite-landscape" className="max-w-full">
+            <div className="w-full min-w-0 rounded-xl border bg-slate-100/60 p-3 md:p-5">
+              <PosterCanvas ref={exportRef} aspect="invite-landscape" className="w-full max-w-none">
                 {renderTemplateContent()}
               </PosterCanvas>
             </div>
