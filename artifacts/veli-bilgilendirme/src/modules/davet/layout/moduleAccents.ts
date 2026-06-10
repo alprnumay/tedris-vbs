@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, FileText, Globe, Share2, ShieldCheck } from "lucide-react";
+import { CalendarDays, ClipboardCheck, FileText, Globe, Share2, ShieldCheck } from "lucide-react";
 
 export type ModuleAccent = "blue" | "indigo" | "emerald" | "cyan" | "rose";
 
@@ -134,6 +134,16 @@ export const davetHomeModules: DavetModuleDef[] = [
     icon: CalendarDays,
     accent: "indigo",
     href: "/yatili-program",
+  },
+  {
+    title: "Okul Ödevi ve Yoklama Takibi",
+    shortDescription: "Günlük yoklama ve okul ödevi",
+    description:
+      "Günlük yoklamayı ve okul ödevi takibini yapın, hafta sonunda analizli kişisel karne alın.",
+    ctaLabel: "Takibe başla",
+    icon: ClipboardCheck,
+    accent: "indigo",
+    href: "/okul-takip",
   },
   {
     title: "Faydalı Çalışma Paylaş",
