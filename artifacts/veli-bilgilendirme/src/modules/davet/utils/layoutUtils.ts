@@ -106,26 +106,25 @@ export function formatBoardingTimeRange(baslangic: string, bitis: string): strin
   return (hasStart ? baslangic : bitis)!.trim();
 }
 
-export function formatProgramFlowForPoster(items: ProgramFlowItem[], maxItems = 8) {
-  const count = items.length;
-  const compact = count > 6;
-  const shown = items.slice(0, maxItems);
+export function formatProgramFlowForPoster(items: ProgramFlowItem[], maxItems = 12) {
+  const filtered = items.filter((i) => hasValue(i.baslik) || hasValue(i.saat));
+  const count = filtered.length;
+  const compact = count > 4;
+  const twoColumn = count > 8;
+  const shown = filtered.slice(0, maxItems);
   const hiddenCount = Math.max(0, count - maxItems);
   const note =
-    hiddenCount > 0
-      ? "Programın devamı için kurumla iletişime geçiniz."
-      : count > 10
-        ? "Programın devamı için kurumla iletişime geçiniz."
-        : null;
-  return { items: shown, compact, note, hiddenCount };
+    hiddenCount > 0 ? "Programın devamı için kurumla iletişime geçiniz." : null;
+  return { items: shown, compact, twoColumn, note, hiddenCount, count };
 }
 
-export function formatChecklistForPoster(items: string[], maxVisible = 6) {
+export function formatChecklistForPoster(items: string[], maxVisible = 8) {
   const visible = items.slice(0, maxVisible);
   const extra = items.length - maxVisible;
   return {
     visible,
     extraLabel: extra > 0 ? `+${extra} diğer` : null,
+    usePills: items.length <= 4,
   };
 }
 

@@ -38,7 +38,9 @@ export const POSTER_ASPECT_SPECS: Record<PosterAspect, PosterAspectSpec> = {
 };
 
 export function getBoardingPosterAspect(sablon: string): PosterAspect {
-  return sablon === "3" || sablon === "4" ? "poster-portrait" : "boarding-landscape";
+  const legacyPortrait = ["3", "4"];
+  if (legacyPortrait.includes(sablon)) return "poster-portrait";
+  return "boarding-landscape";
 }
 
 export const PosterCanvas = forwardRef<
