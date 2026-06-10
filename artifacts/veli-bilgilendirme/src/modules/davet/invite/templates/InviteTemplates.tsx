@@ -6,10 +6,12 @@ import {
   ImageZone,
   InfoCardsRow,
   LogoZone,
+  PremiumDateHeaderZone,
   QrZone,
   StudentZone,
   TitleZone,
 } from "@/modules/davet/invite/InvitePosterZones";
+import type { InviteRenderModel } from "@/modules/davet/invite/inviteTemplateHelpers";
 
 export type InviteTemplateProps = {
   model: InviteRenderModel;
@@ -88,20 +90,7 @@ export function PremiumLacivertTemplate(props: InviteTemplateProps) {
       <div className="relative z-10 flex h-full flex-col px-14 pb-11 pt-10">
         <header className="flex shrink-0 items-start justify-between gap-8 border-b border-white/10 pb-7">
           <LogoZone {...zp} variant="dark" />
-          {props.model.zones.date ? (
-            <div className="shrink-0 rounded-2xl border px-6 py-4 text-right backdrop-blur-sm" style={{ borderColor: tokens.cardBorder, background: tokens.cardBg }}>
-              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/50">Tarih</div>
-              <div className="mt-1 max-w-[340px] font-serif text-[24px] leading-tight line-clamp-2" style={{ color: tokens.accent }}>
-                {props.model.tarihLine}
-              </div>
-              {props.model.zones.time ? (
-                <>
-                  <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.22em] text-white/50">Saat</div>
-                  <div className="text-[20px] font-semibold text-white/90">{props.model.saatLine}</div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
+          <PremiumDateHeaderZone {...zp} />
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col justify-center py-7">

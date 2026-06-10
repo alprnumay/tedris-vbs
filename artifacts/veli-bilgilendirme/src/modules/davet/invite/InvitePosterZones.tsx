@@ -6,6 +6,8 @@ import {
   LOGO_MAX,
 } from "@/modules/davet/invite/inviteTemplateHelpers";
 import type { InviteTemplateTokens } from "@/modules/davet/invite/inviteTemplateConfig";
+import type { TextLayerId } from "@/modules/davet/invite/inviteLayoutAdjustments";
+import { EditablePosterTextLayer } from "@/modules/davet/invite/EditablePosterTextLayer";
 
 export type PosterZoneProps = {
   model: InviteRenderModel;
@@ -14,6 +16,12 @@ export type PosterZoneProps = {
   photoPreview: string | null;
   qrDataUrl: string | null;
 };
+
+const INFO_LAYER_IDS: TextLayerId[] = ["date", "time", "place", "note", "contact"];
+
+function isTextLayerId(key: string): key is TextLayerId {
+  return INFO_LAYER_IDS.includes(key as TextLayerId) || key === "institution" || key === "title" || key === "description" || key === "student" || key === "qrCaption";
+}
 
 export function LogoZone({
   model,
@@ -39,67 +47,102 @@ export function LogoZone({
             style={{ maxWidth: LOGO_MAX.width, maxHeight: LOGO_MAX.height, width: "auto", height: "auto" }}
           />
         </div>
-        <div
-          className={`${getInstitutionClass()} truncate`}
-          style={{ color: variant === "dark" ? tokens.institution : tokens.institution }}
-        >
-          {model.kurumLabel}
-        </div>
+        <EditablePosterTextLayer layerId="institution">
+          <div
+            className={`${getInstitutionClass()} truncate`}
+            style={{ color: tokens.institution }}
+          >
+            {model.kurumLabel}
+          </div>
+        </EditablePosterTextLayer>
       </div>
     );
   }
 
   return (
-    <div
-      className={`${getInstitutionClass()} max-w-[680px] leading-snug`}
-      style={{ color: variant === "dark" ? tokens.institution : tokens.accent }}
-    >
-      {model.kurumLabel}
-    </div>
+    <EditablePosterTextLayer layerId="institution">
+      <div
+        className={`${getInstitutionClass()} max-w-[680px] leading-snug`}
+        style={{ color: variant === "dark" ? tokens.institution : tokens.accent }}
+      >
+        {model.kurumLabel}
+      </div>
+    </EditablePosterTextLayer>
   );
 }
 
 export function TitleZone({ model, tokens, align = "left" }: PosterZoneProps & { align?: "left" | "center" }) {
   return (
-    <h1
-      className={`font-serif font-bold ${model.titleClass} ${align === "center" ? "text-center" : "text-left"}`}
-      style={{ color: tokens.title }}
-    >
-      {model.baslikText}
-    </h1>
+    <EditablePosterTextLayer layerId="title">
+      <h1
+        className={`font-serif font-bold ${model.titleClass} ${align === "center" ? "text-center" : "text-left"}`}
+        style={{ color: tokens.title }}
+      >
+        {model.baslikText}
+      </h1>
+    </EditablePosterTextLayer>
   );
 }
 
 export function DescriptionZone({ model, tokens }: PosterZoneProps) {
   if (!model.zones.description) return null;
   return (
-    <p
-      className={`whitespace-pre-line ${model.bodyClass}`}
-      style={{ color: tokens.body }}
-    >
-      {model.bodyText}
-    </p>
+    <EditablePosterTextLayer layerId="description">
+      <p
+        className={`whitespace-pre-line ${model.bodyClass}`}
+        style={{ color: tokens.body }}
+      >
+        {model.bodyText}
+      </p>
+    </EditablePosterTextLayer>
   );
 }
 
 export function StudentZone({ model, tokens, variant = "light" }: PosterZoneProps & { variant?: "light" | "dark" }) {
   if (!model.selectedStudent) return null;
   const veli = model.selectedStudent.veliAdi || "Velimiz";
-  const accent = variant === "dark" ? tokens.accent : tokens.accent;
+  return (
+    <EditablePosterTextLayer layerId="student">
+      <div
+        className="mt-5 border-t pt-4"
+        style={{ borderColor: variant === "dark" ? "rgba(255,255,255,0.12)" : tokens.cardBorder }}
+      >
+        <p className="text-[21px] italic" style={{ color: tokens.body }}>
+          Sayın <span style={{ color: tokens.title }}>{veli}</span>,
+        </p>
+        <p className="mt-1 text-[19px]" style={{ color: tokens.body }}>
+          Öğrencimiz{" "}
+          <span className="font-semibold" style={{ color: tokens.accent }}>
+            {model.selectedStudent.talebeAdi}
+          </span>
+        </p>
+      </div>
+    </EditablePosterTextLayer>
+  );
+}
+
+export function PremiumDateHeaderZone({ model, tokens }: PosterZoneProps) {
+  if (!model.zones.date) return null;
   return (
     <div
-      className="mt-5 border-t pt-4"
-      style={{ borderColor: variant === "dark" ? "rgba(255,255,255,0.12)" : tokens.cardBorder }}
+      className="shrink-0 rounded-2xl border px-6 py-4 text-right backdrop-blur-sm"
+      style={{ borderColor: tokens.cardBorder, background: tokens.cardBg }}
     >
-      <p className="text-[21px] italic" style={{ color: tokens.body }}>
-        Sayın <span style={{ color: tokens.title }}>{veli}</span>,
-      </p>
-      <p className="mt-1 text-[19px]" style={{ color: tokens.body }}>
-        Öğrencimiz{" "}
-        <span className="font-semibold" style={{ color: accent }}>
-          {model.selectedStudent.talebeAdi}
-        </span>
-      </p>
+      <EditablePosterTextLayer layerId="date">
+        <div className={`${getMetaLabelClass()} text-white/50`}>Tarih</div>
+        <div
+          className="mt-1 max-w-[340px] font-serif text-[24px] leading-tight line-clamp-2"
+          style={{ color: tokens.accent }}
+        >
+          {model.tarihLine}
+        </div>
+      </EditablePosterTextLayer>
+      {model.zones.time ? (
+        <EditablePosterTextLayer layerId="time">
+          <div className={`${getMetaLabelClass()} mt-3 text-white/50`}>Saat</div>
+          <div className="text-[20px] font-semibold text-white/90">{model.saatLine}</div>
+        </EditablePosterTextLayer>
+      ) : null}
     </div>
   );
 }
@@ -126,20 +169,30 @@ export function InfoCardsRow({
       className="grid gap-3"
       style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
     >
-      {fields.map((field) => (
-        <div
-          key={field.key}
-          className="rounded-xl border px-4 py-3.5"
-          style={cardStyle}
-        >
-          <div className={getMetaLabelClass()} style={{ color: tokens.metaLabel }}>
-            {field.label}
+      {fields.map((field) => {
+        const layerId = isTextLayerId(field.key) ? field.key : null;
+        const card = (
+          <div
+            className="rounded-xl border px-4 py-3.5"
+            style={cardStyle}
+          >
+            <div className={getMetaLabelClass()} style={{ color: tokens.metaLabel }}>
+              {field.label}
+            </div>
+            <div className={getMetaValueClass(field.value)} style={{ color: tokens.metaValue }}>
+              {field.value}
+            </div>
           </div>
-          <div className={getMetaValueClass(field.value)} style={{ color: tokens.metaValue }}>
-            {field.value}
-          </div>
-        </div>
-      ))}
+        );
+
+        if (!layerId) return <div key={field.key}>{card}</div>;
+
+        return (
+          <EditablePosterTextLayer key={field.key} layerId={layerId}>
+            {card}
+          </EditablePosterTextLayer>
+        );
+      })}
     </div>
   );
 }
@@ -198,12 +251,14 @@ export function QrZone({ model, qrDataUrl, tokens, variant = "light" }: PosterZo
       style={{ background: bg, borderColor: border, width: 200 }}
     >
       <img src={qrDataUrl} alt="" className="h-[128px] w-[128px] rounded-lg bg-white p-1.5" />
-      <div className="mt-3 text-[13px] font-bold uppercase tracking-[0.16em]" style={{ color: tokens.metaLabel }}>
-        Kayıt QR
-      </div>
-      <div className="mt-1 text-[14px] leading-snug" style={{ color: tokens.body }}>
-        Katılım için tarayın
-      </div>
+      <EditablePosterTextLayer layerId="qrCaption">
+        <div className={`${getMetaLabelClass()} mt-3`} style={{ color: tokens.metaLabel }}>
+          Kayıt QR
+        </div>
+        <div className="mt-1 text-[14px] leading-snug" style={{ color: tokens.body }}>
+          Katılım için tarayın
+        </div>
+      </EditablePosterTextLayer>
     </div>
   );
 }

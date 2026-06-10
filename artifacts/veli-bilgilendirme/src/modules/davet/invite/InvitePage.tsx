@@ -16,7 +16,7 @@ import { useToast } from '@/modules/davet/hooks/use-toast';
 import { generateDavetMetni, substituteVariables } from '@/modules/davet/utils/textGenerator';
 import { parseExcelFile } from '@/modules/davet/utils/excelParser';
 import { StudentRecord } from '@/modules/davet/types';
-import { Download, Copy } from 'lucide-react';
+import { Download, Copy, SlidersHorizontal } from 'lucide-react';
 import { POSTER_ASPECT_SPECS, PosterCanvas } from '@/modules/davet/components/PosterCanvas';
 import {
   buildExportFileName,
@@ -24,6 +24,7 @@ import {
 } from '@/modules/davet/utils/exportUtils';
 import {
   buildInviteRenderModel,
+  type InviteTemplateId,
 } from '@/modules/davet/invite/inviteTemplateHelpers';
 import {
   DEFAULT_INVITE_TEMPLATE_ID,
@@ -34,6 +35,11 @@ import {
 import { InviteTemplatePicker } from '@/modules/davet/invite/InviteTemplatePicker';
 import { Alert, AlertDescription } from '@/components/davet-ui/alert';
 import { Label } from '@/components/davet-ui/label';
+import type { CustomLayoutAdjustments, TextLayerId } from '@/modules/davet/invite/inviteLayoutAdjustments';
+import { InviteLayoutEditorProvider } from '@/modules/davet/invite/InviteLayoutEditorContext';
+import { InviteLayerSettingsPanel } from '@/modules/davet/invite/InviteLayerSettingsPanel';
+import { InviteLayoutKeyboardHandler } from '@/modules/davet/invite/InviteLayoutKeyboardHandler';
+import { cn } from '@/lib/utils';
 
 const programTurleri = [
   'Veli Toplantısı', 'Yurt Tanıtımı', 'Kahvaltı Programı', 'Seminer', 
@@ -65,6 +71,9 @@ export default function InvitePage() {
   const [useExcel, setUseExcel] = useState(false);
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<StudentRecord | null>(null);
+  const [advancedEditMode, setAdvancedEditMode] = useState(false);
+  const [selectedLayerId, setSelectedLayerId] = useState<TextLayerId | null>(null);
+  const [customLayoutAdjustments, setCustomLayoutAdjustments] = useState<CustomLayoutAdjustments>({});
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -84,6 +93,16 @@ export default function InvitePage() {
   });
 
   const values = form.watch();
+
+  const activeTemplateId = migrateLegacyInviteTemplateId(values.sablon) as InviteTemplateId;
+
+  useEffect(() => {
+    setSelectedLayerId(null);
+  }, [activeTemplateId]);
+
+  useEffect(() => {
+    if (!advancedEditMode) setSelectedLayerId(null);
+  }, [advancedEditMode]);
 
   const handleProgramTuruChange = (val: string) => {
     form.setValue('programTuru', val);
@@ -159,34 +178,41 @@ export default function InvitePage() {
     toast({ title: "Hata", description: "İndirme başarısız oldu.", variant: "destructive" });
   };
 
-  const downloadImage = async () => {
+  const runExport = async (format: "png" | "pdf") => {
+    const prevEdit = advancedEditMode;
+    const prevLayer = selectedLayerId;
+    setAdvancedEditMode(false);
+    setSelectedLayerId(null);
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
     try {
       await exportPosterDesign(
         exportRef.current,
-        buildExportFileName("veli-daveti", values.kurumAdi, "png"),
+        buildExportFileName("veli-daveti", values.kurumAdi, format),
         inviteSpec,
-        "png",
+        format,
         { scale: 3, backgroundColor: "#ffffff" },
       );
-      toast({ title: "Başarılı", description: "Davetiye PNG olarak indirildi." });
+      toast({
+        title: "Başarılı",
+        description: format === "png" ? "Davetiye PNG olarak indirildi." : "Davetiye PDF olarak indirildi.",
+      });
     } catch (err) {
       exportHataMesaji(err);
+    } finally {
+      setAdvancedEditMode(prevEdit);
+      setSelectedLayerId(prevLayer);
     }
   };
 
+  const downloadImage = async () => {
+    await runExport("png");
+  };
+
   const downloadPdf = async () => {
-    try {
-      await exportPosterDesign(
-        exportRef.current,
-        buildExportFileName("veli-daveti", values.kurumAdi, "pdf"),
-        inviteSpec,
-        "pdf",
-        { scale: 3, backgroundColor: "#ffffff" },
-      );
-      toast({ title: "Başarılı", description: "Davetiye PDF olarak indirildi." });
-    } catch (err) {
-      exportHataMesaji(err);
-    }
+    await runExport("pdf");
   };
 
   const copyMessage = () => {
@@ -211,8 +237,7 @@ export default function InvitePage() {
       });
     }
 
-    const templateId = migrateLegacyInviteTemplateId(values.sablon);
-    const template = getInviteTemplate(templateId);
+    const template = getInviteTemplate(activeTemplateId);
     const model = buildInviteRenderModel(
       values,
       aciklama,
@@ -225,12 +250,17 @@ export default function InvitePage() {
     );
     const TemplateComponent = template.Component;
     return (
-      <TemplateComponent
-        model={model}
-        logoPreview={logoPreview}
-        photoPreview={photoPreview}
-        qrDataUrl={qrDataUrl}
-      />
+      <div
+        className={cn("h-full w-full", advancedEditMode && "cursor-crosshair")}
+        onClick={() => advancedEditMode && setSelectedLayerId(null)}
+      >
+        <TemplateComponent
+          model={model}
+          logoPreview={logoPreview}
+          photoPreview={photoPreview}
+          qrDataUrl={qrDataUrl}
+        />
+      </div>
     );
   };
 
@@ -378,17 +408,54 @@ export default function InvitePage() {
           </div>
 
           <div className="xl:col-span-8 space-y-4">
-            <div className="flex gap-2 justify-end">
+            <div className="flex flex-wrap gap-2 justify-end">
+              <Button
+                type="button"
+                variant={advancedEditMode ? 'default' : 'outline'}
+                onClick={() => setAdvancedEditMode((v) => !v)}
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-2" />
+                {advancedEditMode ? 'Düzenlemeyi Kapat' : 'Gelişmiş Düzenle'}
+              </Button>
               <Button variant="outline" onClick={copyMessage}><Copy className="w-4 h-4 mr-2" /> WhatsApp Metni</Button>
               <Button type="button" variant="outline" onClick={downloadPdf}><Download className="w-4 h-4 mr-2" /> PDF İndir</Button>
               <Button type="button" onClick={downloadImage}><Download className="w-4 h-4 mr-2" /> PNG İndir</Button>
             </div>
-            
-            <div className="w-full min-w-0 rounded-xl border bg-slate-100/60 p-3 md:p-5">
-              <PosterCanvas ref={exportRef} aspect="invite-landscape" className="w-full max-w-none">
-                {renderTemplateContent()}
-              </PosterCanvas>
-            </div>
+
+            {advancedEditMode ? (
+              <Alert className="border-blue-200 bg-blue-50/80 text-blue-900">
+                <AlertDescription className="text-sm">
+                  Yazı alanına tıklayarak boyut ve konum ayarı yapabilirsiniz. Ok tuşları ile taşıyın, Shift+ok ile 10px adım atın.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            <InviteLayoutEditorProvider
+              editMode={advancedEditMode}
+              templateId={activeTemplateId}
+              selectedLayerId={selectedLayerId}
+              setSelectedLayerId={setSelectedLayerId}
+              customLayoutAdjustments={customLayoutAdjustments}
+              setCustomLayoutAdjustments={setCustomLayoutAdjustments}
+            >
+              <InviteLayoutKeyboardHandler />
+
+              <div className="hidden lg:block">
+                {advancedEditMode ? <InviteLayerSettingsPanel className="mb-4" /> : null}
+              </div>
+
+              <div className="w-full min-w-0 rounded-xl border bg-slate-100/60 p-3 md:p-5">
+                <PosterCanvas ref={exportRef} aspect="invite-landscape" className="w-full max-w-none">
+                  {renderTemplateContent()}
+                </PosterCanvas>
+              </div>
+
+              {advancedEditMode ? (
+                <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 max-h-[55vh] overflow-y-auto border-t bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
+                  <InviteLayerSettingsPanel />
+                </div>
+              ) : null}
+            </InviteLayoutEditorProvider>
           </div>
         </div>
       </div>
