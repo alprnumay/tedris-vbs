@@ -197,43 +197,66 @@ export function InfoCardsRow({
   );
 }
 
-export function ImageZone({ photoPreview, tokens }: PosterZoneProps) {
+export function ImageZone({
+  photoPreview,
+  tokens,
+  fallback = "default",
+}: PosterZoneProps & { fallback?: "default" | "corporate" | "premium" }) {
   if (photoPreview) {
+    const overlay =
+      fallback === "premium"
+        ? "linear-gradient(270deg, rgba(7,21,38,0.2) 0%, rgba(7,21,38,0.65) 100%)"
+        : fallback === "corporate"
+          ? "linear-gradient(90deg, rgba(15,23,42,0.12) 0%, rgba(30,58,138,0.45) 100%)"
+          : "linear-gradient(90deg, rgba(15,23,42,0.15) 0%, rgba(15,23,42,0.55) 100%)";
+
     return (
       <div className="relative h-full w-full overflow-hidden">
         <img src={photoPreview} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        <div
-          className="absolute inset-0"
-          style={{
-            background: "linear-gradient(90deg, rgba(15,23,42,0.15) 0%, rgba(15,23,42,0.55) 100%)",
-          }}
-          aria-hidden
-        />
+        <div className="absolute inset-0" style={{ background: overlay }} aria-hidden />
       </div>
     );
   }
 
+  const fallbackStyles: Record<typeof fallback, { bg: string; label: string; title: string }> = {
+    default: {
+      bg: `linear-gradient(145deg, ${tokens.canvas} 0%, #1e293b 45%, #0f172a 100%)`,
+      label: "Program Daveti",
+      title: "Kurumsal Davet",
+    },
+    corporate: {
+      bg: "linear-gradient(145deg, #1e3a8a 0%, #1e40af 35%, #334155 100%)",
+      label: "Resmi Davet",
+      title: "Veli Toplantısı",
+    },
+    premium: {
+      bg: "linear-gradient(145deg, #071526 0%, #0b1f3a 40%, #1a365d 100%)",
+      label: "Premium Davet",
+      title: "Program Davetiyesi",
+    },
+  };
+
+  const fb = fallbackStyles[fallback];
+
   return (
-    <div
-      className="relative h-full w-full overflow-hidden"
-      style={{
-        background: `linear-gradient(145deg, ${tokens.canvas} 0%, #1e293b 45%, #0f172a 100%)`,
-      }}
-    >
+    <div className="relative h-full w-full overflow-hidden" style={{ background: fb.bg }}>
       <div
-        className="absolute inset-0 opacity-[0.18]"
+        className="absolute inset-0 opacity-[0.15]"
         style={{
           backgroundImage:
             "repeating-linear-gradient(45deg, transparent, transparent 28px, rgba(255,255,255,0.35) 28px, rgba(255,255,255,0.35) 29px)",
         }}
         aria-hidden
       />
+      {fallback === "premium" ? (
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#d4af37] to-transparent opacity-80" aria-hidden />
+      ) : null}
       <div
         className="absolute bottom-8 left-8 right-8 rounded-2xl border px-6 py-5 backdrop-blur-sm"
         style={{ borderColor: "rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.06)" }}
       >
-        <div className="text-[13px] font-bold uppercase tracking-[0.24em] text-white/50">Kurumsal Davet</div>
-        <div className="mt-2 text-[28px] font-serif font-semibold text-white/90">Program Davetiyesi</div>
+        <div className="text-[13px] font-bold uppercase tracking-[0.24em] text-white/50">{fb.label}</div>
+        <div className="mt-2 font-serif text-[28px] font-semibold text-white/90">{fb.title}</div>
       </div>
     </div>
   );

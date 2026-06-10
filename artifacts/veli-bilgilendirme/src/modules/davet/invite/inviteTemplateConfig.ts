@@ -19,6 +19,7 @@ export type InviteTemplateConfig = {
   label: string;
   description: string;
   previewGradient: string;
+  imageSide: "left" | "right";
   tokens: InviteTemplateTokens;
 };
 
@@ -26,8 +27,9 @@ export const INVITE_TEMPLATE_CONFIGS: InviteTemplateConfig[] = [
   {
     id: "kurumsal-davet",
     label: "Kurumsal Davet",
-    description: "Resmi, temiz ve güven veren kurumsal düzen",
-    previewGradient: "linear-gradient(90deg, #f8fafc 0%, #f8fafc 70%, #1e3a8a 70%, #1e3a8a 100%)",
+    description: "Görsel + açık panel, resmi kurumsal düzen",
+    previewGradient: "linear-gradient(90deg, #1e3a8a 0%, #64748b 42%, #f8fafc 42%, #f8fafc 100%)",
+    imageSide: "left",
     tokens: {
       canvas: "#f8fafc",
       accent: "#1e3a8a",
@@ -45,8 +47,9 @@ export const INVITE_TEMPLATE_CONFIGS: InviteTemplateConfig[] = [
   {
     id: "premium-lacivert",
     label: "Premium Lacivert",
-    description: "Koyu zemin, altın vurgu, ağırbaşlı afiş",
-    previewGradient: "linear-gradient(135deg, #0b1f3a 0%, #122847 55%, #c9a227 100%)",
+    description: "Görsel + koyu panel, altın vurgulu afiş",
+    previewGradient: "linear-gradient(90deg, #f8fafc 0%, #f8fafc 42%, #0b1f3a 42%, #c9a227 100%)",
+    imageSide: "right",
     tokens: {
       canvas: "#0b1f3a",
       accent: "#d4af37",
@@ -64,8 +67,9 @@ export const INVITE_TEMPLATE_CONFIGS: InviteTemplateConfig[] = [
   {
     id: "gorselli-davet",
     label: "Görselli Davet",
-    description: "Görsel destekli, okunaklı kart düzeni",
+    description: "Görsel + beyaz panel, dengeli davet düzeni",
     previewGradient: "linear-gradient(90deg, #334155 0%, #64748b 45%, #f8fafc 45%, #f8fafc 100%)",
+    imageSide: "left",
     tokens: {
       canvas: "#f1f5f9",
       accent: "#1e40af",

@@ -341,7 +341,7 @@ export default function InvitePage() {
                   <div className="space-y-2 pt-2 border-t">
                     <label className="text-sm font-medium">Arka Plan Görseli (Opsiyonel)</label>
                     <Input type="file" accept="image/*" onChange={handlePhotoUpload} />
-                    <p className="text-[11px] text-muted-foreground">Görselli Davet şablonunda kullanılır.</p>
+                    <p className="text-[11px] text-muted-foreground">Tüm şablonlarda sol/sağ görsel alanında kullanılır.</p>
                   </div>
 
                   <FormField control={form.control} name="qrLink" render={({ field }) => (
@@ -425,7 +425,7 @@ export default function InvitePage() {
             {advancedEditMode ? (
               <Alert className="border-blue-200 bg-blue-50/80 text-blue-900">
                 <AlertDescription className="text-sm">
-                  Yazı alanına tıklayarak boyut ve konum ayarı yapabilirsiniz. Ok tuşları ile taşıyın, Shift+ok ile 10px adım atın.
+                  Afişte bir yazıya dokunun; ok tuşları veya alttaki panel ile konum ve boyut ayarlayın.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -440,10 +440,6 @@ export default function InvitePage() {
             >
               <InviteLayoutKeyboardHandler />
 
-              <div className="hidden lg:block">
-                {advancedEditMode ? <InviteLayerSettingsPanel className="mb-4" /> : null}
-              </div>
-
               <div className="w-full min-w-0 rounded-xl border bg-slate-100/60 p-3 md:p-5">
                 <PosterCanvas ref={exportRef} aspect="invite-landscape" className="w-full max-w-none">
                   {renderTemplateContent()}
@@ -451,9 +447,7 @@ export default function InvitePage() {
               </div>
 
               {advancedEditMode ? (
-                <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 max-h-[55vh] overflow-y-auto border-t bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
-                  <InviteLayerSettingsPanel />
-                </div>
+                <InviteLayerSettingsPanel className="sticky bottom-0 z-10 pb-[max(0px,env(safe-area-inset-bottom))]" />
               ) : null}
             </InviteLayoutEditorProvider>
           </div>

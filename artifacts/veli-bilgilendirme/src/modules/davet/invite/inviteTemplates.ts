@@ -16,29 +16,18 @@ export type InviteTemplateDef = {
   Component: ComponentType<InviteTemplateProps>;
 };
 
-export const INVITE_TEMPLATES: InviteTemplateDef[] = [
-  {
-    id: "kurumsal-davet",
-    label: "Kurumsal Davet",
-    description: "Resmi, temiz ve güven veren kurumsal düzen",
-    previewGradient: INVITE_TEMPLATE_CONFIGS[0].previewGradient,
-    Component: KurumsalDavetTemplate,
-  },
-  {
-    id: "premium-lacivert",
-    label: "Premium Lacivert",
-    description: "Koyu zemin, altın vurgu, ağırbaşlı afiş",
-    previewGradient: INVITE_TEMPLATE_CONFIGS[1].previewGradient,
-    Component: PremiumLacivertTemplate,
-  },
-  {
-    id: "gorselli-davet",
-    label: "Görselli Davet",
-    description: "Görsel destekli, okunaklı kart düzeni",
-    previewGradient: INVITE_TEMPLATE_CONFIGS[2].previewGradient,
-    Component: GorselliDavetTemplate,
-  },
-];
+export const INVITE_TEMPLATES: InviteTemplateDef[] = INVITE_TEMPLATE_CONFIGS.map((cfg) => ({
+  id: cfg.id,
+  label: cfg.label,
+  description: cfg.description,
+  previewGradient: cfg.previewGradient,
+  Component:
+    cfg.id === "kurumsal-davet"
+      ? KurumsalDavetTemplate
+      : cfg.id === "premium-lacivert"
+        ? PremiumLacivertTemplate
+        : GorselliDavetTemplate,
+}));
 
 export const DEFAULT_INVITE_TEMPLATE_ID: InviteTemplateId = "kurumsal-davet";
 
