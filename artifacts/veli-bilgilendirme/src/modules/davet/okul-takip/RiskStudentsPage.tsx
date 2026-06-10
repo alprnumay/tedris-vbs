@@ -14,6 +14,7 @@ import { detectRiskStudent, getLast7Dates } from "@/modules/davet/okul-takip/cal
 import { RISK_ACTIONS } from "@/modules/davet/okul-takip/constants";
 import { getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { RiskReason } from "@/modules/davet/okul-takip/types";
+import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 
 const REASON_LABELS: Record<RiskReason, string> = {
@@ -43,7 +44,7 @@ export default function RiskStudentsPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Modül ana ekranı" href="/okul-takip" />
+        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
         <div>
           <h1 className="text-xl font-bold text-slate-900">Riskli Öğrenciler</h1>
           <p className="text-sm text-slate-600">

@@ -7,6 +7,7 @@ import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
 import { getKarneData, KarnePoster } from "@/modules/davet/okul-takip/components/KarnePoster";
 import { buildKarneAnalysis } from "@/modules/davet/okul-takip/calculations";
+import { OKUL_TAKIP_KARNELER } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 import { exportElementAsPdf, exportElementAsPng } from "@/modules/davet/utils/exportUtils";
 
@@ -16,7 +17,7 @@ function getWeekFromSearch(): string {
 }
 
 export default function KarneDetailPage() {
-  const [, params] = useRoute("/okul-takip/karneler/:studentId");
+  const [, params] = useRoute(`${OKUL_TAKIP_KARNELER}/:studentId`);
   const studentId = params?.studentId ?? "";
   const weekRef = getWeekFromSearch();
 
@@ -27,7 +28,7 @@ export default function KarneDetailPage() {
   if (!student) {
     return (
       <DavetLayout>
-        <BackButton label="Karneler" href="/okul-takip/karneler" />
+        <BackButton label="Karneler" href={OKUL_TAKIP_KARNELER} />
         <p className="text-muted-foreground">Öğrenci bulunamadı.</p>
       </DavetLayout>
     );
@@ -54,7 +55,7 @@ export default function KarneDetailPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Karneler" href="/okul-takip/karneler" />
+        <BackButton label="Karneler" href={OKUL_TAKIP_KARNELER} />
 
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => exportKarne("pdf")}>

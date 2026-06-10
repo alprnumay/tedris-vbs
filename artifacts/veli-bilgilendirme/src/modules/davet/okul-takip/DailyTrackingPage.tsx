@@ -26,6 +26,7 @@ import {
 } from "@/modules/davet/okul-takip/calculations";
 import { getGroups, getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { AttendanceStatus, DailyDraft, DailyRecord, HomeworkStatus } from "@/modules/davet/okul-takip/types";
+import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
 import {
   generateId,
   getRecordForStudentDate,
@@ -209,7 +210,7 @@ export default function DailyTrackingPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-24">
-        <BackButton label="Modül ana ekranı" href="/okul-takip" />
+        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
 
         <div>
           <h1 className="text-xl font-bold text-slate-900">Günlük Takip</h1>

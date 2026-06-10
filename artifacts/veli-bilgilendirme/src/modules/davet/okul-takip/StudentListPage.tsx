@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { Student } from "@/modules/davet/okul-takip/types";
+import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
 import {
   deleteStudent,
   generateId,
@@ -79,7 +80,7 @@ export default function StudentListPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Modül ana ekranı" href="/okul-takip" />
+        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-bold">Öğrenci Listesi</h1>
           <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700">

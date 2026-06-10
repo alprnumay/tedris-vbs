@@ -15,6 +15,15 @@ import {
   detectRiskStudent,
   getLast7Dates,
 } from "@/modules/davet/okul-takip/calculations";
+import {
+  NEHARI_PLATFORM_HOME,
+  OKUL_TAKIP_GUNLUK,
+  OKUL_TAKIP_HOME,
+  OKUL_TAKIP_KARNELER,
+  OKUL_TAKIP_OGRENCILER,
+  OKUL_TAKIP_RAPORLAR,
+  OKUL_TAKIP_RISKLI,
+} from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 
 export default function OkulTakipHubPage() {
@@ -38,7 +47,7 @@ export default function OkulTakipHubPage() {
   return (
     <DavetLayout>
       <div className="space-y-6 pb-8">
-        <BackButton label="Nehari Platformu" href="/" />
+        <BackButton label="Nehari Platformu" href={NEHARI_PLATFORM_HOME} />
 
         <div className="rounded-2xl border border-violet-200/80 bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-5 shadow-sm sm:p-6">
           <div className="flex items-start gap-4">
@@ -71,34 +80,34 @@ export default function OkulTakipHubPage() {
             <ActionCard
               title="Günlük Takip"
               description="Yoklama ve okul ödevi durumunu hızlıca işaretleyin."
-              href="/okul-takip/gunluk"
+              href={OKUL_TAKIP_GUNLUK}
               icon={ClipboardList}
             />
             <ActionCard
               title="Raporlar"
               description="Günlük ve haftalık raporları tek sayfada görün."
-              href="/okul-takip/raporlar"
+              href={OKUL_TAKIP_RAPORLAR}
               icon={BarChart3}
               accent="from-blue-500 to-cyan-600"
             />
             <ActionCard
               title="Karneler"
               description="Haftalık analizli, veliye gönderilebilir kişisel karneler."
-              href="/okul-takip/karneler"
+              href={OKUL_TAKIP_KARNELER}
               icon={ClipboardCheck}
               accent="from-emerald-500 to-teal-600"
             />
             <ActionCard
               title="Riskli Öğrenciler"
               description="Takip gerektiren öğrencileri otomatik listeleyin."
-              href="/okul-takip/riskli"
+              href={OKUL_TAKIP_RISKLI}
               icon={AlertTriangle}
               accent="from-orange-500 to-red-500"
             />
             <ActionCard
               title="Öğrenci Listesi"
               description="Öğrenci bilgilerini görüntüleyin ve düzenleyin."
-              href="/okul-takip/ogrenciler"
+              href={OKUL_TAKIP_OGRENCILER}
               icon={Users}
               accent="from-slate-600 to-slate-800"
             />

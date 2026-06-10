@@ -27,6 +27,7 @@ import {
 } from "@/modules/davet/okul-takip/calculations";
 import { RISK_ACTIONS } from "@/modules/davet/okul-takip/constants";
 import { getGroups, getInstitutions } from "@/modules/davet/okul-takip/mockData";
+import { OKUL_TAKIP_HOME, OKUL_TAKIP_KARNELER } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 import { exportElementAsPng, exportElementAsPdf } from "@/modules/davet/utils/exportUtils";
 
@@ -126,7 +127,7 @@ export default function ReportsPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Modül ana ekranı" href="/okul-takip" />
+        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
         <h1 className="text-xl font-bold">Raporlar</h1>
 
         <Tabs defaultValue="daily">
@@ -266,7 +267,7 @@ export default function ReportsPage() {
           <TabsContent value="karneler" className="mt-4">
             <p className="text-sm text-slate-600">
               Detaylı karneler için{" "}
-              <Link href="/okul-takip/karneler" className="font-semibold text-violet-600 underline">
+              <Link href={OKUL_TAKIP_KARNELER} className="font-semibold text-violet-600 underline">
                 Karneler
               </Link>{" "}
               sayfasına gidin.

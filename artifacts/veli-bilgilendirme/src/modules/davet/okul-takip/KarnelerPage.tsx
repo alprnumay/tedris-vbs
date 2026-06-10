@@ -22,6 +22,11 @@ import {
 import { GENERAL_STATUS_COLORS, GENERAL_STATUS_LABELS } from "@/modules/davet/okul-takip/constants";
 import { getGrades, getGroups, getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { GeneralStatus } from "@/modules/davet/okul-takip/types";
+import {
+  OKUL_TAKIP_HOME,
+  OKUL_TAKIP_KARNELER,
+  okulTakipKarnePath,
+} from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 
 export default function KarnelerPage() {
@@ -69,7 +74,7 @@ export default function KarnelerPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Modül ana ekranı" href="/okul-takip" />
+        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
         <h1 className="text-xl font-bold">Kişisel Karneler</h1>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -172,7 +177,7 @@ export default function KarnelerPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Link href={`/okul-takip/karneler/${student.id}?week=${weekRef}`}>
+                  <Link href={okulTakipKarnePath(student.id, weekRef)}>
                     <Button size="sm" variant="default" className="bg-violet-600 hover:bg-violet-700">
                       <Eye size={14} className="mr-1" />
                       Karneyi aç
