@@ -12,7 +12,9 @@ import KarnelerPage from "@/modules/davet/okul-takip/KarnelerPage";
 import KarneDetailPage from "@/modules/davet/okul-takip/KarneDetailPage";
 import RiskStudentsPage from "@/modules/davet/okul-takip/RiskStudentsPage";
 import StudentListPage from "@/modules/davet/okul-takip/StudentListPage";
+import NotificationSettingsPage from "@/modules/davet/notifications/NotificationSettingsPage";
 import {
+  NOTIFICATION_SETTINGS,
   OKUL_TAKIP_GUNLUK,
   OKUL_TAKIP_HOME,
   OKUL_TAKIP_KARNELER,
@@ -57,6 +59,7 @@ export function DavetRouter() {
         <Route path={OKUL_TAKIP_KARNELER} component={KarnelerPage} />
         <Route path={OKUL_TAKIP_RISKLI} component={RiskStudentsPage} />
         <Route path={OKUL_TAKIP_OGRENCILER} component={StudentListPage} />
+        <Route path={NOTIFICATION_SETTINGS} component={NotificationSettingsPage} />
         <Route path="/calisma-paylas" component={ShareShowcasePage} />
         <Route path="/yayindaki-calismalar" component={PublishedShowcasePage} />
         <Route path="/calisma-onay" component={CalismaOnayRoute} />

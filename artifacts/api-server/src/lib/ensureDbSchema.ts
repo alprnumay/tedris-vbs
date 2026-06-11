@@ -281,6 +281,48 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
       CREATE INDEX IF NOT EXISTS compat_records_type_user_idx ON compat_records (record_type, user_id)
     `);
 
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id varchar NOT NULL REFERENCES local_users(id) ON DELETE CASCADE,
+        endpoint text NOT NULL UNIQUE,
+        subscription jsonb NOT NULL,
+        is_active boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS push_subscriptions_user_active_idx
+        ON push_subscriptions (user_id, is_active)
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS push_notification_settings (
+        user_id varchar PRIMARY KEY REFERENCES local_users(id) ON DELETE CASCADE,
+        daily_reminder_enabled boolean NOT NULL DEFAULT true,
+        daily_reminder_time varchar NOT NULL DEFAULT '17:00',
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS push_notification_log (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id varchar NOT NULL,
+        notification_type varchar NOT NULL,
+        date_key varchar NOT NULL,
+        sent_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (user_id, notification_type, date_key)
+      )
+    `);
+
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS push_notification_log_date_idx
+        ON push_notification_log (date_key, notification_type)
+    `);
+
     await ensureAdminBootstrapUser();
 
     logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, showcase_posts, support_requests, compat_records)");

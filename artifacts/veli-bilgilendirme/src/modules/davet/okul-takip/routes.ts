@@ -22,3 +22,5 @@ export const OKUL_TAKIP_ABSOLUTE = {
 } as const;
 
 export const NEHARI_PLATFORM_HOME = "/";
+
+export const NOTIFICATION_SETTINGS = "/bildirim-ayarlari";

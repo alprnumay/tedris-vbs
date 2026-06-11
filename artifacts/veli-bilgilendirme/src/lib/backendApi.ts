@@ -408,4 +408,40 @@ export const backendApi = {
 
   deleteProfile: (id: string) =>
     request<{ ok?: boolean }>("DELETE", `/profiles/${encodeURIComponent(id)}`),
+
+  getPushVapidPublicKey: () =>
+    request<{ publicKey: string }>("GET", "/push/vapid-public-key", undefined, { includeAuth: false }),
+
+  getPushSettings: () =>
+    request<{
+      settings: PushSettingsPayload;
+      hasActiveSubscription: boolean;
+      vapidPublicKey: string | null;
+    }>("GET", "/push/settings"),
+
+  subscribePush: (body: {
+    subscription: PushSubscriptionPayload;
+    dailyReminderEnabled?: boolean;
+    dailyReminderTime?: string;
+  }) =>
+    request<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
+
+  unsubscribePush: (body?: { endpoint?: string }) =>
+    request<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}),
+
+  updatePushSettings: (body: Partial<PushSettingsPayload>) =>
+    request<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),
+
+  sendPushTest: () => request<{ ok: boolean; sent: number }>("POST", "/push/test"),
+};
+
+export type PushSettingsPayload = {
+  dailyReminderEnabled: boolean;
+  dailyReminderTime: string;
+};
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
 };

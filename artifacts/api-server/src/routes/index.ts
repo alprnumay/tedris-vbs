@@ -10,6 +10,7 @@ import activityRouter from "./activity";
 import recordsRouter from "./records";
 import vpsRepairRouter from "./vpsRepair";
 import davetShowcaseRouter from "./davetShowcase";
+import pushRouter from "./push";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(vpsRepairRouter);
 router.use(adminRouter);
 router.use(adminReportsRouter);
 router.use(davetShowcaseRouter);
+router.use(pushRouter);
 
 export default router;

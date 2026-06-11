@@ -1,4 +1,5 @@
-const CACHE_NAME = "nehari-veli-bilgilendirme-v1";
+const CACHE_NAME = "nehari-veli-bilgilendirme-v2";
+
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
@@ -9,7 +10,7 @@ const STATIC_ASSETS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS).catch(() => undefined)),
   );
   self.skipWaiting();
 });
@@ -17,10 +18,58 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))),
+    ),
   );
   self.clients.claim();
+});
+
+self.addEventListener("push", (event) => {
+  const fallback = {
+    title: "Günlük takip hatırlatması",
+    body: "Bugünkü işler tamamlandı mı? Yoklama, okul ödevi takibi ve veli bilgilendirme durumunu kontrol etmeyi unutmayın.",
+    url: "/davet/okul-takip",
+  };
+
+  let payload = fallback;
+  try {
+    if (event.data) {
+      const parsed = event.data.json();
+      payload = { ...fallback, ...parsed };
+    }
+  } catch {
+    /* use fallback */
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      tag: "tedris-daily-reminder",
+      data: { url: payload.url || "/davet/okul-takip" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/davet/okul-takip";
+  const absoluteUrl = new URL(targetUrl, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(absoluteUrl);
+      }
+      return undefined;
+    }),
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -41,7 +90,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then((cached) => cached || Response.error())),
     );
     return;
   }
@@ -57,7 +106,8 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => cached);
+
       return cached || networkFetch;
-    })
+    }),
   );
 });

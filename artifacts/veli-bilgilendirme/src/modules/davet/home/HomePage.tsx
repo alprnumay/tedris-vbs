@@ -1,9 +1,12 @@
-﻿import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
+﻿import { Link } from "wouter";
+import { Bell } from "lucide-react";
+import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { ModuleCard } from "@/modules/davet/layout/ModuleCard";
 import { ModuleGrid } from "@/modules/davet/layout/ModuleGrid";
 import { ModulePageHeader } from "@/modules/davet/layout/ModulePageHeader";
 import { NehariHomeHero } from "@/modules/davet/layout/NehariHomeHero";
 import { davetHomeModules } from "@/modules/davet/layout/moduleAccents";
+import { NOTIFICATION_SETTINGS } from "@/modules/davet/okul-takip/routes";
 
 export default function HomePage() {
   const visibleModules = davetHomeModules.filter((mod) => !mod.hidden);
@@ -39,6 +42,16 @@ export default function HomePage() {
               />
             ))}
           </ModuleGrid>
+        </div>
+
+        <div className="flex justify-center px-0.5">
+          <Link
+            href={NOTIFICATION_SETTINGS}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-violet-300 hover:text-violet-700"
+          >
+            <Bell size={16} aria-hidden />
+            Bildirim Ayarları
+          </Link>
         </div>
       </div>
     </DavetLayout>
