@@ -12,6 +12,12 @@ export type PushPermissionState =
   | "denied";
 
 const SW_URL = "/sw.js";
+export const DAILY_REMINDER_SETTINGS_KEY = "nehariDailyReminderSettings";
+
+const DEFAULT_SETTINGS: PushSettings = {
+  dailyReminderEnabled: true,
+  dailyReminderTime: "17:00",
+};
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -22,6 +28,34 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     output[i] = raw.charCodeAt(i);
   }
   return output;
+}
+
+export function loadLocalReminderSettings(): PushSettings {
+  try {
+    const raw = localStorage.getItem(DAILY_REMINDER_SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_SETTINGS };
+    const parsed = JSON.parse(raw) as Partial<PushSettings>;
+    return {
+      dailyReminderEnabled:
+        typeof parsed.dailyReminderEnabled === "boolean"
+          ? parsed.dailyReminderEnabled
+          : DEFAULT_SETTINGS.dailyReminderEnabled,
+      dailyReminderTime:
+        typeof parsed.dailyReminderTime === "string" && parsed.dailyReminderTime
+          ? parsed.dailyReminderTime
+          : DEFAULT_SETTINGS.dailyReminderTime,
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export function saveLocalReminderSettings(settings: PushSettings): void {
+  try {
+    localStorage.setItem(DAILY_REMINDER_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function getPushSupportState(): PushPermissionState {
@@ -45,6 +79,17 @@ export function getPermissionLabel(state: PushPermissionState): string {
   }
 }
 
+export async function fetchVapidPublicKey(): Promise<string> {
+  const data = await backendApi.getPushVapidPublicKey();
+  if (!data.ok || !data.publicKey) {
+    throw new Error(
+      data.error ||
+        "Push bildirim altyapısı henüz aktif değil. VAPID key eksik olabilir.",
+    );
+  }
+  return data.publicKey;
+}
+
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration> {
   const registration = await navigator.serviceWorker.register(SW_URL, { scope: "/" });
   await navigator.serviceWorker.ready;
@@ -64,10 +109,7 @@ export async function enablePushNotifications(
   }
 
   const registration = await registerServiceWorker();
-  const { publicKey } = await backendApi.getPushVapidPublicKey();
-  if (!publicKey) {
-    throw new Error("Sunucuda push yapılandırması eksik.");
-  }
+  const publicKey = await fetchVapidPublicKey();
 
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
@@ -78,7 +120,12 @@ export async function enablePushNotifications(
   }
 
   const json = subscription.toJSON();
-  const payload = {
+  const mergedSettings: PushSettings = {
+    ...loadLocalReminderSettings(),
+    ...settings,
+  };
+
+  const result = await backendApi.subscribePush({
     subscription: {
       endpoint: json.endpoint!,
       expirationTime: json.expirationTime ?? null,
@@ -87,11 +134,10 @@ export async function enablePushNotifications(
         auth: json.keys!.auth!,
       },
     },
-    dailyReminderEnabled: settings?.dailyReminderEnabled,
-    dailyReminderTime: settings?.dailyReminderTime,
-  };
+    settings: mergedSettings,
+  });
 
-  const result = await backendApi.subscribePush(payload);
+  saveLocalReminderSettings(result.settings);
   return result.settings;
 }
 

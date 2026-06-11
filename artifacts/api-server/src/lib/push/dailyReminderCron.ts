@@ -33,7 +33,7 @@ export async function runDailyReminderTick(): Promise<void> {
       if (alreadySent) continue;
 
       await sendWebPush(candidate.subscription, DAILY_REMINDER_PAYLOAD);
-      await logNotificationSent(candidate.userId, NOTIFICATION_TYPE, dateKey);
+      await logNotificationSent(candidate.userId, NOTIFICATION_TYPE, dateKey, DAILY_REMINDER_PAYLOAD);
     } catch (err) {
       if (isPushEndpointGoneError(err)) {
         await deactivatePushSubscriptionByEndpoint(candidate.subscription.endpoint).catch(() => {});

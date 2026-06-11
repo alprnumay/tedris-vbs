@@ -323,6 +323,11 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
         ON push_notification_log (date_key, notification_type)
     `);
 
+    await db.execute(sql`
+      ALTER TABLE push_notification_log
+        ADD COLUMN IF NOT EXISTS payload jsonb
+    `);
+
     await ensureAdminBootstrapUser();
 
     logger.info("Veritabanı şema kontrolü tamamlandı (institutions, activity_logs, showcase_posts, support_requests, compat_records)");

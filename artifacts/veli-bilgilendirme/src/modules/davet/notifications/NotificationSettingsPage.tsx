@@ -10,10 +10,13 @@ import { Switch } from "@/components/ui/switch";
 import { backendApi } from "@/lib/backendApi";
 import {
   enablePushNotifications,
+  fetchVapidPublicKey,
   getPermissionLabel,
   getPushSupportState,
   isIosDevice,
   isStandalonePwa,
+  loadLocalReminderSettings,
+  saveLocalReminderSettings,
   type PushPermissionState,
 } from "@/lib/pushNotifications";
 import { NEHARI_PLATFORM_HOME } from "@/modules/davet/okul-takip/routes";
@@ -25,16 +28,33 @@ export default function NotificationSettingsPage() {
   const [enabled, setEnabled] = useState(true);
   const [time, setTime] = useState("17:00");
   const [hasSubscription, setHasSubscription] = useState(false);
+  const [pushInfraError, setPushInfraError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setPermission(getPushSupportState());
+    const localSettings = loadLocalReminderSettings();
+    setEnabled(localSettings.dailyReminderEnabled);
+    setTime(localSettings.dailyReminderTime);
+
+    try {
+      await fetchVapidPublicKey();
+      setPushInfraError(null);
+    } catch (err) {
+      setPushInfraError(
+        err instanceof Error
+          ? err.message
+          : "Push bildirim altyapısı henüz aktif değil. VAPID key eksik olabilir.",
+      );
+    }
+
     try {
       const data = await backendApi.getPushSettings();
       setEnabled(data.settings.dailyReminderEnabled);
       setTime(data.settings.dailyReminderTime);
       setHasSubscription(data.hasActiveSubscription);
+      saveLocalReminderSettings(data.settings);
     } catch {
-      /* oturum yoksa varsayılanlar */
+      /* oturum yoksa yerel varsayılanlar */
     } finally {
       setLoading(false);
     }
@@ -55,10 +75,15 @@ export default function NotificationSettingsPage() {
       setTime(settings.dailyReminderTime);
       setHasSubscription(true);
       setPermission("granted");
+      setPushInfraError(null);
       toast.success("Bildirimler açıldı ve cihaz kaydedildi.");
     } catch (err) {
       setPermission(getPushSupportState());
-      toast.error(err instanceof Error ? err.message : "Bildirim açılamadı.");
+      const message = err instanceof Error ? err.message : "Bildirim açılamadı.";
+      if (message.includes("VAPID") || message.includes("Push bildirim")) {
+        setPushInfraError(message);
+      }
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -66,13 +91,14 @@ export default function NotificationSettingsPage() {
 
   const saveSettings = async () => {
     setSaving(true);
+    const nextSettings = { dailyReminderEnabled: enabled, dailyReminderTime: time };
+    saveLocalReminderSettings(nextSettings);
+
     try {
-      const { settings } = await backendApi.updatePushSettings({
-        dailyReminderEnabled: enabled,
-        dailyReminderTime: time,
-      });
+      const { settings } = await backendApi.updatePushSettings(nextSettings);
       setEnabled(settings.dailyReminderEnabled);
       setTime(settings.dailyReminderTime);
+      saveLocalReminderSettings(settings);
       toast.success("Ayarlar kaydedildi.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Ayarlar kaydedilemedi.");
@@ -90,6 +116,7 @@ export default function NotificationSettingsPage() {
       await backendApi.sendPushTest();
       toast.success("Test bildirimi gönderildi.");
     } catch (err) {
+      console.error("[push] test failed:", err);
       toast.error(err instanceof Error ? err.message : "Test bildirimi gönderilemedi.");
     } finally {
       setSaving(false);
@@ -110,19 +137,25 @@ export default function NotificationSettingsPage() {
           </p>
         </div>
 
+        {pushInfraError ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {pushInfraError}
+          </div>
+        ) : null}
+
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">İzin durumu</p>
           <p className="mt-1 text-sm font-medium text-slate-800">{getPermissionLabel(permission)}</p>
           {hasSubscription ? (
-            <p className="mt-1 text-xs text-emerald-700">Bu cihaz push aboneliğine kayıtlı.</p>
+            <p className="mt-1 text-xs font-medium text-emerald-700">Push aboneliği aktif</p>
           ) : (
-            <p className="mt-1 text-xs text-amber-700">Henüz push aboneliği yok.</p>
+            <p className="mt-1 text-xs text-amber-700">Halen push aboneliği yok</p>
           )}
         </div>
 
         {showIosHint ? (
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-            iPhone&apos;da bildirim almak için siteyi Safari&apos;den Ana Ekrana Eklemeniz ve uygulamayı
+            iPhone&apos;da bildirim almak için siteyi Safari üzerinden Ana Ekrana ekleyip uygulamayı
             ana ekran ikonundan açmanız gerekir.
           </div>
         ) : null}
@@ -131,7 +164,7 @@ export default function NotificationSettingsPage() {
           <Button
             className="w-full bg-violet-600 hover:bg-violet-700"
             onClick={handleEnable}
-            disabled={saving || permission === "unsupported" || permission === "denied"}
+            disabled={saving || permission === "unsupported" || permission === "denied" || Boolean(pushInfraError)}
           >
             <Bell size={18} className="mr-2" />
             Bildirimleri Aç
@@ -167,7 +200,11 @@ export default function NotificationSettingsPage() {
             <Button variant="outline" onClick={saveSettings} disabled={saving}>
               Ayarları Kaydet
             </Button>
-            <Button variant="outline" onClick={sendTest} disabled={saving || permission === "unsupported"}>
+            <Button
+              variant="outline"
+              onClick={sendTest}
+              disabled={saving || permission === "unsupported" || Boolean(pushInfraError)}
+            >
               <Send size={16} className="mr-2" />
               Test bildirimi gönder
             </Button>

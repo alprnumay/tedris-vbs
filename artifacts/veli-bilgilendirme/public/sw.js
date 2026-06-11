@@ -1,4 +1,4 @@
-const CACHE_NAME = "nehari-veli-bilgilendirme-v2";
+const CACHE_NAME = "nehari-veli-bilgilendirme-v3";
 
 const STATIC_ASSETS = [
   "/",
@@ -7,6 +7,16 @@ const STATIC_ASSETS = [
   "/icon-512.png",
   "/favicon.svg",
 ];
+
+const OFFLINE_RESPONSE = new Response("Offline", {
+  status: 503,
+  statusText: "Service Unavailable",
+  headers: { "Content-Type": "text/plain; charset=utf-8" },
+});
+
+function offlineFallback() {
+  return caches.match("/").then((cached) => cached || OFFLINE_RESPONSE);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -61,6 +71,9 @@ self.addEventListener("notificationclick", (event) => {
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if ("focus" in client) {
+          if ("navigate" in client && typeof client.navigate === "function") {
+            return client.navigate(absoluteUrl).then(() => client.focus());
+          }
           return client.focus();
         }
       }
@@ -90,14 +103,18 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || Response.error())),
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || offlineFallback()),
+        ),
     );
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
+      if (cached) return cached;
+
+      return fetch(event.request)
         .then((response) => {
           if (response && response.status === 200 && response.type !== "opaque") {
             const clone = response.clone();
@@ -105,9 +122,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
-
-      return cached || networkFetch;
+        .catch(() => OFFLINE_RESPONSE);
     }),
   );
 });

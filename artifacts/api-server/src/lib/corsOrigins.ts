@@ -7,10 +7,15 @@ const LOCAL_ORIGINS = [
   "http://127.0.0.1:3001",
 ];
 
+const PRODUCTION_ORIGINS = [
+  "https://nehariplatform.com.tr",
+  "https://www.nehariplatform.com.tr",
+];
+
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 function collectAllowedOrigins(): Set<string> {
-  const set = new Set(LOCAL_ORIGINS);
+  const set = new Set([...LOCAL_ORIGINS, ...PRODUCTION_ORIGINS]);
   for (const raw of [
     process.env.FRONTEND_URL,
     ...(process.env.CORS_ORIGINS?.split(",") ?? []),

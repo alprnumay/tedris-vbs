@@ -136,10 +136,17 @@ export async function logNotificationSent(
   userId: string,
   notificationType: string,
   dateKey: string,
+  payload?: Record<string, unknown>,
 ): Promise<void> {
   await db.execute(sql`
-    INSERT INTO push_notification_log (user_id, notification_type, date_key, sent_at)
-    VALUES (${userId}, ${notificationType}, ${dateKey}, now())
+    INSERT INTO push_notification_log (user_id, notification_type, date_key, payload, sent_at)
+    VALUES (
+      ${userId},
+      ${notificationType},
+      ${dateKey},
+      ${payload ? JSON.stringify(payload) : null}::jsonb,
+      now()
+    )
     ON CONFLICT (user_id, notification_type, date_key) DO NOTHING
   `);
 }

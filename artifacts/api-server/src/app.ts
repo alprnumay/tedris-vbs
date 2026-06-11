@@ -9,6 +9,7 @@ import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
 import { db } from "@workspace/db";
 import { ensureDbSchema } from "./lib/ensureDbSchema";
+import { isPushConfigured } from "./lib/push/pushSender";
 
 const app: Express = express();
 
@@ -69,6 +70,8 @@ app.get("/api/health", (_req: Request, res: Response) => {
     message: "API çalışıyor",
     adminRoutes: true,
     recordsCrud: true,
+    pushRoutes: true,
+    pushConfigured: isPushConfigured(),
     commit: process.env.DEPLOY_COMMIT || process.env.GIT_SHA || null,
     schemaVersion: 4,
   });
