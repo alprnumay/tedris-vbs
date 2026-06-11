@@ -24,6 +24,10 @@
     "generate:vapid": "pnpm --filter @workspace/api-server exec web-push generate-vapid-keys"
   },
   "private": true,
+  "dependencies": {
+    "pg": "^8.20.0",
+    "web-push": "^3.6.7"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "concurrently": "^9.2.1",

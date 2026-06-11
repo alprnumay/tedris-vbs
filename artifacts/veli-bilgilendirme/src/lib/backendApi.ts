@@ -1,6 +1,6 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
 import { rejectClientSideRepair } from "./repairPolicy";
-import { isLocalDevApi, resolveApiBaseUrl } from "./apiBase";
+import { isLocalDevApi, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
 const API_BASE = resolveApiBaseUrl();
@@ -126,6 +126,60 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown, opts
         ? err.error
         : "Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.";
     throw new Error(`${res.status} ${message}`);
+  }
+
+  return data as T;
+}
+
+async function pushRequest<T>(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+  opts: { includeAuth?: boolean } = {},
+): Promise<T> {
+  const pushBase = resolvePushApiBaseUrl();
+  if (!pushBase) {
+    throw new Error("Sunucu bağlantı ayarları eksik.");
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${pushBase}${path}`, {
+      method,
+      headers: headers(body !== undefined, opts.includeAuth ?? true),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: "include",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error("Sunucu yanıt vermedi. Lütfen bağlantınızı kontrol edip tekrar deneyin.");
+    }
+    throw new Error("Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.");
+  }
+
+  const text = await res.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text };
+  }
+
+  if (!res.ok) {
+    const err = data as { message?: unknown; error?: unknown };
+    const raw =
+      typeof err.error === "string"
+        ? err.error
+        : typeof err.message === "string"
+          ? err.message
+          : "Sunucuya bağlanılamadı.";
+    if (res.status === 404 && String(raw).includes("route")) {
+      throw new Error(
+        "Push bildirim API'si henüz sunucuda aktif değil. Site yöneticisine bildirin veya birkaç dakika sonra tekrar deneyin.",
+      );
+    }
+    throw new Error(raw);
   }
 
   return data as T;
@@ -410,7 +464,7 @@ export const backendApi = {
     request<{ ok?: boolean }>("DELETE", `/profiles/${encodeURIComponent(id)}`),
 
   getPushVapidPublicKey: () =>
-    request<{ ok: boolean; publicKey?: string; error?: string }>(
+    pushRequest<{ ok: boolean; publicKey?: string; error?: string }>(
       "GET",
       "/push/vapid-public-key",
       undefined,
@@ -418,7 +472,7 @@ export const backendApi = {
     ),
 
   getPushSettings: () =>
-    request<{
+    pushRequest<{
       ok?: boolean;
       settings: PushSettingsPayload;
       hasActiveSubscription: boolean;
@@ -431,15 +485,15 @@ export const backendApi = {
     dailyReminderEnabled?: boolean;
     dailyReminderTime?: string;
   }) =>
-    request<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
+    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
 
   unsubscribePush: (body?: { endpoint?: string }) =>
-    request<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}),
+    pushRequest<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}),
 
   updatePushSettings: (body: Partial<PushSettingsPayload>) =>
-    request<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),
+    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),
 
-  sendPushTest: () => request<{ ok: boolean; sent: number }>("POST", "/push/test"),
+  sendPushTest: () => pushRequest<{ ok: boolean; sent: number }>("POST", "/push/test"),
 };
 
 export type PushSettingsPayload = {

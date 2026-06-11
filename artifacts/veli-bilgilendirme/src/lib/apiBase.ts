@@ -1,7 +1,3 @@
-/**
- * API kök yolu: yerel Vite geliştirmede proxy (/api → 127.0.0.1:3001),
- * production'da VITE_API_BASE_URL.
- */
 export function resolveApiBaseUrl(): string {
   const configured = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
 
@@ -16,6 +12,19 @@ export function resolveApiBaseUrl(): string {
   }
 
   return configured;
+}
+
+const PUSH_SAME_ORIGIN_HOSTS = new Set(["nehariplatform.com.tr", "www.nehariplatform.com.tr"]);
+
+/** Web Push: canlı sitede Vercel serverless (/api/push), diğer API istekleri VPS. */
+export function resolvePushApiBaseUrl(): string {
+  if (import.meta.env.DEV && import.meta.env.VITE_FORCE_REMOTE_API !== "true") {
+    return "/api";
+  }
+  if (typeof window !== "undefined" && PUSH_SAME_ORIGIN_HOSTS.has(window.location.hostname)) {
+    return "/api";
+  }
+  return resolveApiBaseUrl();
 }
 
 /** Yerel Vite proxy → api-server (3001); VPS /records yok. */

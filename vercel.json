@@ -7,8 +7,22 @@
     "api/admin/repair-app-user-auth-links.js": {
       "maxDuration": 60,
       "includeFiles": "api/lib/repair-dry-run.cjs"
+    },
+    "api/push/*.js": {
+      "maxDuration": 30,
+      "includeFiles": "api/lib/push-vercel.cjs"
+    },
+    "api/cron/daily-push-reminder.js": {
+      "maxDuration": 60,
+      "includeFiles": "api/lib/push-vercel.cjs"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/daily-push-reminder",
+      "schedule": "* * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
