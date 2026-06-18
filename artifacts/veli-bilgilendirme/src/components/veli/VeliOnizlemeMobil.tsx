@@ -4,6 +4,9 @@ import type { FormData, SablonTuru } from "@/types";
 import { VeliOnizlemeIcerik } from "./VeliOnizlemeIcerik";
 import { VeliYanPanel } from "./VeliYanPanel";
 import { VeliPreviewScaler } from "./VeliPreviewScaler";
+import type { VeliPreviewMode } from "./wizard/PreviewModeToggle";
+import { VELI_POSTER_H, VELI_POSTER_W } from "@/lib/veli/veliPosterEngine";
+import { VELI_WA_POSTER_H, VELI_WA_POSTER_W } from "@/lib/veli/veliWhatsappPosterEngine";
 
 export function VeliOnizlemeMobil({
   form,
@@ -12,25 +15,33 @@ export function VeliOnizlemeMobil({
   onSablonOner,
   paylasBtnlari = null,
   compact = false,
+  previewMode = "normal",
 }: {
   form: FormData;
   sablon: SablonTuru;
   wrapperRef: RefObject<HTMLDivElement | null>;
   onSablonOner: (id: SablonTuru) => void;
   paylasBtnlari?: React.ReactNode;
-  /** Form adımlarında daha düşük önizleme yüksekliği. */
   compact?: boolean;
+  previewMode?: VeliPreviewMode;
 }) {
   const [detayAcik, setDetayAcik] = useState(false);
+  const artboardW = previewMode === "whatsapp" ? VELI_WA_POSTER_W : VELI_POSTER_W;
+  const artboardH = previewMode === "whatsapp" ? VELI_WA_POSTER_H : VELI_POSTER_H;
 
   return (
     <div className="flex flex-col gap-3 p-4 pb-6" style={{ background: "#e8edf2" }}>
       <div
         ref={wrapperRef}
-        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}`}
+        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}${previewMode === "whatsapp" ? " veli-mobile-preview-stage--whatsapp" : ""}`}
       >
-        <VeliPreviewScaler observeRef={wrapperRef} deps={[form, sablon]}>
-          <VeliOnizlemeIcerik form={form} sablon={sablon} />
+        <VeliPreviewScaler
+          observeRef={wrapperRef}
+          artboardWidth={artboardW}
+          artboardHeight={artboardH}
+          deps={[form, sablon, previewMode]}
+        >
+          <VeliOnizlemeIcerik form={form} sablon={sablon} mode={previewMode} />
         </VeliPreviewScaler>
       </div>
 

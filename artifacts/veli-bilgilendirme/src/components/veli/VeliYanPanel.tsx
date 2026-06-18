@@ -100,7 +100,7 @@ export function VeliYanPanel({
         >
           {kopyalandi ? "Kopyalandı ✓" : "Metni kopyala"}
         </button>
-        <p className="mt-1.5 text-[10px] text-slate-400">WA butonu afişi paylaşır; bu metin veliye yazı olarak gidebilir.</p>
+        <p className="mt-1.5 text-[10px] text-slate-400">WhatsApp Metni tam mesajdır; WA Paylaş optimize görsel + metin gönderir.</p>
       </div>
     </div>
   );
