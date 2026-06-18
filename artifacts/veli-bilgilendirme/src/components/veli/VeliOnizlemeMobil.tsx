@@ -3,23 +3,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { FormData, SablonTuru } from "@/types";
 import { VeliOnizlemeIcerik } from "./VeliOnizlemeIcerik";
 import { VeliYanPanel } from "./VeliYanPanel";
-
-const POSTER_W = 520;
+import { VeliPreviewScaler } from "./VeliPreviewScaler";
 
 export function VeliOnizlemeMobil({
   form,
   sablon,
-  zoom,
   wrapperRef,
   onSablonOner,
   paylasBtnlari = null,
+  compact = false,
 }: {
   form: FormData;
   sablon: SablonTuru;
-  zoom: number;
   wrapperRef: RefObject<HTMLDivElement | null>;
   onSablonOner: (id: SablonTuru) => void;
   paylasBtnlari?: React.ReactNode;
+  /** Form adımlarında daha düşük önizleme yüksekliği. */
+  compact?: boolean;
 }) {
   const [detayAcik, setDetayAcik] = useState(false);
 
@@ -27,18 +27,11 @@ export function VeliOnizlemeMobil({
     <div className="flex flex-col gap-3 p-4 pb-6" style={{ background: "#e8edf2" }}>
       <div
         ref={wrapperRef}
-        style={{
-          width: "100%",
-          borderRadius: 20,
-          overflow: "hidden",
-          boxShadow: "0 20px 50px rgba(15,23,42,0.18)",
-        }}
+        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}`}
       >
-        <div style={{ zoom } as React.CSSProperties}>
-          <div style={{ width: POSTER_W }}>
-            <VeliOnizlemeIcerik form={form} sablon={sablon} />
-          </div>
-        </div>
+        <VeliPreviewScaler observeRef={wrapperRef} deps={[form, sablon]}>
+          <VeliOnizlemeIcerik form={form} sablon={sablon} />
+        </VeliPreviewScaler>
       </div>
 
       {paylasBtnlari}

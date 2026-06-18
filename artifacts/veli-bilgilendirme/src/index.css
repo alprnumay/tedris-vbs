@@ -1608,3 +1608,247 @@
     padding: 0;
   }
 }
+
+/* ─── Veli afiş artboard + önizleme motoru ─── */
+@layer components {
+  .tedris-app-header--veli-compact {
+    gap: 6px;
+    padding: 6px 10px;
+    padding-top: max(6px, env(safe-area-inset-top));
+  }
+
+  .tedris-app-header--veli-compact .tedris-app-header__brand-mobile {
+    display: none;
+  }
+
+  .tedris-app-header--veli-compact .tedris-header-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .tedris-app-header--veli-compact .tedris-header-pill-btn {
+    padding: 6px 8px;
+  }
+
+  .veli-poster-artboard {
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    background: #ffffff;
+    isolation: isolate;
+  }
+
+  .veli-poster-artboard__inner {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .veli-poster-artboard h1,
+  .veli-poster-artboard h2,
+  .veli-poster-artboard h3 {
+    max-width: 100%;
+    margin-inline: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: calc(var(--veli-line-height, 1.34) * 0.95);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--veli-title-lines, 3);
+    overflow: hidden;
+    font-size: calc(1em * var(--veli-title-scale, 1));
+  }
+
+  .veli-poster-artboard p,
+  .veli-poster-artboard li,
+  .veli-poster-artboard span,
+  .veli-poster-artboard div {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .veli-poster-artboard p {
+    line-height: var(--veli-line-height, 1.34);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--veli-body-lines, 8);
+    overflow: hidden;
+    font-size: calc(1em * var(--veli-body-scale, 1));
+  }
+
+  .veli-poster-artboard img {
+    max-width: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .veli-poster-artboard [style*="object-fit"] {
+    max-width: 100% !important;
+  }
+
+  .veli-poster-artboard[data-density="dense"] img {
+    max-height: 140px;
+  }
+
+  .veli-preview-scaler,
+  .veli-preview-scaler__frame {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .veli-preview-scaler__artboard {
+    will-change: transform;
+  }
+
+  .veli-mobile-preview-stage {
+    width: 100%;
+    height: min(58vh, 480px);
+    min-height: 220px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+    background: #eef2f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .veli-mobile-preview-stage--compact {
+    height: min(34vh, 260px);
+    min-height: 160px;
+  }
+
+  .veli-wizard-desktop-nav {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #f1f5f9;
+    box-sizing: border-box;
+  }
+
+  .veli-wizard-desktop-nav__slot--back {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .veli-wizard-desktop-nav__actions {
+    display: flex;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .veli-wizard-desktop-nav__btn {
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    box-sizing: border-box;
+  }
+
+  .veli-wizard-desktop-nav__btn--secondary {
+    border: 1.5px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+  }
+
+  .veli-wizard-desktop-nav__btn--draft {
+    flex: 0 0 auto;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+
+  .veli-wizard-desktop-nav__btn--primary {
+    flex: 1 1 auto;
+    border: none;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.28);
+  }
+
+  .veli-wizard-desktop-nav__btn--grow {
+    flex: 1 1 auto;
+  }
+
+  .veli-live-preview-strip {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    margin-top: 8px;
+    padding-top: 4px;
+    background: linear-gradient(180deg, transparent 0%, #f8fafc 24%);
+  }
+
+  .veli-live-preview-strip__toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 16px 16px 0 0;
+    border: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e3a5f;
+  }
+
+  .veli-live-preview-strip__panel {
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    background: rgba(255, 255, 255, 0.95);
+  }
+
+  .veli-live-preview-strip__body {
+    padding: 8px 12px 12px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  .veli-live-preview-strip__stage {
+    flex: 1;
+    min-width: 0;
+    height: 140px;
+    overflow: hidden;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    background: #eef2f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .veli-live-preview-strip__action {
+    flex-shrink: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .veli-wizard-mobile-content {
+    padding-bottom: calc(104px + env(safe-area-inset-bottom));
+  }
+}

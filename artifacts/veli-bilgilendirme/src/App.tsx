@@ -16,6 +16,8 @@ import { validateVeliWizardStep, VELI_WIZARD_STEPS, VELI_WIZARD_LAST_STEP } from
 import { PreviewPanel } from "./components/veli/wizard/PreviewPanel";
 import { QualityPanel } from "./components/veli/wizard/QualityPanel";
 import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
+import { VeliPreviewScaler } from "./components/veli/VeliPreviewScaler";
+import { VELI_POSTER_H, VELI_POSTER_W } from "./lib/veli/veliPosterEngine";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
@@ -36,8 +38,8 @@ const KurumsalKimlikModulu = lazy(() =>
   })),
 );
 
-const POSTER_W = 520;
-const POSTER_H_FALLBACK = 720;
+const POSTER_W = VELI_POSTER_W;
+const POSTER_H = VELI_POSTER_H;
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -83,11 +85,8 @@ function MainApp() {
   const downloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const desktopSahneRef = useRef<HTMLDivElement>(null);
-  const posterInnerRef = useRef<HTMLDivElement>(null);
   const adim2Ref = useRef<(() => void) | undefined>(undefined);
-  const [zoom, setZoom] = useState(1);
   const [desktopZoom, setDesktopZoom] = useState(0.72);
-  const [posterH, setPosterH] = useState(POSTER_H_FALLBACK);
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
   const veliModulLoglandi = useRef(false);
@@ -164,51 +163,6 @@ function MainApp() {
       setHomeModu("logo");
     }
   }, [kullanici, logoGelistirmeAcik]);
-
-  useEffect(() => {
-    function hesapla() {
-      if (!wrapperRef.current) return;
-      setZoom(Math.min(1, wrapperRef.current.clientWidth / POSTER_W));
-    }
-    hesapla();
-    const obs = new ResizeObserver(hesapla);
-    if (wrapperRef.current) obs.observe(wrapperRef.current);
-    return () => obs.disconnect();
-  }, [aktifSekme]);
-
-  const desktopOlcekHesapla = useCallback(() => {
-    const area = desktopSahneRef.current;
-    const inner = posterInnerRef.current;
-    if (!area || !inner) return;
-    const pad = 12;
-    const aw = area.clientWidth - pad * 2;
-    const ah = area.clientHeight - pad * 2;
-    const ph = inner.offsetHeight || POSTER_H_FALLBACK;
-    setPosterH(ph);
-    const s = Math.min(aw / POSTER_W, ah / ph, 1);
-    setDesktopZoom(s);
-  }, []);
-
-  useEffect(() => {
-    desktopOlcekHesapla();
-    const t1 = requestAnimationFrame(() => desktopOlcekHesapla());
-    const t2 = window.setTimeout(desktopOlcekHesapla, 120);
-    const obs = new ResizeObserver(desktopOlcekHesapla);
-    if (desktopSahneRef.current) obs.observe(desktopSahneRef.current);
-    if (posterInnerRef.current) obs.observe(posterInnerRef.current);
-    return () => {
-      cancelAnimationFrame(t1);
-      window.clearTimeout(t2);
-      obs.disconnect();
-    };
-  }, [desktopOlcekHesapla, form, seciliSablon]);
-
-  const desktopSigdir = useCallback(() => {
-    desktopOlcekHesapla();
-  }, [desktopOlcekHesapla]);
-
-  const desktopScaledW = Math.round(POSTER_W * desktopZoom);
-  const desktopScaledH = Math.round(posterH * desktopZoom);
 
   useEffect(() => {
     if (captureSnapshot && captureResolveFn.current) {
@@ -373,7 +327,7 @@ function MainApp() {
       const pdfH = pdf.internal.pageSize.getHeight();
       const margin = 15;
       const imgW = pdfW - margin * 2;
-      const imgH = (imgW * (downloadRef.current?.offsetHeight ?? 750)) / POSTER_W;
+      const imgH = (imgW * POSTER_H) / POSTER_W;
       const finalH = Math.min(imgH, pdfH - margin * 2);
       const y = (pdfH - finalH) / 2;
 
@@ -687,7 +641,7 @@ function MainApp() {
       <Toaster position="top-center" richColors />
 
       <header
-        className={`tedris-app-header flex-shrink-0${aktifSekme === "yonetim" ? " tedris-app-header--admin" : ""}`}
+        className={`tedris-app-header flex-shrink-0${aktifSekme === "yonetim" ? " tedris-app-header--admin" : ""}${aktifSekme === "form" ? " tedris-app-header--veli-compact" : ""}`}
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)",
         }}
@@ -836,23 +790,16 @@ function MainApp() {
                   <PreviewPanel
                     stageRef={desktopSahneRef}
                     zoomLabel={`${Math.round(desktopZoom * 100)}%`}
-                    onFit={desktopSigdir}
                   >
-                    <div
-                      className="veli-studio-poster-wrap"
-                      style={{ width: desktopScaledW, height: desktopScaledH, flexShrink: 0 }}
+                    <VeliPreviewScaler
+                      observeRef={desktopSahneRef}
+                      padding={12}
+                      frameClassName="veli-studio-poster-wrap"
+                      onScaleChange={setDesktopZoom}
+                      deps={[form, seciliSablon]}
                     >
-                      <div
-                        ref={posterInnerRef}
-                        style={{
-                          width: POSTER_W,
-                          transform: `scale(${desktopZoom})`,
-                          transformOrigin: "top center",
-                        }}
-                      >
-                        <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
-                      </div>
-                    </div>
+                      <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
+                    </VeliPreviewScaler>
                   </PreviewPanel>
                   {activeStep === VELI_WIZARD_LAST_STEP ? (
                     <>
@@ -916,7 +863,6 @@ function MainApp() {
               <VeliOnizlemeMobil
                 form={form}
                 sablon={seciliSablon}
-                zoom={zoom}
                 wrapperRef={wrapperRef}
                 onSablonOner={setSeciliSablon}
               />
@@ -932,7 +878,7 @@ function MainApp() {
                 <button type="button" onClick={() => setMobilOnizlemeAcik(false)} className="text-sm font-bold text-blue-600">Kapat</button>
               </div>
               <div className="flex-1 overflow-y-auto p-3">
-                <VeliOnizlemeMobil form={form} sablon={seciliSablon} zoom={zoom} wrapperRef={wrapperRef} onSablonOner={setSeciliSablon} />
+                <VeliOnizlemeMobil form={form} sablon={seciliSablon} wrapperRef={wrapperRef} onSablonOner={setSeciliSablon} compact />
               </div>
             </div>
           </div>
@@ -984,10 +930,12 @@ function MainApp() {
       </div>
 
       {captureSnapshot && (
-        <div style={{ position: "absolute", top: -9999, left: 0, width: POSTER_W, pointerEvents: "none" }}>
-          <div ref={downloadRef} style={{ width: POSTER_W, background: "#ffffff" }}>
-            <VeliOnizlemeIcerik form={captureSnapshot.form} sablon={captureSnapshot.sablon} />
-          </div>
+        <div style={{ position: "absolute", top: -9999, left: 0, pointerEvents: "none" }}>
+          <VeliOnizlemeIcerik
+            form={captureSnapshot.form}
+            sablon={captureSnapshot.sablon}
+            artboardRef={downloadRef}
+          />
         </div>
       )}
 

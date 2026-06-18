@@ -3,6 +3,7 @@ import { rejectClientSideRepair } from "./repairPolicy";
 import { isLocalDevApi, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
+const PUSH_DEVICE_KEY = "nehariPushDeviceId";
 const API_BASE = resolveApiBaseUrl();
 const PROJECT_API_KEY = import.meta.env.VITE_PROJECT_API_KEY || "";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -69,6 +70,28 @@ function headers(json = true, includeAuth = true): Headers {
   if (PROJECT_API_KEY) h.set("X-Project-Key", PROJECT_API_KEY);
   const token = getBackendToken();
   if (includeAuth && token) h.set("Authorization", `Bearer ${token}`);
+  return h;
+}
+
+function getPushDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(PUSH_DEVICE_KEY);
+    if (existing) return existing;
+
+    const id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `push-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(PUSH_DEVICE_KEY, id);
+    return id;
+  } catch {
+    return `push-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function pushHeaders(json = true, includeAuth = true): Headers {
+  const h = headers(json, includeAuth);
+  h.set("X-Push-Device-Id", getPushDeviceId());
   return h;
 }
 
@@ -146,7 +169,7 @@ async function pushRequest<T>(
   try {
     res = await fetch(`${pushBase}${path}`, {
       method,
-      headers: headers(body !== undefined, opts.includeAuth ?? true),
+      headers: pushHeaders(body !== undefined, opts.includeAuth ?? true),
       body: body !== undefined ? JSON.stringify(body) : undefined,
       credentials: "include",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

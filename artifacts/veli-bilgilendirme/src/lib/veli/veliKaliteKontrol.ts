@@ -1,6 +1,10 @@
 import type { FormData, SablonTuru } from "@/types";
 import { baslikAlternatifleri } from "@/lib/dil";
 import { SABLON_GORSEL_LIMITLERI } from "@/lib/sablonlar";
+import {
+  veliPosterOverflowRisk,
+  veliPosterUzunMetinUyarisi,
+} from "@/lib/veli/veliPosterEngine";
 
 export type KaliteDurum = "hazir" | "dikkat" | "eksik";
 
@@ -11,6 +15,7 @@ export type KaliteSonuc = {
   maddeler: KaliteMadde[];
   uyarilar: string[];
   oneriler: string[];
+  tasmaRiski: boolean;
 };
 
 export function veliKaliteKontrol(form: FormData, seciliSablon: SablonTuru): KaliteSonuc {
@@ -28,18 +33,31 @@ export function veliKaliteKontrol(form: FormData, seciliSablon: SablonTuru): Kal
   const metinUzun = form.posterMetni.length > 520;
   const gorselYok = form.gorseller.length === 0;
   const gorselAsim = form.gorseller.length > (SABLON_GORSEL_LIMITLERI[seciliSablon] ?? 4);
+  const tasmaRiski = veliPosterOverflowRisk(form);
+  const uzunMetinUyarisi = veliPosterUzunMetinUyarisi(form);
 
-  maddeler.push({ ok: kurumVar, metin: kurumVar ? "Kurum adı var" : "Kurum adı boş" });
-  maddeler.push({ ok: isimVar, metin: isimVar ? "Hoca / mesul adı var" : "Ad soyad boş" });
-  maddeler.push({ ok: turSecili, metin: turSecili ? "Faaliyet türü seçildi" : "Faaliyet türü seçilmedi" });
-  maddeler.push({ ok: alanVar, metin: alanVar ? "Ders / alan dolu" : "Ders / alan boş" });
+  maddeler.push({ ok: kurumVar, metin: kurumVar ? "Kimlik: kurum adı dolu" : "Kimlik: kurum adı eksik" });
+  maddeler.push({ ok: isimVar, metin: isimVar ? "Kimlik: ad soyad dolu" : "Kimlik: ad soyad eksik" });
+  maddeler.push({ ok: turSecili, metin: turSecili ? "Çalışma: faaliyet türü seçildi" : "Çalışma: faaliyet türü eksik" });
+  maddeler.push({ ok: alanVar, metin: alanVar ? "Çalışma: ders / alan dolu" : "Çalışma: ders / alan eksik" });
   maddeler.push({
-    ok: !baslikUzun && !metinUzun,
-    metin: !baslikUzun && !metinUzun ? "Metin uzunluğu uygun" : "Metin uzunluğu kontrol edilmeli",
+    ok: !gorselYok,
+    metin: gorselYok ? "Görsel: henüz yüklenmedi" : "Görsel: en az bir fotoğraf var",
   });
   maddeler.push({
-    ok: !gorselAsim,
-    metin: gorselYok ? "Görsel yok (görselsiz düzen)" : gorselAsim ? "Görsel sayısı fazla" : "Görsel düzeni uygun",
+    ok: !baslikUzun && !metinUzun && !tasmaRiski,
+    metin:
+      !baslikUzun && !metinUzun && !tasmaRiski
+        ? "Metin: afiş alanına uygun"
+        : "Metin: uzunluk / taşma riski var",
+  });
+  maddeler.push({
+    ok: !gorselAsim && !tasmaRiski,
+    metin: gorselAsim
+      ? "Düzen: görsel sayısı limiti aşıyor"
+      : tasmaRiski
+        ? "Düzen: yoğun içerik — kısaltma önerilir"
+        : "Düzen: taşma riski düşük",
   });
 
   if (!kurumVar) uyarilar.push("Kurum adı boş. Afişin üst kısmı eksik görünebilir.");
@@ -48,8 +66,10 @@ export function veliKaliteKontrol(form: FormData, seciliSablon: SablonTuru): Kal
   if (!alanVar) uyarilar.push("Ders / alan boş. Afiş metni daha genel oluşabilir.");
   if (baslikUzun) uyarilar.push("Başlık uzun görünüyor. Daha kısa yazarsanız afiş daha düzenli olur.");
   if (metinUzun) uyarilar.push("Poster metni uzun. Kısa metin afişte daha okunaklı olur.");
-  if (gorselYok) uyarilar.push("Fotoğraf eklenmedi. Görselsiz şablonlar daha uygun olabilir.");
+  if (uzunMetinUyarisi) uyarilar.push(uzunMetinUyarisi);
+  if (gorselYok) uyarilar.push("Fotoğraf eklenmedi. Görselsiz şablonlar da kullanılabilir.");
   if (gorselAsim) uyarilar.push("Yüklenen fotoğraf sayısı şablon limitini aşıyor; fazlaları görünmez.");
+  if (tasmaRiski) uyarilar.push("İçerik yoğun. Font küçültme ve satır sınırı uygulanır; metni kısaltmanız önerilir.");
 
   if (!baslikUzun && baslik.length > 0 && baslik.length <= 28) {
     oneriler.push("Başlık kısa olduğu için afiş daha dengeli görünecek.");
@@ -57,15 +77,18 @@ export function veliKaliteKontrol(form: FormData, seciliSablon: SablonTuru): Kal
   if (form.metinUzunlugu === "kisa") {
     oneriler.push("Kısa metin seçildi; afişte temiz bir görünüm beklenir.");
   }
+  if (gorselYok && !tasmaRiski) {
+    oneriler.push("Görselsiz kurumsal şablonlar sade bir görünüm sağlar.");
+  }
 
   const eksikSayisi = [!kurumVar, !isimVar, !turSecili].filter(Boolean).length;
   const uyariSayisi = uyarilar.length;
 
   let durum: KaliteDurum = "hazir";
   if (eksikSayisi >= 2) durum = "eksik";
-  else if (uyariSayisi > 0) durum = "dikkat";
+  else if (uyariSayisi > 0 || tasmaRiski) durum = "dikkat";
 
-  return { durum, maddeler, uyarilar, oneriler };
+  return { durum, maddeler, uyarilar, oneriler, tasmaRiski };
 }
 
 export function veliSistemOnerileri(form: FormData, seciliSablon: SablonTuru): string[] {

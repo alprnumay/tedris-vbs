@@ -758,20 +758,39 @@ export default function FormAlani({
   })();
 
   const wizardDesktopNav = (
-    <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
-      {activeStep > 0 ? (
-        <button type="button" onClick={onWizardGeri ?? (() => setActiveStep(activeStep - 1))} style={secondaryBtn}>Geri</button>
-      ) : <span />}
-      {onTaslakKaydet ? (
-        <button type="button" onClick={onTaslakKaydet} disabled={taslakKaydediliyor} style={{ ...secondaryBtn, flex: "0 0 auto", padding: "10px 12px", fontSize: 11 }}>
-          {taslakKaydediliyor ? "..." : "Taslak"}
-        </button>
-      ) : null}
-      {activeStep < VELI_WIZARD_LAST_STEP ? (
-        <button type="button" onClick={onWizardIleri ?? (() => setActiveStep(activeStep + 1))} style={{ ...primaryBtn, flex: 1 }}>Devam Et</button>
-      ) : (
-        onWizardGeri ? <button type="button" onClick={onWizardGeri} style={{ ...secondaryBtn, flex: 1 }}>Düzenlemeye Dön</button> : null
-      )}
+    <div className="veli-wizard-desktop-nav">
+      <div className="veli-wizard-desktop-nav__slot veli-wizard-desktop-nav__slot--back">
+        {activeStep > 0 ? (
+          <button type="button" onClick={onWizardGeri ?? (() => setActiveStep(activeStep - 1))} className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary">
+            Geri
+          </button>
+        ) : null}
+      </div>
+      <div className="veli-wizard-desktop-nav__actions">
+        {onTaslakKaydet ? (
+          <button
+            type="button"
+            onClick={onTaslakKaydet}
+            disabled={taslakKaydediliyor}
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary veli-wizard-desktop-nav__btn--draft"
+          >
+            {taslakKaydediliyor ? "..." : "Kaydet"}
+          </button>
+        ) : null}
+        {activeStep < VELI_WIZARD_LAST_STEP ? (
+          <button
+            type="button"
+            onClick={onWizardIleri ?? (() => setActiveStep(activeStep + 1))}
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--primary"
+          >
+            Devam Et
+          </button>
+        ) : onWizardGeri ? (
+          <button type="button" onClick={onWizardGeri} className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary veli-wizard-desktop-nav__btn--grow">
+            Düzenlemeye Dön
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 

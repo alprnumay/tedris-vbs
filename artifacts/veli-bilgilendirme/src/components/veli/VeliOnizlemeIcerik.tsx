@@ -1,5 +1,7 @@
+import type { Ref } from "react";
 import { FormData, SablonTuru } from "@/types";
 import { PRO_SABLON_IDS, SABLON_GORSEL_LIMITLERI } from "@/lib/sablonlar";
+import { VeliPosterArtboard } from "./VeliPosterArtboard";
 import SablonAkademik from "@/components/sablonlar/SablonAkademik";
 import SablonEtkinlik from "@/components/sablonlar/SablonEtkinlik";
 import SablonBulten from "@/components/sablonlar/SablonBulten";
@@ -22,20 +24,36 @@ function bugunTarih(): string {
   }
 }
 
-export function VeliOnizlemeIcerik({ form, sablon }: { form: FormData; sablon: SablonTuru }) {
+function sablonIcerik(form: FormData, sablon: SablonTuru, tarih: string) {
+  if (sablon === "akademik") return <SablonAkademik form={form} tarih={tarih} />;
+  if (sablon === "etkinlik") return <SablonEtkinlik form={form} tarih={tarih} />;
+  if (sablon === "bulten") return <SablonBulten form={form} tarih={tarih} />;
+  if (sablon === "premium-minimal") return <SablonPremiumMinimal form={form} tarih={tarih} />;
+  if (sablon === "kartli-bilgi") return <SablonKartliBilgi form={form} tarih={tarih} />;
+  if (sablon === "kurumsal-resmi") return <SablonKurumsalResmi form={form} tarih={tarih} />;
+  if (sablon === "hikaye") return <SablonHikaye form={form} tarih={tarih} />;
+  if (sablon === "fotograf-odakli") return <SablonFotografOdakli form={form} tarih={tarih} />;
+  if ((PRO_SABLON_IDS as string[]).includes(sablon)) return <SablonPro form={form} tarih={tarih} sablonId={sablon} />;
+  if (TEMALI.includes(sablon)) return <SablonTemali form={form} tarih={tarih} sablonId={sablon} />;
+  return <SablonAkademik form={form} tarih={tarih} />;
+}
+
+export function VeliOnizlemeIcerik({
+  form,
+  sablon,
+  artboardRef,
+}: {
+  form: FormData;
+  sablon: SablonTuru;
+  artboardRef?: Ref<HTMLDivElement>;
+}) {
   const tarih = bugunTarih();
   const limit = SABLON_GORSEL_LIMITLERI[sablon] ?? 4;
   const f = { ...form, gorseller: form.gorseller.slice(0, limit) };
 
-  if (sablon === "akademik") return <SablonAkademik form={f} tarih={tarih} />;
-  if (sablon === "etkinlik") return <SablonEtkinlik form={f} tarih={tarih} />;
-  if (sablon === "bulten") return <SablonBulten form={f} tarih={tarih} />;
-  if (sablon === "premium-minimal") return <SablonPremiumMinimal form={f} tarih={tarih} />;
-  if (sablon === "kartli-bilgi") return <SablonKartliBilgi form={f} tarih={tarih} />;
-  if (sablon === "kurumsal-resmi") return <SablonKurumsalResmi form={f} tarih={tarih} />;
-  if (sablon === "hikaye") return <SablonHikaye form={f} tarih={tarih} />;
-  if (sablon === "fotograf-odakli") return <SablonFotografOdakli form={f} tarih={tarih} />;
-  if ((PRO_SABLON_IDS as string[]).includes(sablon)) return <SablonPro form={f} tarih={tarih} sablonId={sablon} />;
-  if (TEMALI.includes(sablon)) return <SablonTemali form={f} tarih={tarih} sablonId={sablon} />;
-  return <SablonAkademik form={f} tarih={tarih} />;
+  return (
+    <VeliPosterArtboard form={f} artboardRef={artboardRef}>
+      {sablonIcerik(f, sablon, tarih)}
+    </VeliPosterArtboard>
+  );
 }

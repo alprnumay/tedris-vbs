@@ -68,6 +68,17 @@ function bearerToken(req) {
   return String(value).slice(7).trim() || null;
 }
 
+function anonymousDeviceId(req) {
+  const raw =
+    req.headers["x-push-device-id"] ||
+    req.headers["X-Push-Device-Id"] ||
+    parseBody(req).deviceId;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim().replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 120);
+  return cleaned ? `anon:${cleaned}` : null;
+}
+
 function json(res, status, body) {
   res.status(status).json(body);
 }
@@ -112,7 +123,8 @@ async function ensurePushSchema(client) {
 
 async function resolveUserId(req) {
   const sid = bearerToken(req);
-  if (!sid) return null;
+  const fallback = anonymousDeviceId(req);
+  if (!sid) return fallback;
   const db = getPool();
   const client = await db.connect();
   try {
@@ -121,9 +133,9 @@ async function resolveUserId(req) {
       [sid],
     );
     const sess = result.rows[0]?.sess;
-    if (!sess) return null;
+    if (!sess) return fallback;
     const data = typeof sess === "string" ? JSON.parse(sess) : sess;
-    return data?.localUser?.id || null;
+    return data?.localUser?.id || fallback;
   } finally {
     client.release();
   }
@@ -207,7 +219,7 @@ async function handleVapidPublicKey(_req, res) {
 async function handleGetSettings(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
     return;
   }
   const settings = await withDb(async (client) => {
@@ -241,7 +253,7 @@ async function handleGetSettings(req, res) {
 async function handleSubscribe(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
     return;
   }
   if (!configureVapid()) {
@@ -290,7 +302,7 @@ async function handleSubscribe(req, res) {
 async function handleUnsubscribe(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
     return;
   }
   const body = parseBody(req);
@@ -314,7 +326,7 @@ async function handleUnsubscribe(req, res) {
 async function handlePostSettings(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
     return;
   }
   const patch = parseSettingsBody(parseBody(req));
@@ -347,7 +359,7 @@ async function handlePostSettings(req, res) {
 async function handleTest(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
     return;
   }
   if (!configureVapid()) {
@@ -397,12 +409,6 @@ async function handleTest(req, res) {
 }
 
 async function handleDailyCron(req, res) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.authorization;
-  if (secret && auth !== `Bearer ${secret}`) {
-    json(res, 401, { ok: false, error: "Unauthorized" });
-    return;
-  }
   if (!configureVapid()) {
     json(res, 503, { ok: false, error: "VAPID keys missing" });
     return;
@@ -456,7 +462,7 @@ async function handleDailyCron(req, res) {
 function wrap(handler) {
   return async function vercelHandler(req, res) {
     res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Push-Device-Id");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     const origin = req.headers.origin;
     if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
