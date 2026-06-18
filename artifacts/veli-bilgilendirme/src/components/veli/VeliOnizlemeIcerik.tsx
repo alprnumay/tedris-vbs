@@ -2,9 +2,6 @@ import type { Ref } from "react";
 import { FormData, SablonTuru } from "@/types";
 import { PRO_SABLON_IDS, SABLON_GORSEL_LIMITLERI } from "@/lib/sablonlar";
 import { VeliPosterArtboard } from "./VeliPosterArtboard";
-import { VeliWhatsappArtboard } from "./VeliWhatsappArtboard";
-import { VeliWhatsappPoster } from "./VeliWhatsappPoster";
-import type { VeliPreviewMode } from "./wizard/PreviewModeToggle";
 import SablonAkademik from "@/components/sablonlar/SablonAkademik";
 import SablonEtkinlik from "@/components/sablonlar/SablonEtkinlik";
 import SablonBulten from "@/components/sablonlar/SablonBulten";
@@ -41,28 +38,19 @@ function sablonIcerik(form: FormData, sablon: SablonTuru, tarih: string) {
   return <SablonAkademik form={form} tarih={tarih} />;
 }
 
+/** Tek ana afiş renderer — önizleme, PNG, PDF ve WhatsApp paylaşımı buradan beslenir. */
 export function VeliOnizlemeIcerik({
   form,
   sablon,
   artboardRef,
-  mode = "normal",
 }: {
   form: FormData;
   sablon: SablonTuru;
   artboardRef?: Ref<HTMLDivElement>;
-  mode?: VeliPreviewMode;
 }) {
   const tarih = bugunTarih();
   const limit = SABLON_GORSEL_LIMITLERI[sablon] ?? 4;
   const f = { ...form, gorseller: form.gorseller.slice(0, limit) };
-
-  if (mode === "whatsapp") {
-    return (
-      <VeliWhatsappArtboard artboardRef={artboardRef}>
-        <VeliWhatsappPoster form={f} sablon={sablon} />
-      </VeliWhatsappArtboard>
-    );
-  }
 
   return (
     <VeliPosterArtboard form={f} artboardRef={artboardRef}>

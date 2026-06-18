@@ -5,8 +5,7 @@ import { VeliOnizlemeIcerik } from "./VeliOnizlemeIcerik";
 import { VeliYanPanel } from "./VeliYanPanel";
 import { VeliPreviewScaler } from "./VeliPreviewScaler";
 import type { VeliPreviewMode } from "./wizard/PreviewModeToggle";
-import { VELI_POSTER_H, VELI_POSTER_W } from "@/lib/veli/veliPosterEngine";
-import { VELI_WA_POSTER_H, VELI_WA_POSTER_W } from "@/lib/veli/veliWhatsappPosterEngine";
+import { WhatsappChatPreviewShell } from "./wizard/WhatsappChatPreviewShell";
 
 export function VeliOnizlemeMobil({
   form,
@@ -26,23 +25,24 @@ export function VeliOnizlemeMobil({
   previewMode?: VeliPreviewMode;
 }) {
   const [detayAcik, setDetayAcik] = useState(false);
-  const artboardW = previewMode === "whatsapp" ? VELI_WA_POSTER_W : VELI_POSTER_W;
-  const artboardH = previewMode === "whatsapp" ? VELI_WA_POSTER_H : VELI_POSTER_H;
+
+  const posterPreview = (
+    <VeliPreviewScaler observeRef={wrapperRef} deps={[form, sablon]}>
+      <VeliOnizlemeIcerik form={form} sablon={sablon} />
+    </VeliPreviewScaler>
+  );
 
   return (
     <div className="flex flex-col gap-3 p-4 pb-6" style={{ background: "#e8edf2" }}>
       <div
         ref={wrapperRef}
-        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}${previewMode === "whatsapp" ? " veli-mobile-preview-stage--whatsapp" : ""}`}
+        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}${previewMode === "whatsapp" ? " veli-mobile-preview-stage--chat" : ""}`}
       >
-        <VeliPreviewScaler
-          observeRef={wrapperRef}
-          artboardWidth={artboardW}
-          artboardHeight={artboardH}
-          deps={[form, sablon, previewMode]}
-        >
-          <VeliOnizlemeIcerik form={form} sablon={sablon} mode={previewMode} />
-        </VeliPreviewScaler>
+        {previewMode === "whatsapp" ? (
+          <WhatsappChatPreviewShell>{posterPreview}</WhatsappChatPreviewShell>
+        ) : (
+          posterPreview
+        )}
       </div>
 
       {paylasBtnlari}

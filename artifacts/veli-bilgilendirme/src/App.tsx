@@ -15,12 +15,11 @@ import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
 import { validateVeliWizardStep, VELI_WIZARD_STEPS, VELI_WIZARD_LAST_STEP } from "./lib/veli/veliWizardSteps";
 import { PreviewPanel } from "./components/veli/wizard/PreviewPanel";
 import { PreviewModeToggle, type VeliPreviewMode } from "./components/veli/wizard/PreviewModeToggle";
+import { WhatsappChatPreviewShell } from "./components/veli/wizard/WhatsappChatPreviewShell";
 import { QualityPanel } from "./components/veli/wizard/QualityPanel";
-import { WhatsAppQualityPanel } from "./components/veli/wizard/WhatsAppQualityPanel";
 import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
 import { VeliPreviewScaler } from "./components/veli/VeliPreviewScaler";
 import { VELI_POSTER_H, VELI_POSTER_W } from "./lib/veli/veliPosterEngine";
-import { VELI_WA_POSTER_H, VELI_WA_POSTER_W } from "./lib/veli/veliWhatsappPosterEngine";
 import { veliWhatsappMesajiOlustur } from "./lib/veli/veliWhatsappMesaji";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
@@ -76,7 +75,6 @@ function MainApp() {
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
   const [indiriliyor, setIndiriliyor] = useState(false);
   const [pdfYukleniyor, setPdfYukleniyor] = useState(false);
-  const [waGorselIndiriliyor, setWaGorselIndiriliyor] = useState(false);
   const [waPaylasiliyor, setWaPaylasiliyor] = useState(false);
   const [previewMode, setPreviewMode] = useState<VeliPreviewMode>("normal");
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
@@ -90,16 +88,11 @@ function MainApp() {
   const [sonTaslakId, setSonTaslakId] = useState<string | number | null>(null);
 
   const downloadRef = useRef<HTMLDivElement>(null);
-  const waDownloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const desktopSahneRef = useRef<HTMLDivElement>(null);
   const adim2Ref = useRef<(() => void) | undefined>(undefined);
   const [desktopZoom, setDesktopZoom] = useState(0.72);
-  const [captureSnapshot, setCaptureSnapshot] = useState<{
-    form: FormData;
-    sablon: SablonTuru;
-    mode: VeliPreviewMode;
-  } | null>(null);
+  const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
   const veliModulLoglandi = useRef(false);
 
@@ -195,27 +188,24 @@ function MainApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.faaliyetSayisi, form.ekNot, form.metinUzunlugu, metinDuzenlendi, JSON.stringify(form.faaliyetler)]);
 
-  const posterPngYakala = async (mode: VeliPreviewMode = "normal"): Promise<string | null> => {
+  const posterPngYakala = async (): Promise<string | null> => {
     await new Promise<void>((resolve) => {
       captureResolveFn.current = resolve;
-      setCaptureSnapshot({ form, sablon: seciliSablon, mode });
+      setCaptureSnapshot({ form, sablon: seciliSablon });
     });
 
-    const targetRef = mode === "whatsapp" ? waDownloadRef : downloadRef;
-    if (!targetRef.current) {
+    if (!downloadRef.current) {
       setCaptureSnapshot(null);
       return null;
     }
 
     try {
-      const canvas = await html2canvas(targetRef.current, {
-        scale: mode === "whatsapp" ? 1 : 2.5,
+      const canvas = await html2canvas(downloadRef.current, {
+        scale: 2.5,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: mode === "whatsapp" ? "#0f172a" : "#ffffff",
+        backgroundColor: "#ffffff",
         logging: false,
-        width: mode === "whatsapp" ? VELI_WA_POSTER_W : undefined,
-        height: mode === "whatsapp" ? VELI_WA_POSTER_H : undefined,
       });
       setCaptureSnapshot(null);
       return canvas.toDataURL("image/png");
@@ -311,7 +301,7 @@ function MainApp() {
   const afisiIndir = async () => {
     setIndiriliyor(true);
     try {
-      const dataUrl = await posterPngYakala("normal");
+      const dataUrl = await posterPngYakala();
       if (!dataUrl) return;
       aktiviteKaydet("export_png");
       backendEvent("poster_downloaded", { format: "png" });
@@ -334,7 +324,7 @@ function MainApp() {
   const pdfIndir = async () => {
     setPdfYukleniyor(true);
     try {
-      const dataUrl = await posterPngYakala("normal");
+      const dataUrl = await posterPngYakala();
       if (!dataUrl) return;
 
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -365,41 +355,14 @@ function MainApp() {
     }
   };
 
-  const whatsappGorselIndir = async () => {
-    setWaGorselIndiriliyor(true);
-    try {
-      const dataUrl = await posterPngYakala("whatsapp");
-      if (!dataUrl) {
-        toast.error("WhatsApp görseli oluşturulamadı.");
-        return;
-      }
-      aktiviteKaydet("export_whatsapp_image");
-      backendEvent("poster_downloaded", { format: "whatsapp_png" });
-
-      if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-        window.open(dataUrl, "_blank");
-      } else {
-        const link = document.createElement("a");
-        link.download = `nehari-whatsapp-${seciliSablon}.png`;
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-      toast.success("WhatsApp görseli indirildi (1080×1350).");
-    } finally {
-      setWaGorselIndiriliyor(false);
-    }
-  };
-
   const whatsappPaylas = async () => {
     setWaPaylasiliyor(true);
     const metin = veliWhatsappMesajiOlustur(form);
 
     try {
-      const dataUrl = await posterPngYakala("whatsapp");
+      const dataUrl = await posterPngYakala();
       if (!dataUrl) {
-        toast.error("WhatsApp görseli oluşturulamadı.");
+        toast.error("Afiş görseli oluşturulamadı.");
         return;
       }
 
@@ -412,7 +375,7 @@ function MainApp() {
       if (navigator.share) {
         try {
           const blob = await (await fetch(dataUrl)).blob();
-          const file = new File([blob], "veli-bilgilendirme-whatsapp.png", { type: "image/png" });
+          const file = new File([blob], `nehari-veli-bilgilendirme-${seciliSablon}.png`, { type: "image/png" });
           if (navigator.canShare({ files: [file], text: metin })) {
             await navigator.share({
               files: [file],
@@ -421,7 +384,7 @@ function MainApp() {
             });
             aktiviteKaydet("share_whatsapp");
             backendEvent("poster_downloaded", { format: "whatsapp_share" });
-            toast.success("Paylaşım açıldı. Metin panoya da kopyalandı.");
+            toast.success("Paylaşım açıldı. Görsel önizleme ile aynıdır.");
             return;
           }
         } catch {
@@ -430,7 +393,7 @@ function MainApp() {
       }
 
       const link = document.createElement("a");
-      link.download = `nehari-whatsapp-${seciliSablon}.png`;
+      link.download = `nehari-veli-bilgilendirme-${seciliSablon}.png`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
@@ -438,7 +401,7 @@ function MainApp() {
 
       window.open(`https://wa.me/?text=${encodeURIComponent(metin)}`, "_blank");
       aktiviteKaydet("share_whatsapp");
-      toast.info("WhatsApp görseli indirildi ve metin panoya kopyalandı. Sohbete görseli ekleyip metni yapıştırabilirsiniz.");
+      toast.info("PNG indirildi (önizleme ile aynı). Metin panoya kopyalandı.");
     } finally {
       setWaPaylasiliyor(false);
     }
@@ -607,6 +570,20 @@ function MainApp() {
     cursor: aktif ? "wait" : "pointer",
   });
 
+  const posterOnizleme = (
+    <VeliPreviewScaler
+      observeRef={desktopSahneRef}
+      padding={12}
+      frameClassName="veli-studio-poster-wrap"
+      artboardWidth={POSTER_W}
+      artboardHeight={POSTER_H}
+      onScaleChange={setDesktopZoom}
+      deps={[form, seciliSablon]}
+    >
+      <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
+    </VeliPreviewScaler>
+  );
+
   const PaylasCiktiBtnlari = () => (
     <div className="veli-export-actions">
       <button
@@ -615,7 +592,7 @@ function MainApp() {
         disabled={indiriliyor}
         style={paylasBtnStil("linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)", indiriliyor)}
       >
-        {indiriliyor ? "…" : "Normal PNG"}
+        {indiriliyor ? "…" : "PNG"}
       </button>
       <button
         type="button"
@@ -624,14 +601,6 @@ function MainApp() {
         style={paylasBtnStil("linear-gradient(135deg, #dc2626 0%, #ef4444 100%)", pdfYukleniyor)}
       >
         {pdfYukleniyor ? "…" : "PDF"}
-      </button>
-      <button
-        type="button"
-        onClick={() => void whatsappGorselIndir()}
-        disabled={waGorselIndiriliyor}
-        style={paylasBtnStil("linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", waGorselIndiriliyor)}
-      >
-        {waGorselIndiriliyor ? "…" : "WhatsApp Görseli"}
       </button>
       <button
         type="button"
@@ -650,9 +619,6 @@ function MainApp() {
       </button>
     </div>
   );
-
-  const previewArtboardW = previewMode === "whatsapp" ? VELI_WA_POSTER_W : POSTER_W;
-  const previewArtboardH = previewMode === "whatsapp" ? VELI_WA_POSTER_H : POSTER_H;
 
   const TaslakMenu = () => (
     <div className="relative">
@@ -834,24 +800,21 @@ function MainApp() {
                   <PreviewPanel
                     stageRef={desktopSahneRef}
                     zoomLabel={`${Math.round(desktopZoom * 100)}%`}
-                    hint={previewMode === "whatsapp" ? "1080×1350 WhatsApp paylaşım görseli — sohbette daha okunur" : undefined}
+                    hint={
+                      previewMode === "whatsapp"
+                        ? "Aynı afiş; WhatsApp sohbetinde küçültülmüş görünüm simülasyonu"
+                        : undefined
+                    }
                   >
-                    <VeliPreviewScaler
-                      observeRef={desktopSahneRef}
-                      padding={12}
-                      frameClassName="veli-studio-poster-wrap"
-                      artboardWidth={previewArtboardW}
-                      artboardHeight={previewArtboardH}
-                      onScaleChange={setDesktopZoom}
-                      deps={[form, seciliSablon, previewMode]}
-                    >
-                      <VeliOnizlemeIcerik form={form} sablon={seciliSablon} mode={previewMode} />
-                    </VeliPreviewScaler>
+                    {previewMode === "whatsapp" ? (
+                      <WhatsappChatPreviewShell>{posterOnizleme}</WhatsappChatPreviewShell>
+                    ) : (
+                      posterOnizleme
+                    )}
                   </PreviewPanel>
                   {activeStep === VELI_WIZARD_LAST_STEP ? (
                     <>
                       <QualityPanel form={form} seciliSablon={seciliSablon} full />
-                      <WhatsAppQualityPanel form={form} />
                       <div className="veli-studio-actions veli-studio-actions--exports">
                         <PaylasCiktiBtnlari />
                       </div>
@@ -909,7 +872,6 @@ function MainApp() {
             <div className="p-4 space-y-4">
               <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} compact />
               <QualityPanel form={form} seciliSablon={seciliSablon} full />
-              <WhatsAppQualityPanel form={form} />
               <VeliOnizlemeMobil
                 form={form}
                 sablon={seciliSablon}
@@ -972,7 +934,6 @@ function MainApp() {
                 <div className="veli-wizard-bottom-bar__exports veli-wizard-bottom-bar__exports--full">
                   <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--primary veli-wizard-bottom-bar__btn--compact">PNG</button>
                   <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--danger veli-wizard-bottom-bar__btn--compact">PDF</button>
-                  <button type="button" onClick={() => void whatsappGorselIndir()} disabled={waGorselIndiriliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--teal veli-wizard-bottom-bar__btn--compact">WA Görsel</button>
                   <button type="button" onClick={() => void whatsappMetniKopyala()} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--secondary veli-wizard-bottom-bar__btn--compact">WA Metin</button>
                   <button type="button" onClick={() => void whatsappPaylas()} disabled={waPaylasiliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">Paylaş</button>
                 </div>
@@ -987,8 +948,7 @@ function MainApp() {
           <VeliOnizlemeIcerik
             form={captureSnapshot.form}
             sablon={captureSnapshot.sablon}
-            mode={captureSnapshot.mode}
-            artboardRef={captureSnapshot.mode === "whatsapp" ? waDownloadRef : downloadRef}
+            artboardRef={downloadRef}
           />
         </div>
       )}
