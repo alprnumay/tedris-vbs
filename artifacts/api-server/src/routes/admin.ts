@@ -15,6 +15,7 @@ import { sifreFromMintika } from "../lib/mintikaSifre";
 import { resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
 import { normalizeDistrictName } from "../lib/trackedDistricts";
 import { normalizeTurkish, removeDistrictPrefixFromInstitutionName } from "../lib/normalizeTurkish";
+import { resolveReportScopeFields } from "../lib/reportAccess";
 
 const router: IRouter = Router();
 router.use("/admin", requireAdmin);
@@ -50,6 +51,8 @@ function mapUser(u: LocalUser) {
     role,
     isActive: u.isActive,
     isAdmin: role === "admin",
+    reportScopeType: u.reportScopeType ?? "own",
+    reportScopeMintikas: Array.isArray(u.reportScopeMintikas) ? u.reportScopeMintikas : [],
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
     deletedAt: u.deletedAt ? u.deletedAt.toISOString() : null,
     createdAt: u.createdAt.toISOString(),
@@ -309,6 +312,17 @@ router.post("/admin/users", async (req: Request, res: Response) => {
 
   const normRole = normalizeRole(role, isAdmin);
   const passwordHash = await bcrypt.hash(pwd, 12);
+  let reportScope = { reportScopeType: "own" as const, reportScopeMintikas: [] as string[] };
+  try {
+    reportScope = resolveReportScopeFields(req.body as Record<string, unknown>);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "Rapor yetkisi geçersiz." });
+    return;
+  }
+  if (normRole === "admin") {
+    reportScope = { reportScopeType: "all", reportScopeMintikas: [] };
+  }
+
   const [user] = await db
     .insert(localUsersTable)
     .values({
@@ -323,6 +337,8 @@ router.post("/admin/users", async (req: Request, res: Response) => {
       role: normRole,
       isActive: isActive !== false,
       isAdmin: normRole === "admin",
+      reportScopeType: reportScope.reportScopeType,
+      reportScopeMintikas: reportScope.reportScopeMintikas,
     })
     .returning();
 
@@ -505,6 +521,25 @@ router.patch("/admin/users/:id", async (req: Request, res: Response) => {
     updates.isAdmin = normRole === "admin";
   }
   if (body.isActive != null) updates.isActive = Boolean(body.isActive);
+  const finalRole = String(updates.role ?? existing.role ?? "hoca");
+  if (
+    body.reportScopeType != null ||
+    body.report_scope_type != null ||
+    body.reportScopeMintikas != null ||
+    body.report_scope_mintikas != null
+  ) {
+    try {
+      const scope = resolveReportScopeFields(body);
+      updates.reportScopeType = finalRole === "admin" ? "all" : scope.reportScopeType;
+      updates.reportScopeMintikas = finalRole === "admin" ? [] : scope.reportScopeMintikas;
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Rapor yetkisi geçersiz." });
+      return;
+    }
+  } else if (finalRole === "admin") {
+    updates.reportScopeType = "all";
+    updates.reportScopeMintikas = [];
+  }
 
   const [user] = await db
     .update(localUsersTable)

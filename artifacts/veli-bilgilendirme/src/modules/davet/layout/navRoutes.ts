@@ -1,9 +1,13 @@
 /** Nehari Platformu içi (wouter base=/davet) ana menü */
 export const NEHARI_PLATFORM_HREF = "/";
 
-/** Tedris VBS ana kategori ekranı — tam sayfa geçişi gerekir */
-export const APP_HOME_PATH = "/";
+/**
+ * Platformun tek ana sayfası — Nehari Çalışma Paneli.
+ * Tüm "Ana sayfaya dön" bağlantıları buraya yönlendirilir.
+ */
+export const HOME_ROUTE = "/davet";
+export const APP_HOME_PATH = HOME_ROUTE;
 
 export function goToAppHome() {
-  window.location.assign(APP_HOME_PATH);
+  window.location.assign(HOME_ROUTE);
 }

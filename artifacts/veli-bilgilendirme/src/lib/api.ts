@@ -21,6 +21,20 @@ import {
   repairApiUrl,
   REPAIR_MAINTENANCE_MESSAGE,
 } from "./repairPolicy";
+import {
+  getReportAccessForUser,
+  isDistrictAllowedByReportAccess,
+  kullaniciRaporGorebilirMi,
+  kullaniciTamRaporYetkiliMi,
+  reportScopeLabel,
+} from "./admin/reportAccess";
+
+export {
+  getReportAccessForUser,
+  kullaniciRaporGorebilirMi,
+  kullaniciTamRaporYetkiliMi,
+  reportScopeLabel,
+};
 
 const SESSION_TOKEN_KEY = "tedris_session_token";
 const PRIMARY_ADMIN_EMAIL = "alprn0604@gmail.com";
@@ -98,7 +112,7 @@ async function resolveViewerUsesAdminRecords(): Promise<boolean> {
   }
   const me = await backendApi.me().catch(() => null);
   const user = me ? kullaniciFromBackend(me.user ?? (me as BackendUser)) : null;
-  viewerAdminCache = isVpsAdminUser(user);
+  viewerAdminCache = kullaniciTamRaporYetkiliMi(user);
   return viewerAdminCache;
 }
 
@@ -251,6 +265,8 @@ export interface KullaniciBilgisi {
   allowedCities?: string[];
   allowedInstitutions?: string[];
   reportPermissions?: ReportPermission[];
+  reportScopeType?: string;
+  reportScopeMintikas?: string[];
 }
 
 export interface KayitliProfil {
@@ -305,6 +321,8 @@ interface AppUserRecordData {
   allowedCities?: string[];
   allowedInstitutions?: string[];
   reportPermissions?: ReportPermission[];
+  reportScopeType?: string;
+  reportScopeMintikas?: string[];
   lastLoginAt?: string | null;
   deletedAt?: string | null;
   createdAt?: string;
@@ -497,6 +515,8 @@ export interface AdminKullanici {
   allowedCities?: string[];
   allowedInstitutions?: string[];
   reportPermissions?: ReportPermission[];
+  reportScopeType?: string;
+  reportScopeMintikas?: string[];
 }
 
 export interface AdminOverview {
@@ -583,6 +603,17 @@ function kullaniciFromBackend(user?: BackendUser | null): KullaniciBilgisi | nul
     institutionName: typeof user.institutionName === "string" ? user.institutionName : undefined,
     institutionCode: typeof user.institutionCode === "string" ? user.institutionCode : undefined,
     institutionId: user.institutionId != null ? String(user.institutionId) : undefined,
+    reportScopeType:
+      typeof user.reportScopeType === "string"
+        ? user.reportScopeType
+        : typeof (user as Record<string, unknown>).report_scope_type === "string"
+          ? String((user as Record<string, unknown>).report_scope_type)
+          : undefined,
+    reportScopeMintikas: Array.isArray(user.reportScopeMintikas)
+      ? user.reportScopeMintikas.map(String)
+      : Array.isArray((user as Record<string, unknown>).report_scope_mintikas)
+        ? ((user as Record<string, unknown>).report_scope_mintikas as unknown[]).map(String)
+        : undefined,
   };
 }
 
@@ -614,6 +645,8 @@ function mergeKullaniciWithAppUser(user: KullaniciBilgisi, appUser?: AdminKullan
     allowedCities: appUser.allowedCities ?? [],
     allowedInstitutions: appUser.allowedInstitutions ?? [],
     reportPermissions: appUser.reportPermissions ?? [],
+    reportScopeType: appUser.reportScopeType ?? user.reportScopeType,
+    reportScopeMintikas: appUser.reportScopeMintikas ?? user.reportScopeMintikas ?? [],
   };
 }
 
@@ -882,6 +915,8 @@ function appUserFromRecord(record: BackendRecord<AppUserRecordData>): AdminKulla
     allowedCities: data.allowedCities ?? [],
     allowedInstitutions: data.allowedInstitutions ?? [],
     reportPermissions: data.reportPermissions ?? [],
+    reportScopeType: data.reportScopeType ?? "own",
+    reportScopeMintikas: Array.isArray(data.reportScopeMintikas) ? data.reportScopeMintikas : [],
   };
 }
 
@@ -1133,13 +1168,29 @@ function canonicalInstitution(a: AdminYurtKayit, b: AdminYurtKayit): AdminYurtKa
   return Date.parse(a.createdAt) <= Date.parse(b.createdAt) ? a : b;
 }
 
-function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecordData, "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions"> {
+function permissionDefaults(
+  role?: string,
+  isAdmin?: boolean,
+  reportScopeType?: string,
+): Pick<AppUserRecordData, "allowedCities" | "allowedDistricts" | "allowedInstitutions" | "reportPermissions" | "reportScopeType" | "reportScopeMintikas"> {
   if (isAdmin || role === "admin" || role === "super_admin") {
     return {
       allowedCities: [],
       allowedDistricts: [],
       allowedInstitutions: [],
       reportPermissions: ["overview", "district", "institution", "users", "activity", "excel"],
+      reportScopeType: "all",
+      reportScopeMintikas: [],
+    };
+  }
+  if (reportScopeType === "mintika") {
+    return {
+      allowedCities: [],
+      allowedDistricts: [],
+      allowedInstitutions: [],
+      reportPermissions: ["overview", "district", "institution", "users", "activity", "excel"],
+      reportScopeType: "mintika",
+      reportScopeMintikas: [],
     };
   }
   return {
@@ -1147,6 +1198,8 @@ function permissionDefaults(role?: string, isAdmin?: boolean): Pick<AppUserRecor
     allowedDistricts: [],
     allowedInstitutions: [],
     reportPermissions: [],
+    reportScopeType: "own",
+    reportScopeMintikas: [],
   };
 }
 
@@ -1327,7 +1380,12 @@ async function aktifKullaniciBaglami(): Promise<AdminKullanici | null> {
 }
 
 function activityYetkiFiltresi(logs: AdminAktiviteLog[], viewer: AdminKullanici | null): AdminAktiviteLog[] {
-  if (!viewer || viewer.isAdmin || viewer.role === "super_admin") return logs;
+  const access = getReportAccessForUser(viewer);
+  if (access.type === "all") return logs;
+  if (access.type === "mintika") {
+    return logs.filter((log) => isDistrictAllowedByReportAccess(access, log.district));
+  }
+  if (!viewer) return [];
   const cities = viewer.allowedCities ?? [];
   const districts = viewer.allowedDistricts ?? [];
   const institutions = viewer.allowedInstitutions ?? [];
@@ -1397,11 +1455,16 @@ async function activityRecordOlustur(action: string, metadata?: Record<string, u
 }
 
 function tamYetkiliMi(user: AdminKullanici | null): boolean {
-  return Boolean(user?.isAdmin || user?.role === "super_admin");
+  return kullaniciTamRaporYetkiliMi(user);
 }
 
 function scopeInstitutionAllowed(institution: AdminYurtKayit, viewer: AdminKullanici | null): boolean {
-  if (!viewer || tamYetkiliMi(viewer)) return true;
+  const access = getReportAccessForUser(viewer);
+  if (access.type === "all") return true;
+  if (access.type === "mintika") {
+    return isDistrictAllowedByReportAccess(access, institution.districtName);
+  }
+  if (!viewer) return false;
   const cities = viewer.allowedCities ?? [];
   const districts = viewer.allowedDistricts ?? [];
   const institutions = viewer.allowedInstitutions ?? [];
@@ -1415,7 +1478,12 @@ function scopeInstitutionAllowed(institution: AdminYurtKayit, viewer: AdminKulla
 }
 
 function scopeUserAllowed(user: AdminKullanici, viewer: AdminKullanici | null): boolean {
-  if (!viewer || tamYetkiliMi(viewer)) return true;
+  const access = getReportAccessForUser(viewer);
+  if (access.type === "all") return true;
+  if (access.type === "mintika") {
+    return isDistrictAllowedByReportAccess(access, user.district);
+  }
+  if (!viewer) return false;
   const cities = viewer.allowedCities ?? [];
   const districts = viewer.allowedDistricts ?? [];
   const institutions = viewer.allowedInstitutions ?? [];
@@ -1539,6 +1607,15 @@ function mintikaMetrikleriUret(yurts: AdminYurtMetrik[], users: AdminKullanici[]
 async function raporVerisi(params: Record<string, string | undefined> = {}) {
   const range = tarihAraligi(params);
   const viewer = await aktifKullaniciBaglami();
+  if (!kullaniciRaporGorebilirMi(viewer)) {
+    throw new Error("Yönetim raporlarına erişim yetkiniz yok.");
+  }
+  const access = getReportAccessForUser(viewer);
+  if (access.type === "mintika" && params.district) {
+    if (!isDistrictAllowedByReportAccess(access, params.district)) {
+      throw new Error("Bu mıntıka için rapor erişiminiz yok.");
+    }
+  }
   const institutions = (await institutionRecords(params)).filter((institution) => scopeInstitutionAllowed(institution, viewer));
   const users = (await appUserRecords({ ...params, active: params.active ?? "active" })).filter((user) =>
     scopeUserAllowed(user, viewer),
@@ -2315,23 +2392,40 @@ export const api = {
 
   adminFiltreler: async () => {
     const institutions = await institutionRecords();
-    const provinces = [...new Set(institutions.map((i) => i.province).filter((p): p is string => Boolean(p)))].sort((a, b) =>
+    const viewer = await aktifKullaniciBaglami();
+    const access = getReportAccessForUser(viewer);
+    const scopedInstitutions =
+      access.type === "mintika"
+        ? institutions.filter((i) => isDistrictAllowedByReportAccess(access, i.districtName))
+        : institutions;
+    const provinces = [...new Set(scopedInstitutions.map((i) => i.province).filter((p): p is string => Boolean(p)))].sort((a, b) =>
       a.localeCompare(b, "tr"),
     );
-    const districts = [...new Map(institutions.map((i) => [i.districtName, {
+    const districts = [...new Map(scopedInstitutions.map((i) => [i.districtName, {
       district: i.districtName,
       province: i.province ?? "",
     }])).values()].filter((d) => d.district).sort((a, b) => a.district.localeCompare(b.district, "tr"));
     return {
       provinces,
       districts,
-      institutions: institutions.map((i) => ({
+      institutions: scopedInstitutions.map((i) => ({
         institution_code: i.institutionCode,
         institution_name: i.institutionName,
         district: i.districtName,
         province: i.province,
       })),
     };
+  },
+
+  adminMintikas: async (): Promise<string[]> => {
+    const token = getBackendToken();
+    if (!token) return [...TRACKED_DISTRICTS];
+    const res = await fetch("/api/admin/mintikas", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return [...TRACKED_DISTRICTS];
+    const data = await res.json();
+    return Array.isArray(data) ? data.map(String) : [...TRACKED_DISTRICTS];
   },
 
   adminKullanicilar: (params: Record<string, string | undefined> = {}) => listAdminKullanicilarForPanel(params),
@@ -2347,6 +2441,8 @@ export const api = {
     role?: KullaniciRol;
     isActive?: boolean;
     isAdmin?: boolean;
+    reportScopeType?: string;
+    reportScopeMintikas?: string[];
   }) => {
     const canonicalEmail = normalizeEmail(data.email);
     if (!canonicalEmail) throw new Error("Geçerli bir e-posta adresi girin.");
@@ -2378,7 +2474,7 @@ export const api = {
     const now = new Date().toISOString();
     const institutionId = await kurumIdBul(data.institutionCode);
     const role = data.role ?? (data.isAdmin ? "admin" : "user");
-    const permissions = permissionDefaults(role, data.isAdmin);
+    const permissions = permissionDefaults(role, data.isAdmin, data.reportScopeType);
     const payload: AppUserRecordData = {
       id: authUser?.id ?? canonicalEmail,
       authUserId: authUser?.id,
@@ -2399,6 +2495,8 @@ export const api = {
       allowedCities: permissions.allowedCities,
       allowedInstitutions: data.institutionCode ? [data.institutionCode] : permissions.allowedInstitutions,
       reportPermissions: permissions.reportPermissions,
+      reportScopeType: data.reportScopeType ?? permissions.reportScopeType,
+      reportScopeMintikas: data.reportScopeMintikas ?? permissions.reportScopeMintikas,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: null,
@@ -2432,7 +2530,11 @@ export const api = {
     const current = await getAppUserRecord(id);
     const currentData = current.data ?? {};
     const role = data.role ?? currentData.role ?? (data.isAdmin || currentData.isAdmin ? "admin" : "user");
-    const permissions = permissionDefaults(role, data.isAdmin ?? currentData.isAdmin);
+    const scopeType =
+      data.reportScopeType ??
+      currentData.reportScopeType ??
+      (data.isAdmin ?? currentData.isAdmin ? "all" : "own");
+    const permissions = permissionDefaults(role, data.isAdmin ?? currentData.isAdmin, scopeType);
     const institutionCode = data.institutionCode ?? currentData.institutionCode ?? null;
     const nextData: AppUserRecordData = {
       ...currentData,
@@ -2441,7 +2543,7 @@ export const api = {
       generatedEmail: data.email ?? currentData.generatedEmail ?? currentData.email ?? currentData.loginEmail,
       name: data.name ?? currentData.name,
       role,
-      isAdmin: data.isAdmin ?? currentData.isAdmin ?? role === "admin",
+      isAdmin: (data.isAdmin ?? currentData.isAdmin ?? role === "admin") || scopeType === "all",
       isActive: data.isActive ?? currentData.isActive ?? true,
       status: data.status ?? currentData.status ?? ((data.isActive ?? currentData.isActive) === false ? "inactive" : "active"),
       district: data.district ?? currentData.district ?? null,
@@ -2453,6 +2555,8 @@ export const api = {
       allowedCities: data.allowedCities ?? currentData.allowedCities ?? permissions.allowedCities,
       allowedInstitutions: data.allowedInstitutions ?? currentData.allowedInstitutions ?? (institutionCode ? [institutionCode] : permissions.allowedInstitutions),
       reportPermissions: data.reportPermissions ?? currentData.reportPermissions ?? permissions.reportPermissions,
+      reportScopeType: data.reportScopeType ?? permissions.reportScopeType ?? scopeType,
+      reportScopeMintikas: data.reportScopeMintikas ?? currentData.reportScopeMintikas ?? permissions.reportScopeMintikas,
       updatedAt: new Date().toISOString(),
     };
     const record = await updateAppUserRecord(id, nextData);

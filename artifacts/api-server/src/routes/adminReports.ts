@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, institutionsTable, localUsersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { requireAdmin } from "../middlewares/requireAdmin";
+import { eq, sql } from "drizzle-orm";
+import { requireAdmin, requireReportAccess } from "../middlewares/requireAdmin";
 import { TRACKED_DISTRICTS } from "../lib/trackedDistricts";
 import { resolveDateRange } from "../lib/adminDateRange";
 import { loadPeriodSettings, savePeriodSettings } from "../lib/adminSettingsStore";
@@ -13,9 +13,21 @@ import {
 import { kurumKoduOner } from "../lib/institutionSlug";
 import { normalizeDistrictName } from "../lib/trackedDistricts";
 import { reconcileUsersWithInstitutions, resolveInstitution, linkUserToInstitution } from "../lib/institutionRegistry";
+import {
+  filterMintikaMetrics,
+  filterYurtsByAccess,
+  isDistrictAllowed,
+  resolveDistrictFilter,
+  type ReportAccess,
+} from "../lib/reportAccess";
 
 const router: IRouter = Router();
-router.use("/admin", requireAdmin);
+
+type ReportRequest = Request & { reportAccess?: ReportAccess };
+
+function reportAccess(req: Request): ReportAccess {
+  return (req as ReportRequest).reportAccess ?? { type: "own", mintikas: [] };
+}
 
 async function getRange(req: Request) {
   const settings = await loadPeriodSettings();
@@ -26,7 +38,7 @@ async function getRange(req: Request) {
   });
 }
 
-router.post("/admin/reconcile", async (_req, res) => {
+router.post("/admin/reconcile", requireAdmin, async (_req, res) => {
   try {
     const result = await reconcileUsersWithInstitutions();
     res.json(result);
@@ -36,16 +48,51 @@ router.post("/admin/reconcile", async (_req, res) => {
   }
 });
 
-router.get("/admin/tracked-districts", (_req, res) => {
+router.get("/admin/tracked-districts", requireReportAccess, (req, res) => {
+  const access = reportAccess(req);
+  if (access.type === "mintika") {
+    res.json({ districts: access.mintikas });
+    return;
+  }
   res.json({ districts: TRACKED_DISTRICTS });
 });
 
-router.get("/admin/settings", async (_req, res) => {
+router.get("/admin/mintikas", requireAdmin, async (_req, res) => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT DISTINCT district_name AS district
+      FROM institutions
+      WHERE district_name IS NOT NULL AND trim(district_name) <> ''
+      UNION
+      SELECT DISTINCT district_name AS district
+      FROM local_users
+      WHERE district_name IS NOT NULL AND trim(district_name) <> '' AND deleted_at IS NULL
+    `);
+    const raw = ((rows as { rows?: { district?: string }[] }).rows ?? [])
+      .map((row) => normalizeDistrictName(row.district) ?? String(row.district ?? "").trim())
+      .filter(Boolean);
+    const seen = new Set<string>();
+    const mintikas: string[] = [];
+    for (const name of raw) {
+      const key = name.toLocaleLowerCase("tr-TR");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      mintikas.push(name);
+    }
+    mintikas.sort((a, b) => a.localeCompare(b, "tr"));
+    res.json(mintikas);
+  } catch (err) {
+    console.error("[admin mintikas]", err);
+    res.status(500).json({ error: "Mıntıka listesi yüklenemedi" });
+  }
+});
+
+router.get("/admin/settings", requireAdmin, async (_req, res) => {
   const settings = await loadPeriodSettings();
   res.json({ settings });
 });
 
-router.patch("/admin/settings", async (req, res) => {
+router.patch("/admin/settings", requireAdmin, async (req, res) => {
   const { periodStart, periodEnd, seasonStart, seasonEnd } = req.body;
   await savePeriodSettings({
     periodStart,
@@ -56,18 +103,25 @@ router.patch("/admin/settings", async (req, res) => {
   res.json({ ok: true, settings: await loadPeriodSettings() });
 });
 
-router.get("/admin/dashboard", async (req, res) => {
+router.get("/admin/dashboard", requireReportAccess, async (req, res) => {
   try {
+    const access = reportAccess(req);
     const range = await getRange(req);
-    const district =
-      typeof req.query.district === "string" ? normalizeDistrictName(req.query.district) : null;
+    const requestedDistrict =
+      typeof req.query.district === "string" ? req.query.district : null;
+    const district = resolveDistrictFilter(access, requestedDistrict);
+    if (district === undefined) {
+      res.status(403).json({ error: "Bu mıntıka için rapor erişiminiz yok." });
+      return;
+    }
     const institutionCode =
       typeof req.query.institutionCode === "string" ? req.query.institutionCode : undefined;
 
     const ctx = await loadAdminMetricsContext(range);
-    let yurts = ctx.yurts;
-    if (district) yurts = yurts.filter((y) => normalizeDistrictName(y.districtName) === district);
+    let yurts = filterYurtsByAccess(access, ctx.yurts, district);
     if (institutionCode) yurts = yurts.filter((y) => y.institutionCode === institutionCode);
+
+    const mintikaSummary = filterMintikaMetrics(access, ctx.mintikalar);
 
     const todayActiveYurts = yurts.filter((y) => y.todayLoginUsers > 0).length;
     const active7dYurts = yurts.filter(
@@ -100,7 +154,10 @@ router.get("/admin/dashboard", async (req, res) => {
         ? undefined
         : "Geçmiş trend için aktivite kaydı gereklidir. Şu an son giriş tarihleri kullanılıyor.",
       summary: {
-        totalDistricts: TRACKED_DISTRICTS.length,
+        totalDistricts:
+          access.type === "mintika"
+            ? access.mintikas.length
+            : TRACKED_DISTRICTS.length,
         totalYurts: yurts.length,
         totalUsers: yurts.reduce((s, y) => s + y.userCount, 0),
         todayActiveYurts,
@@ -112,7 +169,8 @@ router.get("/admin/dashboard", async (req, res) => {
         dataIssueCount: dataIssues,
         unmatchedUsers: ctx.unmatchedUsers.length,
       },
-      mintikaSummary: ctx.mintikalar,
+      mintikaSummary,
+      reportAccess: access,
       attentionYurts: attention,
       dataQualityWarning:
         dataIssues > 0
@@ -125,14 +183,18 @@ router.get("/admin/dashboard", async (req, res) => {
   }
 });
 
-router.get("/admin/mintika-board", async (req, res) => {
+router.get("/admin/mintika-board", requireReportAccess, async (req, res) => {
   try {
+    const access = reportAccess(req);
     const range = await getRange(req);
     const ctx = await loadAdminMetricsContext(range);
     res.json({
       range,
       hasActivityLogs: ctx.hasActivityLogs,
-      mintikalar: ctx.mintikalar.sort((a, b) => (b.healthScore ?? 0) - (a.healthScore ?? 0)),
+      reportAccess: access,
+      mintikalar: filterMintikaMetrics(access, ctx.mintikalar).sort(
+        (a, b) => (b.healthScore ?? 0) - (a.healthScore ?? 0),
+      ),
     });
   } catch (err) {
     console.error("[admin mintika-board]", err);
@@ -140,19 +202,24 @@ router.get("/admin/mintika-board", async (req, res) => {
   }
 });
 
-router.get("/admin/yurt-tracking", async (req, res) => {
+router.get("/admin/yurt-tracking", requireReportAccess, async (req, res) => {
   try {
+    const access = reportAccess(req);
     const range = await getRange(req);
     const ctx = await loadAdminMetricsContext(range);
-    const district =
-      typeof req.query.district === "string" ? normalizeDistrictName(req.query.district) : null;
+    const requestedDistrict =
+      typeof req.query.district === "string" ? req.query.district : null;
+    const district = resolveDistrictFilter(access, requestedDistrict);
+    if (district === undefined) {
+      res.status(403).json({ error: "Bu mıntıka için rapor erişiminiz yok." });
+      return;
+    }
     const status = typeof req.query.status === "string" ? req.query.status : "";
     const hasSupport = req.query.hasSupport === "true";
     const noUsers = req.query.noUsers === "true";
     const dataGap = req.query.dataGap === "true";
 
-    let list = ctx.yurts;
-    if (district) list = list.filter((y) => normalizeDistrictName(y.districtName) === district);
+    let list = filterYurtsByAccess(access, ctx.yurts, district);
     if (status) list = list.filter((y) => y.activityStatus === status);
     if (hasSupport) list = list.filter((y) => y.openSupport > 0);
     if (noUsers) list = list.filter((y) => y.userCount === 0);
@@ -181,7 +248,7 @@ router.get("/admin/yurt-tracking", async (req, res) => {
   }
 });
 
-router.get("/admin/data-health", async (_req, res) => {
+router.get("/admin/data-health", requireAdmin, async (_req, res) => {
   try {
     const range = resolveDateRange("7d");
     const ctx = await loadAdminMetricsContext(range);
@@ -211,7 +278,7 @@ router.get("/admin/data-health", async (_req, res) => {
   }
 });
 
-router.post("/admin/data-health/actions", async (req, res) => {
+router.post("/admin/data-health/actions", requireAdmin, async (req, res) => {
   const action = String(req.body?.action || "");
   const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds.map(String) : [];
   const issueIds = Array.isArray(req.body?.issueIds) ? req.body.issueIds.map(String) : [];
@@ -259,10 +326,18 @@ router.post("/admin/data-health/actions", async (req, res) => {
   res.json({ ok: true, affected });
 });
 
-router.get("/admin/activity-logs", async (req, res) => {
+router.get("/admin/activity-logs", requireReportAccess, async (req, res) => {
   try {
+    const access = reportAccess(req);
     const range = await getRange(req);
     const ctx = await loadAdminMetricsContext(range);
+    const requestedDistrict =
+      typeof req.query.district === "string" ? req.query.district : undefined;
+    const districtFilter = resolveDistrictFilter(access, requestedDistrict);
+    if (districtFilter === undefined) {
+      res.status(403).json({ error: "Bu mıntıka için rapor erişiminiz yok." });
+      return;
+    }
 
     if (!ctx.hasActivityLogs) {
       res.json({
@@ -286,28 +361,30 @@ router.get("/admin/activity-logs", async (req, res) => {
     const logs = await loadActivityLogs({
       startIso: range.startIso,
       endIso: range.endIso,
-      district: typeof req.query.district === "string" ? req.query.district : undefined,
+      district: districtFilter ?? undefined,
       institutionCode:
         typeof req.query.institutionCode === "string" ? req.query.institutionCode : undefined,
       action: typeof req.query.action === "string" ? req.query.action : undefined,
     });
 
     const userMap = new Map(ctx.allUsers.map((u) => [u.id, u]));
-    const enriched = logs.map((l) => {
-      const u = l.userId ? userMap.get(l.userId) : undefined;
-      return {
-        id: l.id,
-        createdAt: l.createdAt.toISOString(),
-        action: l.action,
-        userId: l.userId,
-        userName: u?.name ?? null,
-        institutionCode: l.institutionCode,
-        institutionName: u?.institutionName ?? null,
-        district: l.district,
-        province: l.province,
-        metadata: l.metadata,
-      };
-    });
+    const enriched = logs
+      .map((l) => {
+        const u = l.userId ? userMap.get(l.userId) : undefined;
+        return {
+          id: l.id,
+          createdAt: l.createdAt.toISOString(),
+          action: l.action,
+          userId: l.userId,
+          userName: u?.name ?? null,
+          institutionCode: l.institutionCode,
+          institutionName: u?.institutionName ?? null,
+          district: l.district,
+          province: l.province,
+          metadata: l.metadata,
+        };
+      })
+      .filter((row) => isDistrictAllowed(access, row.district));
 
     const countAction = (a: string) => enriched.filter((x) => x.action === a).length;
     const loginUsers = new Set(enriched.filter((x) => x.action === "login").map((x) => x.userId));
@@ -335,10 +412,19 @@ router.get("/admin/activity-logs", async (req, res) => {
   }
 });
 
-router.get("/admin/institutions-registry", async (req, res) => {
-  const district =
-    typeof req.query.district === "string" ? normalizeDistrictName(req.query.district) : null;
+router.get("/admin/institutions-registry", requireReportAccess, async (req, res) => {
+  const access = reportAccess(req);
+  const requestedDistrict =
+    typeof req.query.district === "string" ? req.query.district : null;
+  const district = resolveDistrictFilter(access, requestedDistrict);
+  if (district === undefined) {
+    res.status(403).json({ error: "Bu mıntıka için rapor erişiminiz yok." });
+    return;
+  }
   let rows = await db.select().from(institutionsTable);
+  if (access.type === "mintika") {
+    rows = rows.filter((r) => isDistrictAllowed(access, r.districtName));
+  }
   if (district) rows = rows.filter((r) => normalizeDistrictName(r.districtName) === district);
   res.json({
     institutions: rows.map((r) => ({
@@ -356,7 +442,7 @@ router.get("/admin/institutions-registry", async (req, res) => {
   });
 });
 
-router.post("/admin/institutions-registry", async (req, res) => {
+router.post("/admin/institutions-registry", requireAdmin, async (req, res) => {
   const { institutionName, districtName, province, institutionCode, expectedUserCount, status, notes } =
     req.body;
   if (!institutionName || !districtName) {
@@ -384,7 +470,7 @@ router.post("/admin/institutions-registry", async (req, res) => {
   res.json({ institution: row });
 });
 
-router.patch("/admin/institutions-registry/:id", async (req, res) => {
+router.patch("/admin/institutions-registry/:id", requireAdmin, async (req, res) => {
   const id = String(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
   const body = req.body as Record<string, unknown>;
   const updates: Partial<typeof institutionsTable.$inferInsert> = { updatedAt: new Date() };

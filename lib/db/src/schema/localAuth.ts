@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 import { institutionsTable } from "./institutions";
 
 /** hoca | kurum_mesulu | admin */
@@ -21,6 +21,9 @@ export const localUsersTable = pgTable("local_users", {
   institutionName: varchar("institution_name"),
   institutionCode: varchar("institution_code"),
   role: varchar("role").notNull().default("hoca"),
+  /** own | mintika | all */
+  reportScopeType: varchar("report_scope_type").notNull().default("own"),
+  reportScopeMintikas: jsonb("report_scope_mintikas").notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),

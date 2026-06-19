@@ -4,7 +4,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
-import { api, kullaniciAdminMi, type KullaniciBilgisi } from "./lib/api";
+import { api, kullaniciAdminMi, kullaniciRaporGorebilirMi, type KullaniciBilgisi } from "./lib/api";
 import { backendApi, type PosterDraftData } from "./lib/backendApi";
 import FormAlani from "./components/FormAlani";
 import { VeliOnizlemeIcerik } from "./components/veli/VeliOnizlemeIcerik";
@@ -14,13 +14,8 @@ import { SABLON_LISTESI } from "./lib/sablonlar";
 import { veliKaliteKontrol } from "./lib/veli/veliKaliteKontrol";
 import { validateVeliWizardStep, VELI_WIZARD_STEPS, VELI_WIZARD_LAST_STEP } from "./lib/veli/veliWizardSteps";
 import { PreviewPanel } from "./components/veli/wizard/PreviewPanel";
-import { PreviewModeToggle, type VeliPreviewMode } from "./components/veli/wizard/PreviewModeToggle";
-import { WhatsappChatPreviewShell } from "./components/veli/wizard/WhatsappChatPreviewShell";
 import { QualityPanel } from "./components/veli/wizard/QualityPanel";
 import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
-import { VeliPreviewScaler } from "./components/veli/VeliPreviewScaler";
-import { VELI_POSTER_H, VELI_POSTER_W } from "./lib/veli/veliPosterEngine";
-import { veliWhatsappMesajiOlustur } from "./lib/veli/veliWhatsappMesaji";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
@@ -30,6 +25,7 @@ import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
 import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
 import { DavetProviders } from "./modules/davet/DavetProviders";
 import { DavetRouter } from "./modules/davet/DavetRouter";
+import { goToAppHome } from "./modules/davet/layout/navRoutes";
 
 function isDavetPathname(): boolean {
   return typeof window !== "undefined" && window.location.pathname.startsWith("/davet");
@@ -41,8 +37,8 @@ const KurumsalKimlikModulu = lazy(() =>
   })),
 );
 
-const POSTER_W = VELI_POSTER_W;
-const POSTER_H = VELI_POSTER_H;
+const POSTER_W = 520;
+const POSTER_H_FALLBACK = 720;
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -75,8 +71,6 @@ function MainApp() {
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
   const [indiriliyor, setIndiriliyor] = useState(false);
   const [pdfYukleniyor, setPdfYukleniyor] = useState(false);
-  const [waPaylasiliyor, setWaPaylasiliyor] = useState(false);
-  const [previewMode, setPreviewMode] = useState<VeliPreviewMode>("normal");
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
   const [formAdim, setFormAdim] = useState<1 | 2>(1);
@@ -91,6 +85,7 @@ function MainApp() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const desktopSahneRef = useRef<HTMLDivElement>(null);
   const adim2Ref = useRef<(() => void) | undefined>(undefined);
+  const [zoom, setZoom] = useState(1);
   const [desktopZoom, setDesktopZoom] = useState(0.72);
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
@@ -168,6 +163,63 @@ function MainApp() {
       setHomeModu("logo");
     }
   }, [kullanici, logoGelistirmeAcik]);
+
+  // Derin bağlantı: /davet anasayfasından ?modul=veli ile doğrudan Veli Bilgilendirme aç
+  useEffect(() => {
+    if (kullanici && new URLSearchParams(window.location.search).get("modul") === "veli") {
+      setHomeModu("veli");
+    }
+  }, [kullanici]);
+
+  // Derin bağlantı: ?modul=yonetim ile doğrudan Yönetim sekmesi aç (sadece admin)
+  useEffect(() => {
+    if (kullanici && kullaniciRaporGorebilirMi(kullanici) && new URLSearchParams(window.location.search).get("modul") === "yonetim") {
+      setHomeModu("veli");
+      setAktifSekme("yonetim");
+    }
+  }, [kullanici]);
+
+  useEffect(() => {
+    function hesapla() {
+      if (!wrapperRef.current) return;
+      // clientWidth includes the frame's 8px padding on each side → subtract to get usable inner width
+      const usableW = Math.max(100, wrapperRef.current.clientWidth - 16);
+      setZoom(Math.min(1, usableW / POSTER_W));
+    }
+    hesapla();
+    const obs = new ResizeObserver(hesapla);
+    if (wrapperRef.current) obs.observe(wrapperRef.current);
+    return () => obs.disconnect();
+  // mobilOnizlemeAcik ve activeStep eklenmiş: wrapperRef modal/last-step'te monte
+  // edildiğinde zoom henüz hesaplanmamış olabilir; bu bağımlılıklar bunu tetikler.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aktifSekme, activeStep, mobilOnizlemeAcik]);
+
+  const desktopOlcekHesapla = useCallback(() => {
+    const area = desktopSahneRef.current;
+    if (!area) return;
+    const pad = 12;
+    const aw = Math.max(1, area.clientWidth - pad * 2);
+    const ah = Math.max(1, area.clientHeight - pad * 2);
+    const s = Math.min(aw / POSTER_W, ah / POSTER_H_FALLBACK, 1);
+    setDesktopZoom(s);
+  }, []);
+
+  useEffect(() => {
+    desktopOlcekHesapla();
+    const t1 = requestAnimationFrame(desktopOlcekHesapla);
+    const t2 = window.setTimeout(desktopOlcekHesapla, 120);
+    const obs = new ResizeObserver(desktopOlcekHesapla);
+    if (desktopSahneRef.current) obs.observe(desktopSahneRef.current);
+    return () => {
+      cancelAnimationFrame(t1);
+      window.clearTimeout(t2);
+      obs.disconnect();
+    };
+  }, [desktopOlcekHesapla]);
+
+  const desktopScaledW = Math.round(POSTER_W * desktopZoom);
+  const desktopScaledH = Math.round(POSTER_H_FALLBACK * desktopZoom);
 
   useEffect(() => {
     if (captureSnapshot && captureResolveFn.current) {
@@ -332,7 +384,7 @@ function MainApp() {
       const pdfH = pdf.internal.pageSize.getHeight();
       const margin = 15;
       const imgW = pdfW - margin * 2;
-      const imgH = (imgW * POSTER_H) / POSTER_W;
+      const imgH = (imgW * (downloadRef.current?.offsetHeight ?? 750)) / POSTER_W;
       const finalH = Math.min(imgH, pdfH - margin * 2);
       const y = (pdfH - finalH) / 2;
 
@@ -345,66 +397,36 @@ function MainApp() {
     }
   };
 
-  const whatsappMetniKopyala = async () => {
-    const metin = veliWhatsappMesajiOlustur(form);
-    try {
-      await navigator.clipboard.writeText(metin);
-      toast.success("WhatsApp metni kopyalandı.");
-    } catch {
-      toast.error("Metin kopyalanamadı. Lütfen tekrar deneyin.");
-    }
-  };
-
   const whatsappPaylas = async () => {
-    setWaPaylasiliyor(true);
-    const metin = veliWhatsappMesajiOlustur(form);
+    const metin = [
+      form.kurumAdi && `📚 ${form.kurumAdi}`,
+      form.posterMetni,
+      form.isim && `— ${form.isim}${form.rol ? `, ${form.rol}` : ""}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-    try {
-      const dataUrl = await posterPngYakala();
-      if (!dataUrl) {
-        toast.error("Afiş görseli oluşturulamadı.");
-        return;
-      }
-
+    if (navigator.canShare) {
       try {
-        await navigator.clipboard.writeText(metin);
-      } catch {
-        /* clipboard optional */
-      }
-
-      if (navigator.share) {
-        try {
+        const dataUrl = await posterPngYakala();
+        if (dataUrl) {
           const blob = await (await fetch(dataUrl)).blob();
-          const file = new File([blob], `nehari-veli-bilgilendirme-${seciliSablon}.png`, { type: "image/png" });
-          if (navigator.canShare({ files: [file], text: metin })) {
+          const file = new File([blob], "afis.png", { type: "image/png" });
+          if (navigator.canShare({ files: [file] })) {
             await navigator.share({
               files: [file],
-              title: "Veli Bilgilendirme",
+              title: "Nehari Veli Bilgilendirme - Veli Bilgilendirme Afişi",
               text: metin,
             });
             aktiviteKaydet("share_whatsapp");
-            backendEvent("poster_downloaded", { format: "whatsapp_share" });
-            toast.success("Paylaşım açıldı. Görsel önizleme ile aynıdır.");
             return;
           }
-        } catch {
-          /* fall through */
         }
-      }
-
-      const link = document.createElement("a");
-      link.download = `nehari-veli-bilgilendirme-${seciliSablon}.png`;
-      link.href = dataUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      window.open(`https://wa.me/?text=${encodeURIComponent(metin)}`, "_blank");
-      aktiviteKaydet("share_whatsapp");
-      toast.info("PNG indirildi (önizleme ile aynı). Metin panoya kopyalandı.");
-    } finally {
-      setWaPaylasiliyor(false);
+      } catch {}
     }
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(metin)}`, "_blank");
+    aktiviteKaydet("share_whatsapp");
   };
 
   const cikisYap = useCallback(async () => {
@@ -415,6 +437,23 @@ function MainApp() {
     setAktifSekme("form");
     setHomeModu("kategoriler");
   }, []);
+
+  // ?force-logout=1 parametresi: çıkış sonrası kesin login ekranı göster.
+  // Backend session hâlâ aktif olsa bile (çerez temizlenememiş) login ekranı açılır.
+  const forceLogout =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("force-logout") === "1";
+
+  if (forceLogout) {
+    return (
+      <GirisEkrani
+        onGiris={(k) => {
+          setKullanici(k);
+          window.location.assign("/davet");
+        }}
+      />
+    );
+  }
 
   if (kullanici === undefined) {
     return (
@@ -451,13 +490,46 @@ function MainApp() {
       <GirisEkrani
         onGiris={(k) => {
           setKullanici(k);
-          setHomeModu("kategoriler");
+          // Login sonrası doğrudan Nehari Çalışma Paneli'ne yönlendir
+          window.location.assign("/davet");
         }}
       />
     );
   }
 
   if (homeModu === "kategoriler") {
+    // ?modul= parametresi olmadan / adresine gelinen durumda /davet'e yönlendir
+    const modul = new URLSearchParams(window.location.search).get("modul");
+    if (!modul) {
+      window.location.assign("/davet");
+      return (
+        <div
+          style={{
+            height: "100dvh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #2563eb 100%)",
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                border: "4px solid rgba(255,255,255,0.2)",
+                borderTopColor: "#fff",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+                margin: "0 auto 12px",
+              }}
+            />
+            <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: 600 }}>Yönlendiriliyor…</p>
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      );
+    }
     const adminMi = kullaniciAdminMi(kullanici);
     return (
       <>
@@ -539,11 +611,10 @@ function MainApp() {
   }
 
   const paylasBtnStil = (gradient: string, disabled?: boolean): React.CSSProperties => ({
-    flex: "1 1 calc(33% - 6px)",
-    minWidth: 0,
-    padding: "11px 8px",
-    borderRadius: 14,
-    fontSize: 11,
+    flex: 1,
+    padding: "13px 10px",
+    borderRadius: 16,
+    fontSize: 13,
     fontWeight: 700,
     color: "#fff",
     border: "none",
@@ -551,7 +622,7 @@ function MainApp() {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 4,
+    gap: 6,
     background: gradient,
     boxShadow: disabled ? "none" : "0 6px 18px rgba(15,23,42,0.15)",
     opacity: disabled ? 0.75 : 1,
@@ -570,52 +641,79 @@ function MainApp() {
     cursor: aktif ? "wait" : "pointer",
   });
 
-  const posterOnizleme = (
-    <VeliPreviewScaler
-      observeRef={desktopSahneRef}
-      padding={12}
-      frameClassName="veli-studio-poster-wrap"
-      artboardWidth={POSTER_W}
-      artboardHeight={POSTER_H}
-      onScaleChange={setDesktopZoom}
-      deps={[form, seciliSablon]}
-    >
-      <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
-    </VeliPreviewScaler>
-  );
-
   const PaylasCiktiBtnlari = () => (
-    <div className="veli-export-actions">
+    <div style={{ display: "flex", gap: 8 }}>
       <button
-        type="button"
         onClick={afisiIndir}
         disabled={indiriliyor}
         style={paylasBtnStil("linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)", indiriliyor)}
+        onMouseDown={(e) => !indiriliyor && (e.currentTarget.style.transform = "scale(0.97)")}
+        onMouseUp={(e) => (e.currentTarget.style.transform = "")}
+        onMouseLeave={(e) => (e.currentTarget.style.transform = "")}
       >
-        {indiriliyor ? "…" : "PNG"}
+        {indiriliyor ? (
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              border: "2px solid rgba(255,255,255,0.3)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+              display: "inline-block",
+            }}
+          />
+        ) : (
+          <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+            />
+          </svg>
+        )}
+        PNG
       </button>
+
       <button
-        type="button"
         onClick={pdfIndir}
         disabled={pdfYukleniyor}
         style={paylasBtnStil("linear-gradient(135deg, #dc2626 0%, #ef4444 100%)", pdfYukleniyor)}
       >
-        {pdfYukleniyor ? "…" : "PDF"}
+        {pdfYukleniyor ? (
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              border: "2px solid rgba(255,255,255,0.3)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+              display: "inline-block",
+            }}
+          />
+        ) : (
+          <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+        )}
+        PDF
       </button>
+
       <button
-        type="button"
-        onClick={() => void whatsappMetniKopyala()}
-        style={paylasBtnStil("linear-gradient(135deg, #475569 0%, #64748b 100%)")}
+        onClick={whatsappPaylas}
+        style={paylasBtnStil("linear-gradient(135deg, #15803d 0%, #22c55e 100%)")}
       >
-        WhatsApp Metni
-      </button>
-      <button
-        type="button"
-        onClick={() => void whatsappPaylas()}
-        disabled={waPaylasiliyor}
-        style={paylasBtnStil("linear-gradient(135deg, #15803d 0%, #22c55e 100%)", waPaylasiliyor)}
-      >
-        {waPaylasiliyor ? "…" : "WA Paylaş"}
+        <svg width={16} height={16} fill="currentColor" viewBox="0 0 24 24">
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+        </svg>
+        WA
       </button>
     </div>
   );
@@ -650,7 +748,7 @@ function MainApp() {
       <Toaster position="top-center" richColors />
 
       <header
-        className={`tedris-app-header flex-shrink-0${aktifSekme === "yonetim" ? " tedris-app-header--admin" : ""}${aktifSekme === "form" ? " tedris-app-header--veli-compact" : ""}`}
+        className={`tedris-app-header flex-shrink-0${aktifSekme === "yonetim" ? " tedris-app-header--admin" : ""}`}
         style={{
           background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)",
         }}
@@ -659,12 +757,9 @@ function MainApp() {
           <div className="tedris-app-header__start">
             <button
               type="button"
-              onClick={() => {
-                setHomeModu("kategoriler");
-                setAktifSekme("form");
-              }}
+              onClick={goToAppHome}
               className="tedris-app-header__back flex shrink-0 items-center gap-1 rounded-xl border border-white/25 bg-white/10 px-2.5 py-2 text-[11px] font-bold text-white/95 transition hover:bg-white/20 md:gap-1.5 md:px-3 md:text-xs"
-              title="Kategori seçim ekranına dön"
+              title="Nehari Çalışma Paneli'ne dön"
             >
               <svg className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -694,7 +789,7 @@ function MainApp() {
               </svg>
             </button>
 
-            {kullaniciAdminMi(kullanici) && (
+            {kullaniciRaporGorebilirMi(kullanici) && (
               <button
                 type="button"
                 onClick={() => setAktifSekme("yonetim")}
@@ -738,9 +833,24 @@ function MainApp() {
       </header>
 
       <div className={`veli-desktop-workspace ${aktifSekme === "yonetim" ? "" : "veli-desktop-workspace--veli"} hidden lg:flex flex-1 min-h-0`}>
-        {aktifSekme === "yonetim" && kullaniciAdminMi(kullanici) ? (
+        {aktifSekme === "yonetim" && kullaniciRaporGorebilirMi(kullanici) ? (
           <div className="veli-desktop-inner veli-admin-desktop-inner w-full">
-            <AdminSayfasi />
+            <AdminSayfasi viewer={kullanici} />
+          </div>
+        ) : aktifSekme === "yonetim" ? (
+          <div className="veli-desktop-inner w-full flex flex-col items-center justify-center gap-3 p-8 text-center" style={{ background: "#f1f5f9" }}>
+            <div style={{ fontSize: 48 }}>🔒</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Erişim yetkiniz yok</div>
+            <p style={{ fontSize: 14, color: "#64748b", maxWidth: 360, lineHeight: 1.55 }}>
+              Yönetim raporları yalnızca yetkili yöneticiler tarafından görüntülenebilir.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAktifSekme("form")}
+              style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+            >
+              Veli Bilgilendirme&apos;ye dön
+            </button>
           </div>
         ) : (
           <div className="veli-desktop-inner w-full mx-auto">
@@ -796,21 +906,23 @@ function MainApp() {
                 </div>
 
                 <div className="veli-desktop-preview-col">
-                  <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
-                  <PreviewPanel
-                    stageRef={desktopSahneRef}
-                    zoomLabel={`${Math.round(desktopZoom * 100)}%`}
-                    hint={
-                      previewMode === "whatsapp"
-                        ? "Aynı afiş; WhatsApp sohbetinde küçültülmüş görünüm simülasyonu"
-                        : undefined
-                    }
-                  >
-                    {previewMode === "whatsapp" ? (
-                      <WhatsappChatPreviewShell>{posterOnizleme}</WhatsappChatPreviewShell>
-                    ) : (
-                      posterOnizleme
-                    )}
+                  <PreviewPanel stageRef={desktopSahneRef}>
+                    <div
+                      className="veli-studio-poster-wrap"
+                      style={{ width: desktopScaledW, height: desktopScaledH, flexShrink: 0 }}
+                    >
+                      <div
+                        className="veli-preview-autofit__artboard"
+                        style={{
+                          width: POSTER_W,
+                          height: POSTER_H_FALLBACK,
+                          transform: `scale(${desktopZoom})`,
+                          transformOrigin: "top left",
+                        }}
+                      >
+                        <VeliOnizlemeIcerik form={form} sablon={seciliSablon} />
+                      </div>
+                    </div>
                   </PreviewPanel>
                   {activeStep === VELI_WIZARD_LAST_STEP ? (
                     <>
@@ -868,16 +980,15 @@ function MainApp() {
         )}
 
         {aktifSekme === "form" && activeStep === VELI_WIZARD_LAST_STEP && (
-          <div className="veli-wizard-mobile-content flex-1 overflow-y-auto" style={{ background: "#f8fafc" }}>
-            <div className="p-4 space-y-4">
-              <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} compact />
+          <div className="veli-wizard-mobile-content flex-1 overflow-y-auto" style={{ background: "#f8fafc", overflowX: "hidden" }}>
+            <div className="p-4 space-y-4" style={{ overflowX: "hidden" }}>
               <QualityPanel form={form} seciliSablon={seciliSablon} full />
               <VeliOnizlemeMobil
                 form={form}
                 sablon={seciliSablon}
+                zoom={zoom}
                 wrapperRef={wrapperRef}
                 onSablonOner={setSeciliSablon}
-                previewMode={previewMode}
               />
             </div>
           </div>
@@ -891,15 +1002,32 @@ function MainApp() {
                 <button type="button" onClick={() => setMobilOnizlemeAcik(false)} className="text-sm font-bold text-blue-600">Kapat</button>
               </div>
               <div className="flex-1 overflow-y-auto p-3">
-                <VeliOnizlemeMobil form={form} sablon={seciliSablon} wrapperRef={wrapperRef} onSablonOner={setSeciliSablon} compact />
+                <VeliOnizlemeMobil form={form} sablon={seciliSablon} zoom={zoom} wrapperRef={wrapperRef} onSablonOner={setSeciliSablon} />
               </div>
             </div>
           </div>
         )}
 
-        {aktifSekme === "yonetim" && kullaniciAdminMi(kullanici) && (
+        {aktifSekme === "yonetim" && kullaniciRaporGorebilirMi(kullanici) && (
           <div className="flex-1 overflow-y-auto" style={{ background: "#f1f5f9" }}>
-            <AdminSayfasi />
+            <AdminSayfasi viewer={kullanici} />
+          </div>
+        )}
+
+        {aktifSekme === "yonetim" && !kullaniciRaporGorebilirMi(kullanici) && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center" style={{ background: "#f1f5f9" }}>
+            <div style={{ fontSize: 40 }}>🔒</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>Erişim yetkiniz yok</div>
+            <p style={{ fontSize: 13, color: "#64748b", maxWidth: 320, lineHeight: 1.5 }}>
+              Yönetim raporları yalnızca yetkili yöneticiler tarafından görüntülenebilir.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAktifSekme("form")}
+              style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+            >
+              Veli Bilgilendirme&apos;ye dön
+            </button>
           </div>
         )}
 
@@ -931,11 +1059,10 @@ function MainApp() {
                   Devam Et
                 </button>
               ) : (
-                <div className="veli-wizard-bottom-bar__exports veli-wizard-bottom-bar__exports--full">
+                <div className="veli-wizard-bottom-bar__exports">
                   <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--primary veli-wizard-bottom-bar__btn--compact">PNG</button>
                   <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--danger veli-wizard-bottom-bar__btn--compact">PDF</button>
-                  <button type="button" onClick={() => void whatsappMetniKopyala()} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--secondary veli-wizard-bottom-bar__btn--compact">WA Metin</button>
-                  <button type="button" onClick={() => void whatsappPaylas()} disabled={waPaylasiliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">Paylaş</button>
+                  <button type="button" onClick={whatsappPaylas} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">WA</button>
                 </div>
               )
             }
@@ -960,7 +1087,7 @@ function MainApp() {
             setAktifSekme(sekme);
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
-          adminGoster={kullaniciAdminMi(kullanici)}
+          adminGoster={kullaniciRaporGorebilirMi(kullanici)}
           onDestek={() => setDestekAcik(true)}
         />
       )}

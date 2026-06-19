@@ -18,6 +18,8 @@ type LoginUserRow = {
   institutionId: string | null;
   institutionName: string | null;
   institutionCode: string | null;
+  reportScopeType: string;
+  reportScopeMintikas: unknown;
 };
 
 function resolveLoginUserIsAdmin(
@@ -56,6 +58,9 @@ function mapRawLoginRow(row: Record<string, unknown>): LoginUserRow {
     institutionId: row.institution_id != null ? String(row.institution_id) : null,
     institutionName: row.institution_name != null ? String(row.institution_name) : null,
     institutionCode: row.institution_code != null ? String(row.institution_code) : null,
+    reportScopeType:
+      row.report_scope_type != null ? String(row.report_scope_type) : "own",
+    reportScopeMintikas: row.report_scope_mintikas ?? [],
   };
 }
 
@@ -75,6 +80,8 @@ function mapDrizzleUser(user: LocalUser): LoginUserRow {
     institutionId: user.institutionId ?? null,
     institutionName: user.institutionName ?? null,
     institutionCode: user.institutionCode ?? null,
+    reportScopeType: user.reportScopeType ?? "own",
+    reportScopeMintikas: user.reportScopeMintikas ?? [],
   };
 }
 
@@ -83,7 +90,8 @@ async function findLocalUserRawByEmail(email: string): Promise<LoginUserRow | nu
   const result = await db.execute(sql`
     SELECT id, email, password_hash, name, role,
            institution_id, institution_code, institution_name,
-           district_name, district, province, is_admin, is_active, deleted_at
+           district_name, district, province, is_admin, is_active, deleted_at,
+           report_scope_type, report_scope_mintikas
     FROM local_users
     WHERE lower(email) = ${normalizedEmail}
     LIMIT 1
@@ -96,7 +104,8 @@ async function findLocalUserRawById(id: string): Promise<LoginUserRow | null> {
   const result = await db.execute(sql`
     SELECT id, email, password_hash, name, role,
            institution_id, institution_code, institution_name,
-           district_name, district, province, is_admin, is_active, deleted_at
+           district_name, district, province, is_admin, is_active, deleted_at,
+           report_scope_type, report_scope_mintikas
     FROM local_users
     WHERE id = ${id}
     LIMIT 1

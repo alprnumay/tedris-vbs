@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { normalizeRole } from "./roleUtils";
 import { normalizeDistrictName } from "./trackedDistricts";
+import { resolveReportScopeFields } from "./reportAccess";
 import {
   type CompatRecord,
   getCompatRecord,
@@ -131,6 +132,15 @@ async function createAppUser(data: Record<string, unknown>, ctx: MutationContext
   const isActive = data.isActive !== false && str(data.status).toLowerCase() !== "inactive";
   const district = str(data.district) || null;
   const passwordHash = await bcrypt.hash(password, 12);
+  let reportScope = { reportScopeType: "own" as const, reportScopeMintikas: [] as string[] };
+  try {
+    reportScope = resolveReportScopeFields(data);
+  } catch (err) {
+    throw new RecordsMutationError(err instanceof Error ? err.message : "Rapor yetkisi geçersiz.", 400);
+  }
+  if (role === "admin") {
+    reportScope = { reportScopeType: "all", reportScopeMintikas: [] };
+  }
 
   const [user] = await db
     .insert(localUsersTable)
@@ -146,6 +156,8 @@ async function createAppUser(data: Record<string, unknown>, ctx: MutationContext
       institutionName: str(data.institutionName) || null,
       institutionCode: str(data.institutionCode) || null,
       institutionId: str(data.institutionId) || null,
+      reportScopeType: reportScope.reportScopeType,
+      reportScopeMintikas: reportScope.reportScopeMintikas,
     })
     .returning();
 
@@ -198,6 +210,29 @@ async function updateAppUser(id: string, data: Record<string, unknown>, ctx: Mut
     updatedAt: new Date(),
   };
   if (email) patch.email = email.toLowerCase();
+
+  if (
+    data.reportScopeType != null ||
+    data.report_scope_type != null ||
+    data.reportScopeMintikas != null ||
+    data.report_scope_mintikas != null
+  ) {
+    try {
+      const scope = resolveReportScopeFields({ ...data, role: patch.role ?? role });
+      if (role === "admin") {
+        patch.reportScopeType = "all";
+        patch.reportScopeMintikas = [];
+      } else {
+        patch.reportScopeType = scope.reportScopeType;
+        patch.reportScopeMintikas = scope.reportScopeMintikas;
+      }
+    } catch (err) {
+      throw new RecordsMutationError(err instanceof Error ? err.message : "Rapor yetkisi geçersiz.", 400);
+    }
+  } else if (role === "admin") {
+    patch.reportScopeType = "all";
+    patch.reportScopeMintikas = [];
+  }
 
   await db.update(localUsersTable).set(patch).where(eq(localUsersTable.id, id));
 

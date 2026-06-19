@@ -11,8 +11,16 @@ import {
   type AdminAktiviteLog,
   type AdminImportCommitResponse,
   type AdminYurtKayit,
+  type KullaniciBilgisi,
+  kullaniciTamRaporYetkiliMi,
 } from "../lib/api";
 import { TRACKED_DISTRICTS } from "../lib/admin/trackedDistricts";
+import {
+  getReportAccessForUser,
+  reportScopeLabel,
+  reportYetkiFromScope,
+  type ReportYetkiSecim,
+} from "../lib/admin/reportAccess";
 import { hatirlatmaMesaji, yurtHatirlatmaMesaji } from "../lib/admin/adminHatirlatma";
 import { ROL_LABEL, normalizeRole } from "../lib/admin/adminRol";
 import { indirAdminExcel } from "../lib/admin/adminExcel";
@@ -26,6 +34,7 @@ import {
   formatTarih,
   inputStyle,
   selectStyle,
+  labelStyle,
   FiltreSatir,
   FiltreAlan,
 } from "./admin/adminUi";
@@ -63,7 +72,19 @@ const TARIH_SECENEKLERI = [
   { v: "custom", l: "Özel aralık" },
 ];
 
-export default function AdminSayfasi() {
+const RAPOR_YETKI_LABEL: Record<ReportYetkiSecim, string> = {
+  own: "Normal Kullanıcı",
+  mintika: "Mıntıka Yöneticisi",
+  all: "Genel Yönetici",
+};
+
+const ADMIN_ONLY_SEKMELER: Sekme[] = ["kullanicilar", "veri"];
+
+interface AdminSayfasiProps {
+  viewer?: KullaniciBilgisi | null;
+}
+
+export default function AdminSayfasi({ viewer = null }: AdminSayfasiProps) {
   const [aktifSekme, setAktifSekme] = useState<Sekme>("genel");
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
@@ -105,6 +126,37 @@ export default function AdminSayfasi() {
   const [importKullaniciOlustur, setImportKullaniciOlustur] = useState(true);
   const [importSifre, setImportSifre] = useState("Nehari2026");
   const [importSonuc, setImportSonuc] = useState<AdminImportCommitResponse | null>(null);
+  const [raporYetkiDuzenle, setRaporYetkiDuzenle] = useState<AdminKullanici | null>(null);
+  const [raporYetkiSecim, setRaporYetkiSecim] = useState<ReportYetkiSecim>("own");
+  const [raporYetkiMintikalari, setRaporYetkiMintikalari] = useState<string[]>([]);
+  const [mintikaListesi, setMintikaListesi] = useState<string[]>([...TRACKED_DISTRICTS]);
+
+  const reportAccess = useMemo(() => getReportAccessForUser(viewer), [viewer]);
+  const tamYetkili = kullaniciTamRaporYetkiliMi(viewer);
+  const yetkiAlani = reportScopeLabel(reportAccess);
+  const gorunenMintikalar = useMemo(() => {
+    if (reportAccess.type === "all") return [...TRACKED_DISTRICTS];
+    if (reportAccess.type === "mintika" && reportAccess.mintikas.length) return reportAccess.mintikas;
+    return [...TRACKED_DISTRICTS];
+  }, [reportAccess]);
+  const gorunenSekmeler = useMemo(
+    () => (tamYetkili ? SEKMELER : SEKMELER.filter((s) => !ADMIN_ONLY_SEKMELER.includes(s.id))),
+    [tamYetkili],
+  );
+
+  useEffect(() => {
+    if (tamYetkili) {
+      void api.adminMintikas().then((list) => {
+        if (list.length) setMintikaListesi(list);
+      });
+    }
+  }, [tamYetkili]);
+
+  useEffect(() => {
+    if (!tamYetkili && ADMIN_ONLY_SEKMELER.includes(aktifSekme)) {
+      setAktifSekme("genel");
+    }
+  }, [tamYetkili, aktifSekme]);
   const filtreParams = useCallback(
     () => ({
       district: mintika || undefined,
@@ -130,21 +182,27 @@ export default function AdminSayfasi() {
       const jobs: Promise<void>[] = [
         api.adminDashboard(fp).then(setDashboard),
         api.adminYurtKayitlari().then((r) => setKurumKayitlari(r.institutions)),
-        api
-          .adminKullanicilar({
-            district: kullaniciMintika || undefined,
-            institutionCode: kullaniciKurum || undefined,
-            search: arama || undefined,
-            role: rolFiltre || undefined,
-            active: aktifFiltre === "active" || aktifFiltre === "inactive" ? aktifFiltre : "all",
-          })
-          .then((r) => {
-            setKullanicilar(r.users);
-            setKullaniciListeHata(r.loadError);
-            setKullaniciListeOzet({ rawCount: r.rawCount, filteredCount: r.filteredCount });
-          }),
-        api.adminDestek().then((r) => setDestekler(r.requests)),
       ];
+
+      if (tamYetkili) {
+        jobs.push(
+          api
+            .adminKullanicilar({
+              district: kullaniciMintika || undefined,
+              institutionCode: kullaniciKurum || undefined,
+              search: arama || undefined,
+              role: rolFiltre || undefined,
+              active: aktifFiltre === "active" || aktifFiltre === "inactive" ? aktifFiltre : "all",
+            })
+            .then((r) => {
+              setKullanicilar(r.users);
+              setKullaniciListeHata(r.loadError);
+              setKullaniciListeOzet({ rawCount: r.rawCount, filteredCount: r.filteredCount });
+            }),
+        );
+      }
+
+      jobs.push(api.adminDestek().then((r) => setDestekler(r.requests)));
 
       if (aktifSekme === "mintika" || aktifSekme === "genel" || aktifSekme === "excel") {
         jobs.push(api.adminMintikaBoard(fp).then((r) => setMintikalar(r.mintikalar)));
@@ -152,7 +210,7 @@ export default function AdminSayfasi() {
       if (aktifSekme === "yurt" || aktifSekme === "genel" || aktifSekme === "excel") {
         jobs.push(api.adminYurtTakibi(fp).then((r) => setYurts(r.yurts)));
       }
-      if (aktifSekme === "veri" || aktifSekme === "excel") {
+      if (aktifSekme === "veri" || (aktifSekme === "excel" && tamYetkili)) {
         jobs.push(api.adminVeriSagligi().then(setVeriSagligi));
       }
       if (aktifSekme === "aktivite" || aktifSekme === "excel") {
@@ -184,7 +242,7 @@ export default function AdminSayfasi() {
     } finally {
       setYukleniyor(false);
     }
-  }, [filtreParams, arama, rolFiltre, aktifFiltre, kullaniciMintika, kullaniciKurum, aktifSekme, aktiviteAction]);
+  }, [filtreParams, arama, rolFiltre, aktifFiltre, kullaniciMintika, kullaniciKurum, aktifSekme, aktiviteAction, tamYetkili]);
 
   useEffect(() => {
     veriYukle();
@@ -223,6 +281,27 @@ export default function AdminSayfasi() {
     await api.adminKullaniciSil(silinecekKullanici.id);
     setSilinecekKullanici(null);
     await veriYukle();
+  };
+
+  const raporYetkiKaydet = async () => {
+    if (!raporYetkiDuzenle) return;
+    if (raporYetkiSecim === "mintika" && raporYetkiMintikalari.length === 0) {
+      alert("Mıntıka yöneticisi için en az bir mıntıka seçmelisiniz.");
+      return;
+    }
+    await api.adminKullaniciGuncelle(raporYetkiDuzenle.id, {
+      reportScopeType: raporYetkiSecim,
+      reportScopeMintikas: raporYetkiSecim === "mintika" ? raporYetkiMintikalari : [],
+      isAdmin: raporYetkiSecim === "all" || raporYetkiDuzenle.isAdmin,
+    } as Partial<AdminKullanici>);
+    setRaporYetkiDuzenle(null);
+    await veriYukle();
+  };
+
+  const raporYetkiDuzenleAc = (u: AdminKullanici) => {
+    setRaporYetkiDuzenle(u);
+    setRaporYetkiSecim(reportYetkiFromScope(u.reportScopeType, u.isAdmin));
+    setRaporYetkiMintikalari(Array.isArray(u.reportScopeMintikas) ? u.reportScopeMintikas : []);
   };
 
   const mevcutEpostalar = useMemo(
@@ -385,6 +464,11 @@ export default function AdminSayfasi() {
       </header>
 
       <div className="admin-app-content">
+        {yetkiAlani && (
+          <div style={{ padding: 12, borderRadius: 10, background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e", fontSize: 12, marginBottom: 12, fontWeight: 700 }}>
+            Yetki Alanı: {yetkiAlani} — yalnızca bu mıntıka(lar)ın raporları görüntülenir.
+          </div>
+        )}
         <div className="admin-filter-card">
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>Rapor filtreleri</div>
@@ -393,8 +477,8 @@ export default function AdminSayfasi() {
           <FiltreSatir>
           <FiltreAlan label="Mıntıka">
             <select value={mintika} onChange={(e) => { setMintika(e.target.value); setKurum(""); }} style={selectStyle}>
-              <option value="">Tümü</option>
-              {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <option value="">{reportAccess.type === "mintika" && gorunenMintikalar.length === 1 ? gorunenMintikalar[0] : "Tümü"}</option>
+              {gorunenMintikalar.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </FiltreAlan>
           <FiltreAlan label="Yurt / Kurum">
@@ -442,7 +526,7 @@ export default function AdminSayfasi() {
         </div>
 
         <div className="admin-tabbar">
-          {SEKMELER.map((s) => (
+          {gorunenSekmeler.map((s) => (
             <button key={s.id} type="button" onClick={() => setAktifSekme(s.id)}
               style={{ flex: "1 1 auto", minWidth: 100, padding: "8px 8px", borderRadius: 9, fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer",
                 background: aktifSekme === s.id ? "linear-gradient(135deg, #1e3a5f, #2563eb)" : "transparent",
@@ -637,7 +721,9 @@ export default function AdminSayfasi() {
                       <td>{formatTarih(y.lastLoginAt)}</td>
                       <td><YurtDurumRozet durum={y.activityStatus} /></td>
                       <td style={{ padding: 8 }}>
-                        <button type="button" onClick={() => kurumSec(y.institutionCode, y.districtName)} style={{ fontSize: 10, marginRight: 4, cursor: "pointer" }}>Kullanıcılar</button>
+                        {tamYetkili && (
+                          <button type="button" onClick={() => kurumSec(y.institutionCode, y.districtName)} style={{ fontSize: 10, marginRight: 4, cursor: "pointer" }}>Kullanıcılar</button>
+                        )}
                         <button type="button" onClick={() => navigator.clipboard.writeText(yurtHatirlatmaMesaji({ institutionName: y.institutionName }))} style={{ fontSize: 10, cursor: "pointer" }}>Hatırlatma</button>
                       </td>
                     </tr>
@@ -649,7 +735,7 @@ export default function AdminSayfasi() {
           </div>
         )}
 
-        {!yukleniyor && aktifSekme === "kullanicilar" && (
+        {!yukleniyor && aktifSekme === "kullanicilar" && tamYetkili && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <AdminKullaniciForm mevcutEpostalar={mevcutEpostalar} onOlusturuldu={veriYukle} />
             <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0" }}>
@@ -709,7 +795,7 @@ export default function AdminSayfasi() {
               <FiltreAlan label="Mıntıka">
                 <select style={selectStyle} value={kullaniciMintika} onChange={(e) => { setKullaniciMintika(e.target.value); setKullaniciKurum(""); }}>
                   <option value="">Tümü</option>
-                  {TRACKED_DISTRICTS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {mintikaListesi.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </FiltreAlan>
               <FiltreAlan label="Kurum">
@@ -750,6 +836,7 @@ export default function AdminSayfasi() {
               onPasif={kullaniciPasif}
               onSifre={sifreSifirla}
               onSil={setSilinecekKullanici}
+              onRaporYetki={raporYetkiDuzenleAc}
               showActions
               showRol
               showDurum
@@ -821,7 +908,7 @@ export default function AdminSayfasi() {
           </div>
         )}
 
-        {!yukleniyor && aktifSekme === "veri" && veriSagligi && (
+        {!yukleniyor && aktifSekme === "veri" && tamYetkili && veriSagligi && (
           <div>
             <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: "1.5px solid #e2e8f0", marginBottom: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 800 }}>Veri Sağlığı (teşhis)</div>
@@ -879,6 +966,7 @@ export default function AdminSayfasi() {
 
         {!yukleniyor && aktifSekme === "excel" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {tamYetkili && (
             <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px solid #e2e8f0", marginBottom: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Dönem / sezon tarihleri</div>
               <FiltreSatir>
@@ -892,8 +980,9 @@ export default function AdminSayfasi() {
                 </button>
               </FiltreSatir>
             </div>
+            )}
             <p style={{ fontSize: 13, color: "#64748b" }}>Renkli .xlsx raporları — gerçek kayıtlara dayanır.</p>
-            {(["genel", "mintika", "yurt", "kullanici", "aktivite", "veri"] as const).map((t) => (
+            {(["genel", "mintika", "yurt", ...(tamYetkili ? ["kullanici", "veri"] as const : []), "aktivite"] as const).map((t) => (
               <button key={t} type="button" onClick={() => excelIndir(t)}
                 style={{ padding: 12, borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "left" }}>
                 📥 {t === "genel" ? "Genel Bakış Raporu" : t === "mintika" ? "Mıntıka Raporu" : t === "yurt" ? "Yurt Takibi Raporu" : t === "kullanici" ? "Kullanıcı Raporu" : t === "aktivite" ? "Aktivite Raporu" : "Veri Sağlığı Raporu"} indir
@@ -903,6 +992,53 @@ export default function AdminSayfasi() {
         )}
         </div>
       </div>
+      {raporYetkiDuzenle && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ maxWidth: 480, width: "100%", background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: "#0f172a", marginBottom: 4 }}>Rapor yetkisi düzenle</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>{raporYetkiDuzenle.name} · {raporYetkiDuzenle.email}</div>
+            <label style={labelStyle}>Rapor Yetkisi</label>
+            <select
+              style={{ ...selectStyle, marginBottom: 12 }}
+              value={raporYetkiSecim}
+              onChange={(e) => {
+                const next = e.target.value as ReportYetkiSecim;
+                setRaporYetkiSecim(next);
+                if (next !== "mintika") setRaporYetkiMintikalari([]);
+              }}
+            >
+              {(Object.entries(RAPOR_YETKI_LABEL) as [ReportYetkiSecim, string][]).map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+            {raporYetkiSecim === "mintika" && (
+              <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Yetkili mıntıkalar</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {mintikaListesi.map((m) => (
+                    <label key={m} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={raporYetkiMintikalari.includes(m)}
+                        onChange={() =>
+                          setRaporYetkiMintikalari((prev) =>
+                            prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+                          )
+                        }
+                      />
+                      {m}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setRaporYetkiDuzenle(null)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", fontWeight: 700 }}>Vazgeç</button>
+              <button type="button" onClick={() => void raporYetkiKaydet()} style={{ padding: "9px 12px", borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 800 }}>Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
       {silinecekKullanici && (
         <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ maxWidth: 420, background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
@@ -927,6 +1063,7 @@ function RaporTablo({
   onPasif,
   onSifre,
   onSil,
+  onRaporYetki,
   showActions,
   showRol,
   showDurum,
@@ -938,6 +1075,7 @@ function RaporTablo({
   onPasif?: (u: AdminKullanici) => void;
   onSifre?: (u: AdminKullanici) => void;
   onSil?: (u: AdminKullanici) => void;
+  onRaporYetki?: (u: AdminKullanici) => void;
   showActions?: boolean;
   showRol?: boolean;
   showDurum?: boolean;
@@ -993,6 +1131,7 @@ function RaporTablo({
               </td>
               {showActions && (
                 <td style={{ padding: 8 }}>
+                  {onRaporYetki && <button type="button" onClick={() => onRaporYetki(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>Rapor yetkisi</button>}
                   {onPasif && <button type="button" onClick={() => onPasif(u)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>{u.isActive ? "Pasif" : "Aktif"}</button>}
                   <button type="button" onClick={() => navigator.clipboard.writeText(`Nehari Veli Bilgilendirme giriş bilgisi\nE-posta: ${u.email}\nKurum: ${u.institutionName || "—"}\nMıntıka: ${u.district || "—"}\nRol: ${ROL_LABEL[normalizeRole(u.role, u.isAdmin)]}`)} style={{ fontSize: 10, display: "block", marginBottom: 4, cursor: "pointer" }}>Giriş bilgisi kopyala</button>
                   {onSifre && <button type="button" onClick={() => onSifre(u)} style={{ fontSize: 10, cursor: "pointer" }}>Şifre sıfırla</button>}

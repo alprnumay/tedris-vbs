@@ -144,6 +144,24 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
     `);
 
     await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS report_scope_type TEXT NOT NULL DEFAULT 'own'
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE local_users ADD COLUMN IF NOT EXISTS report_scope_mintikas JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+
+    await db.execute(sql`
+      UPDATE local_users
+      SET report_scope_type = 'all'
+      WHERE report_scope_type = 'own'
+        AND (
+          is_admin = true
+          OR lower(coalesce(role, '')) IN ('admin', 'super_admin', 'yonetici')
+        )
+    `);
+
+    await db.execute(sql`
       ALTER TABLE local_users ALTER COLUMN id SET DEFAULT gen_random_uuid()::text
     `);
 

@@ -15,6 +15,7 @@ import {
   type SavedProfile,
 } from "@workspace/db";
 import { normalizeRole } from "./roleUtils";
+import { isDistrictAllowed, type ReportAccess } from "./reportAccess";
 
 export const RECORD_TYPES = new Set([
   "app_user",
@@ -44,7 +45,12 @@ type ListOpts = {
   viewerId?: string;
   viewerEmail?: string;
   admin: boolean;
+  reportAccess?: ReportAccess;
 };
+
+function hasReportViewerAccess(opts: ListOpts): boolean {
+  return opts.admin || opts.reportAccess?.type === "mintika";
+}
 
 function iso(d: Date | null | undefined): string | undefined {
   return d ? d.toISOString() : undefined;
@@ -85,7 +91,14 @@ function localUserToAppUserRecord(u: LocalUser): CompatRecord {
       allowedDistricts: [] as string[],
       allowedCities: [] as string[],
       allowedInstitutions: u.institutionCode ? [u.institutionCode] : [],
-      reportPermissions: role === "admin" ? ["all"] : [],
+      reportPermissions:
+        u.reportScopeType === "all" || role === "admin"
+          ? ["all"]
+          : u.reportScopeType === "mintika"
+            ? ["overview", "district", "institution", "users", "activity", "excel"]
+            : [],
+      reportScopeType: u.reportScopeType ?? "own",
+      reportScopeMintikas: Array.isArray(u.reportScopeMintikas) ? u.reportScopeMintikas : [],
     },
   };
 }
@@ -211,6 +224,13 @@ async function listAppUsers(opts: ListOpts): Promise<{ records: CompatRecord[]; 
     let rows: LocalUser[];
     if (opts.admin) {
       rows = await db.select().from(localUsersTable).orderBy(desc(localUsersTable.createdAt));
+    } else if (opts.reportAccess?.type === "mintika") {
+      rows = await db
+        .select()
+        .from(localUsersTable)
+        .where(sql`${localUsersTable.deletedAt} IS NULL`)
+        .orderBy(desc(localUsersTable.createdAt));
+      rows = rows.filter((u) => isDistrictAllowed(opts.reportAccess!, u.district));
     } else if (opts.viewerId || opts.viewerEmail) {
       const email = (opts.viewerEmail ?? "").toLowerCase();
       rows = await db
@@ -280,6 +300,9 @@ async function listInstitutions(opts: ListOpts): Promise<{ records: CompatRecord
     let rows: Institution[];
     if (opts.admin) {
       rows = await db.select().from(institutionsTable).orderBy(desc(institutionsTable.updatedAt));
+    } else if (opts.reportAccess?.type === "mintika") {
+      rows = await db.select().from(institutionsTable).orderBy(desc(institutionsTable.updatedAt));
+      rows = rows.filter((r) => isDistrictAllowed(opts.reportAccess!, r.districtName));
     } else {
       const viewer = opts.viewerId
         ? await db.select().from(localUsersTable).where(eq(localUsersTable.id, opts.viewerId)).limit(1)
@@ -350,14 +373,19 @@ async function listAdminSettings(opts: ListOpts): Promise<{ records: CompatRecor
 
 async function listActivityLogs(opts: ListOpts): Promise<{ records: CompatRecord[]; total: number }> {
   try {
-    if (opts.admin) {
+    if (opts.admin || opts.reportAccess?.type === "mintika") {
       const result = await db.execute(sql`
         SELECT al.*, lu.email AS user_email, lu.name AS user_name
         FROM activity_logs al
         LEFT JOIN local_users lu ON lu.id = al.user_id
         ORDER BY al.created_at DESC
       `);
-      const rows = (result as { rows?: Record<string, unknown>[] }).rows ?? [];
+      let rows = (result as { rows?: Record<string, unknown>[] }).rows ?? [];
+      if (opts.reportAccess?.type === "mintika") {
+        rows = rows.filter((row) =>
+          isDistrictAllowed(opts.reportAccess!, row.district != null ? String(row.district) : null),
+        );
+      }
       const mapped = rows.map((row) =>
         activityToRecord({
           id: String(row.id),

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { requireAuth, requireAdmin, isRequestAdmin } from "../middlewares/requireAdmin";
+import { requireAuth, requireAdmin, isRequestAdmin, loadViewerReportAccess } from "../middlewares/requireAdmin";
 import {
   RECORD_TYPES,
   findCompatRecordById,
@@ -51,9 +51,10 @@ async function handleRecordsList(req: Request, res: Response, forceAdmin: boolea
     return;
   }
 
-  const admin = forceAdmin || isRequestAdmin(req);
+  const isFullAdmin = forceAdmin || isRequestAdmin(req);
   const viewerId = req.localUser?.id;
   const viewerEmail = req.localUser?.email;
+  const reportAccess = await loadViewerReportAccess(req);
 
   try {
     const { records, total } = await listCompatRecords(recordType, {
@@ -61,7 +62,8 @@ async function handleRecordsList(req: Request, res: Response, forceAdmin: boolea
       offset,
       viewerId,
       viewerEmail,
-      admin,
+      admin: isFullAdmin,
+      reportAccess: isFullAdmin ? { type: "all", mintikas: [] } : reportAccess,
     });
     res.json(recordsListResponse(records, total, offset));
   } catch (err) {

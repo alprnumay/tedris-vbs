@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import {
   epostaUret,
@@ -10,6 +10,7 @@ import {
   BILINEN_MINTIKALAR,
 } from "../../lib/admin/adminKullaniciUret";
 import { ROL_LABEL, rolAciklama, type AdminRol } from "../../lib/admin/adminRol";
+import { type ReportYetkiSecim } from "../../lib/admin/reportAccess";
 import { inputStyle, labelStyle, selectStyle } from "./adminUi";
 
 export interface OlusturulanKullanici {
@@ -38,11 +39,20 @@ function OnizlemeSatir({ label, value, uyar }: { label: string; value: string; u
   );
 }
 
+const RAPOR_YETKI_LABEL: Record<ReportYetkiSecim, string> = {
+  own: "Normal Kullanıcı",
+  mintika: "Mıntıka Yöneticisi",
+  all: "Genel Yönetici",
+};
+
 export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
   const [name, setName] = useState("");
   const [mintika, setMintika] = useState("");
   const [kurum, setKurum] = useState("");
   const [role, setRole] = useState<AdminRol>("user");
+  const [raporYetki, setRaporYetki] = useState<ReportYetkiSecim>("own");
+  const [raporMintikalari, setRaporMintikalari] = useState<string[]>([]);
+  const [mintikaListesi, setMintikaListesi] = useState<string[]>([...BILINEN_MINTIKALAR]);
   const [gelismis, setGelismis] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -51,6 +61,16 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
   const [yukleniyor, setYukleniyor] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [basarili, setBasarili] = useState<OlusturulanKullanici | null>(null);
+
+  useEffect(() => {
+    void api.adminMintikas().then((list) => {
+      if (list.length) setMintikaListesi(list);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (role === "admin") setRaporYetki("all");
+  }, [role]);
 
   const otomatik = useMemo(() => {
     const ilOto = ilTahminEt(mintika) || il;
@@ -73,6 +93,12 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
     };
   }, [mintika, kurum, il, gelismis, email, password, institutionCode, mevcutEpostalar]);
 
+  const mintikaToggle = (m: string) => {
+    setRaporMintikalari((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+    );
+  };
+
   const kaydet = async () => {
     setHata(null);
     if (!name.trim() || !mintika.trim() || !kurum.trim()) {
@@ -81,6 +107,11 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
     }
     if (!otomatik.email) {
       setHata("E-posta üretilemedi. Mıntıka ve kurum adını kontrol edin.");
+      return;
+    }
+    const scopeType = role === "admin" ? "all" : raporYetki;
+    if (scopeType === "mintika" && raporMintikalari.length === 0) {
+      setHata("Mıntıka yöneticisi için en az bir mıntıka seçmelisiniz.");
       return;
     }
     setYukleniyor(true);
@@ -95,7 +126,9 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
         institutionCode: otomatik.institutionCode,
         role,
         isActive: true,
-        isAdmin: role === "admin",
+        isAdmin: role === "admin" || scopeType === "all",
+        reportScopeType: scopeType,
+        reportScopeMintikas: scopeType === "mintika" ? raporMintikalari : [],
       });
       setBasarili({
         name: name.trim(),
@@ -111,6 +144,8 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
       setMintika("");
       setKurum("");
       setRole("user");
+      setRaporYetki("own");
+      setRaporMintikalari([]);
       setGelismis(false);
       onOlusturuldu();
     } catch (e) {
@@ -146,7 +181,7 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
           <label style={labelStyle}>Mıntıka / İlçe</label>
           <input style={inputStyle} list="mintika-list" value={mintika} onChange={(e) => { setMintika(e.target.value); setIl(ilTahminEt(e.target.value)); }} placeholder="Alanya" />
           <datalist id="mintika-list">
-            {BILINEN_MINTIKALAR.map((m) => <option key={m} value={m} />)}
+            {mintikaListesi.map((m) => <option key={m} value={m} />)}
           </datalist>
         </div>
         <div>
@@ -161,7 +196,38 @@ export function AdminKullaniciForm({ mevcutEpostalar, onOlusturuldu }: Props) {
           </select>
           <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0" }}>{rolAciklama(role)}</p>
         </div>
+        <div>
+          <label style={labelStyle}>Rapor Yetkisi</label>
+          <select
+            style={selectStyle}
+            value={role === "admin" ? "all" : raporYetki}
+            disabled={role === "admin"}
+            onChange={(e) => {
+              const next = e.target.value as ReportYetkiSecim;
+              setRaporYetki(next);
+              if (next !== "mintika") setRaporMintikalari([]);
+            }}
+          >
+            {(Object.entries(RAPOR_YETKI_LABEL) as [ReportYetkiSecim, string][]).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {raporYetki === "mintika" && role !== "admin" && (
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Yetkili mıntıkalar (en az bir)</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {mintikaListesi.map((m) => (
+              <label key={m} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", padding: "4px 8px", borderRadius: 8, background: raporMintikalari.includes(m) ? "#dbeafe" : "#fff", border: "1px solid #e2e8f0" }}>
+                <input type="checkbox" checked={raporMintikalari.includes(m)} onChange={() => mintikaToggle(m)} />
+                {m}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!gelismis ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, marginTop: 12 }}>

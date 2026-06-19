@@ -1,5 +1,6 @@
 import { type Request, type Response, type NextFunction } from "express";
-import { findLocalUserById, isLoginUserAdmin } from "../lib/localUserLookup";
+import { findLocalUserById, isLoginUserAdmin, type LoginUserRow } from "../lib/localUserLookup";
+import { canAccessReports, getReportAccessForUser, type ReportAccess } from "../lib/reportAccess";
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 
@@ -47,4 +48,35 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
   }
 
   res.status(403).json({ error: "Bu işlem için yönetici yetkisi gerekir." });
+}
+
+export async function loadViewerReportAccess(req: Request): Promise<ReportAccess> {
+  if (req.localUser?.id) {
+    try {
+      const user = await findLocalUserById(req.localUser.id);
+      if (user) return getReportAccessForUser(user);
+    } catch (err) {
+      console.error("[loadViewerReportAccess] user reload failed:", err);
+    }
+  }
+  if (isRequestAdmin(req)) {
+    return { type: "all", mintikas: [] };
+  }
+  return { type: "own", mintikas: [] };
+}
+
+export async function requireReportAccess(req: Request, res: Response, next: NextFunction) {
+  if (!req.localUser?.id && !req.isAuthenticated()) {
+    res.status(401).json({ error: "Giriş yapmanız gerekiyor." });
+    return;
+  }
+
+  const access = await loadViewerReportAccess(req);
+  if (!canAccessReports(access)) {
+    res.status(403).json({ error: "Yönetim raporlarına erişim yetkiniz yok." });
+    return;
+  }
+
+  (req as Request & { reportAccess?: ReportAccess }).reportAccess = access;
+  next();
 }

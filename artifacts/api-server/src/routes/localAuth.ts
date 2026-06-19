@@ -35,6 +35,8 @@ function mapLocalUserPublicProfile(user: LoginUserRow) {
     institutionId: user.institutionId ?? null,
     institutionName: user.institutionName ?? null,
     institutionCode: user.institutionCode ?? null,
+    reportScopeType: user.reportScopeType ?? "own",
+    reportScopeMintikas: Array.isArray(user.reportScopeMintikas) ? user.reportScopeMintikas : [],
   };
 }
 
