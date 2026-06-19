@@ -1,13 +1,13 @@
 ﻿{
   "id": "/",
-  "name": "Nehari Veli Bilgilendirme",
-  "short_name": "Nehari Veli Bilgilendirme",
-  "description": "Öğretmenler ve yurt hocaları için profesyonel veli bilgilendirme afişi oluşturucu",
+  "name": "Antalya Bölge Veli Bilgilendirme",
+  "short_name": "ABVB",
+  "description": "Antalya Bölge Veli Bilgilendirme — öğretmen ve yurt hocaları için profesyonel afiş oluşturucu",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui", "browser"],
-  "background_color": "#1e3a5f",
+  "background_color": "#ffffff",
   "theme_color": "#1e3a5f",
   "orientation": "portrait-primary",
   "lang": "tr",
@@ -46,8 +46,7 @@
       "sizes": "1200x630",
       "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "Nehari Veli Bilgilendirme - Afiş Oluşturucu"
+      "label": "Antalya Bölge Veli Bilgilendirme"
     }
   ]
 }
-

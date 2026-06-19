@@ -175,10 +175,16 @@
     place-items: center;
   }
 
-  .tedris-brand__mark svg {
+  .tedris-brand__mark svg,
+  .tedris-brand__mark .tedris-brand__logo {
     width: 36px;
     height: 36px;
     display: block;
+    object-fit: contain;
+  }
+
+  .tedris-brand__logo {
+    border-radius: 8px;
   }
 
   .tedris-brand__text h1 {
@@ -204,9 +210,14 @@
     border-radius: 12px;
   }
 
-  .tedris-brand--compact .tedris-brand__mark svg {
+  .tedris-brand--compact .tedris-brand__mark svg,
+  .tedris-brand--compact .tedris-brand__mark .tedris-brand__logo {
     width: 31px;
     height: 31px;
+  }
+
+  .tedris-brand__compact-user {
+    display: none;
   }
 
   .tedris-brand--compact .tedris-brand__text {
@@ -244,7 +255,8 @@
     border-radius: 12px;
   }
 
-  .tedris-brand--mobile-row .tedris-brand__mark svg {
+  .tedris-brand--mobile-row .tedris-brand__mark svg,
+  .tedris-brand--mobile-row .tedris-brand__mark .tedris-brand__logo {
     width: 30px;
     height: 30px;
   }
@@ -1063,10 +1075,13 @@
       border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.35);
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-      padding: 0.82rem;
+      padding: 0;
       width: 100%;
       max-height: calc(100dvh - 158px);
-      overflow-y: auto;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
 
     .veli-desktop-preview-col {
@@ -1607,27 +1622,200 @@
     margin: 0;
     padding: 0;
   }
-}
 
-/* ─── Veli afiş artboard + önizleme motoru ─── */
-@layer components {
-  .tedris-app-header--veli-compact {
+  /* ─── Veli wizard UX + preview auto-fit (UI only) ─── */
+  .veli-wizard-form--desktop {
+    height: 100%;
+    min-height: 0;
+    padding: 0.82rem;
+    gap: 0;
+  }
+
+  .veli-wizard-form__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: 0.75rem;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .veli-wizard-form__scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .veli-wizard-form__scroll::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 999px;
+  }
+
+  .veli-wizard-form__scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .veli-wizard-form__actions {
+    flex-shrink: 0;
+    margin-top: auto;
+    padding-top: 0.65rem;
+    border-top: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, #ffffff 28%);
+  }
+
+  .veli-wizard-desktop-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.35fr);
+    gap: 8px;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .veli-wizard-desktop-nav__left,
+  .veli-wizard-desktop-nav__center,
+  .veli-wizard-desktop-nav__right {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  .veli-wizard-desktop-nav__center {
+    justify-content: center;
+  }
+
+  .veli-wizard-desktop-nav__right {
+    justify-content: flex-end;
+  }
+
+  .veli-wizard-desktop-nav__btn {
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .veli-wizard-desktop-nav__btn--secondary {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #475569;
+  }
+
+  .veli-wizard-desktop-nav__btn--secondary:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  .veli-wizard-desktop-nav__btn--primary {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+  }
+
+  .veli-wizard-desktop-nav__btn--grow {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .veli-wizard-stepper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .veli-wizard-stepper__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .veli-wizard-stepper__title {
+    font-weight: 800;
+    color: #334155;
+    min-width: 0;
+  }
+
+  .veli-wizard-stepper__pct {
+    flex-shrink: 0;
+    font-weight: 800;
+    color: #2563eb;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+  }
+
+  .veli-wizard-stepper__track {
+    height: 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+  }
+
+  .veli-wizard-stepper__fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #1d4ed8, #3b82f6);
+    transition: width 0.25s ease;
+  }
+
+  .veli-wizard-stepper__steps {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
-    padding: 6px 10px;
-    padding-top: max(6px, env(safe-area-inset-top));
   }
 
-  .tedris-app-header--veli-compact .tedris-app-header__brand-mobile {
-    display: none;
+  .veli-wizard-stepper__step {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 7px 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
 
-  .tedris-app-header--veli-compact .tedris-header-icon-btn {
-    width: 32px;
-    height: 32px;
+  .veli-wizard-stepper__step.is-active {
+    background: #2563eb;
+    border-color: #1d4ed8;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
   }
 
-  .tedris-app-header--veli-compact .tedris-header-pill-btn {
-    padding: 6px 8px;
+  .veli-wizard-stepper__step.is-done {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+  }
+
+  .veli-wizard-stepper__step.is-idle:disabled {
+    cursor: default;
+    opacity: 0.85;
+  }
+
+  .veli-wizard-stepper__step:not(.is-active):not(:disabled):hover {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+
+  .veli-preview-autofit__artboard {
+    overflow: hidden;
+    flex-shrink: 0;
+    will-change: transform;
   }
 
   .veli-poster-artboard {
@@ -1636,360 +1824,118 @@
     box-sizing: border-box;
     background: #ffffff;
     isolation: isolate;
+    flex: none;
   }
 
-  .veli-poster-artboard__inner {
+  .veli-poster-template-root {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    min-height: 100%;
     overflow: hidden;
     box-sizing: border-box;
+  }
+
+  /* Template root — artboard'un tamamını doldurur (sınıf olmasa da) */
+  .veli-poster-template-root > * {
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+
+  .veli-poster-template-shell {
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+
+  .veli-poster-template-header {
+    flex-shrink: 0;
+  }
+
+  .veli-poster-template-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .veli-poster-template-footer {
+    margin-top: auto;
+    flex-shrink: 0;
   }
 
   .veli-poster-artboard h1,
   .veli-poster-artboard h2,
   .veli-poster-artboard h3 {
     max-width: 100%;
-    margin-inline: 0;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    line-height: calc(var(--veli-line-height, 1.34) * 0.95);
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--veli-title-lines, 3);
-    overflow: hidden;
-    font-size: calc(1em * var(--veli-title-scale, 1));
-  }
-
-  .veli-poster-artboard p,
-  .veli-poster-artboard li,
-  .veli-poster-artboard span,
-  .veli-poster-artboard div {
-    max-width: 100%;
     overflow-wrap: anywhere;
     word-break: break-word;
   }
 
   .veli-poster-artboard p {
-    line-height: var(--veli-line-height, 1.34);
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--veli-body-lines, 8);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .veli-mobile-preview-frame {
     overflow: hidden;
-    font-size: calc(1em * var(--veli-body-scale, 1));
-  }
-
-  .veli-poster-artboard img {
-    max-width: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .veli-poster-artboard [style*="object-fit"] {
-    max-width: 100% !important;
-  }
-
-  .veli-poster-artboard[data-density="dense"] img {
-    max-height: 140px;
-  }
-
-  .veli-preview-scaler,
-  .veli-preview-scaler__frame {
-    max-width: 100%;
-    max-height: 100%;
-  }
-
-  .veli-preview-scaler__artboard {
-    will-change: transform;
-  }
-
-  .veli-mobile-preview-stage {
-    width: 100%;
-    height: min(58vh, 480px);
-    min-height: 220px;
+    overflow-x: hidden;
     border-radius: 20px;
-    overflow: hidden;
     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
     background: #eef2f7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .veli-mobile-preview-stage--compact {
-    height: min(34vh, 260px);
+    padding: 8px;
     min-height: 160px;
-  }
-
-  .veli-wizard-desktop-nav {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-    width: 100%;
-    min-width: 0;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #f1f5f9;
+    max-width: 100%;
     box-sizing: border-box;
   }
 
-  .veli-wizard-desktop-nav__slot--back {
-    flex: 0 0 auto;
-    min-width: 0;
-  }
-
-  .veli-wizard-desktop-nav__actions {
-    display: flex;
-    gap: 8px;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .veli-wizard-desktop-nav__btn {
-    min-width: 0;
-    min-height: 44px;
-    padding: 10px 14px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-    box-sizing: border-box;
-  }
-
-  .veli-wizard-desktop-nav__btn--secondary {
-    border: 1.5px solid #e2e8f0;
-    background: #fff;
-    color: #475569;
-  }
-
-  .veli-wizard-desktop-nav__btn--draft {
-    flex: 0 0 auto;
-    padding-inline: 12px;
-    font-size: 12px;
-  }
-
-  .veli-wizard-desktop-nav__btn--primary {
-    flex: 1 1 auto;
-    border: none;
-    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-    color: #fff;
-    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.28);
-  }
-
-  .veli-wizard-desktop-nav__btn--grow {
-    flex: 1 1 auto;
-  }
-
-  .veli-live-preview-strip {
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
-    margin-top: 8px;
-    padding-top: 4px;
-    background: linear-gradient(180deg, transparent 0%, #f8fafc 24%);
-  }
-
-  .veli-live-preview-strip__toggle {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    border-radius: 16px 16px 0 0;
-    border: 1px solid #e2e8f0;
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(12px);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 800;
-    color: #1e3a5f;
-  }
-
-  .veli-live-preview-strip__panel {
-    overflow: hidden;
-    border: 1px solid #e2e8f0;
-    border-top: none;
-    border-radius: 0 0 16px 16px;
-    background: rgba(255, 255, 255, 0.95);
-  }
-
-  .veli-live-preview-strip__body {
-    padding: 8px 12px 12px;
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-  }
-
-  .veli-live-preview-strip__stage {
-    flex: 1;
-    min-width: 0;
-    height: 140px;
-    overflow: hidden;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    background: #eef2f7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .veli-live-preview-strip__action {
-    flex-shrink: 0;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: none;
-    background: linear-gradient(135deg, #1e3a5f, #2563eb);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .veli-wizard-mobile-content {
-    padding-bottom: calc(104px + env(safe-area-inset-bottom));
-  }
-
-  .veli-preview-mode-toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .veli-preview-mode-toggle button {
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
-    background: #fff;
-    padding: 9px 10px;
-    font-size: 11px;
-    font-weight: 800;
-    color: #64748b;
-    cursor: pointer;
-  }
-
-  .veli-preview-mode-toggle button.is-active {
-    border-color: #2563eb;
-    background: #eff6ff;
-    color: #1d4ed8;
-    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15);
-  }
-
-  .veli-preview-mode-toggle--compact button {
-    padding: 8px;
-    font-size: 10px;
-  }
-
-  .veli-export-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .veli-export-actions button {
-    flex: 1 1 calc(33.333% - 6px);
-    min-width: 7.5rem;
-  }
-
-  .veli-wa-chat-preview {
-    width: 100%;
-    max-width: 360px;
+  .veli-mobile-preview-scaler {
     margin: 0 auto;
-    border-radius: 18px;
     overflow: hidden;
-    background: #e5ddd5;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
   }
 
-  .veli-wa-chat-preview__topbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: #075e54;
-    color: #fff;
-  }
-
-  .veli-wa-chat-preview__topbar strong {
-    display: block;
-    font-size: 13px;
-    line-height: 1.2;
-  }
-
-  .veli-wa-chat-preview__topbar span {
-    display: block;
-    font-size: 10px;
-    opacity: 0.85;
-  }
-
-  .veli-wa-chat-preview__avatar {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    display: grid;
-    place-items: center;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .veli-wa-chat-preview__thread {
-    padding: 14px 10px 10px;
-    min-height: 280px;
-    background:
-      radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.35) 0%, transparent 45%),
-      #e5ddd5;
-  }
-
-  .veli-wa-chat-preview__bubble {
-    max-width: 92%;
-    margin-left: auto;
-    padding: 4px;
-    border-radius: 12px 12px 2px 12px;
-    background: #dcf8c6;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  }
-
-  .veli-wa-chat-preview__poster-slot {
+  .posterPreview,
+  .veli-preview-stage,
+  .veli-studio-poster-wrap {
+    max-width: 100%;
     overflow: hidden;
-    border-radius: 10px;
-    background: #fff;
   }
 
-  .veli-wa-chat-preview__poster-slot .veli-preview-scaler__frame {
-    margin: 0;
-  }
+  @media (max-width: 900px) {
+    .veli-wizard-stepper__steps {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 
-  .veli-wa-chat-preview__hint {
-    margin: 0;
-    padding: 8px 12px 10px;
-    font-size: 10px;
-    line-height: 1.35;
-    color: #64748b;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
-  }
+    .veli-wizard-desktop-nav {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas:
+        "left right"
+        "center center";
+    }
 
-  .veli-mobile-preview-stage--chat {
-    height: auto;
-    min-height: 360px;
-    padding: 8px;
-    background: #eef2f7;
-  }
+    .veli-wizard-desktop-nav__left {
+      grid-area: left;
+    }
 
-  .veli-wizard-bottom-bar__exports--full {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-    width: 100%;
-  }
+    .veli-wizard-desktop-nav__right {
+      grid-area: right;
+    }
 
-  @media (max-width: 420px) {
-    .veli-wizard-bottom-bar__exports--full {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .veli-wizard-desktop-nav__center {
+      grid-area: center;
     }
   }
 }

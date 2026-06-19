@@ -130,12 +130,14 @@ function DesktopSidebar({
     <aside className="hidden lg:flex h-screen w-[260px] flex-col bg-[#0f1c36] fixed left-0 top-0 z-40 border-r border-white/[0.06]">
       {/* Marka */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.06]">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white shadow-md">
-          N
-        </div>
+        <img
+          src="/app-logo.png"
+          alt="Antalya Bölge Veli Bilgilendirme"
+          className="h-10 w-10 shrink-0 rounded-xl object-contain bg-white p-0.5 shadow-md"
+        />
         <div>
-          <p className="text-[13px] font-extrabold leading-none text-white">Nehari Platformu</p>
-          <p className="mt-0.5 text-[10px] leading-none text-slate-400">Çalışma Paneli</p>
+          <p className="text-[13px] font-extrabold leading-none text-white">Antalya Bölge Veli Bilgilendirme</p>
+          <p className="mt-0.5 text-[10px] leading-none text-slate-400">ABVB · Çalışma Paneli</p>
         </div>
       </div>
 
@@ -351,11 +353,13 @@ function MobileTopBar({ user }: { user: KullaniciBilgisi | null | undefined }) {
   return (
     <div className="flex items-center justify-between gap-3 lg:hidden">
       <div className="flex items-center gap-2.5 min-w-0">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white shadow-sm">
-          N
-        </div>
+        <img
+          src="/app-logo.png"
+          alt="Antalya Bölge Veli Bilgilendirme"
+          className="h-9 w-9 shrink-0 rounded-xl object-contain bg-white p-0.5 shadow-sm"
+        />
         <div className="min-w-0">
-          <p className="text-[13px] font-extrabold leading-none text-slate-800">Nehari Platformu</p>
+          <p className="text-[13px] font-extrabold leading-none text-slate-800">ABVB</p>
           {name && (
             <p className="mt-0.5 truncate text-[11px] leading-none text-slate-400">
               Hoş geldiniz, <span className="font-semibold text-slate-600">{name}</span>

@@ -1,6 +1,7 @@
 ﻿import { useState } from "react";
 import { api, type KullaniciBilgisi } from "../lib/api";
 import { backendApi } from "../lib/backendApi";
+import { APP_BRAND_TAGLINE, APP_BRAND_TITLE, APP_LOGO_ALT, APP_LOGO_SRC } from "../lib/appLogo";
 
 interface Props {
   onGiris: (kullanici: KullaniciBilgisi) => void;
@@ -113,30 +114,27 @@ export default function GirisEkrani({ onGiris }: Props) {
       }}>
         {/* Logo ve başlık */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 80, height: 80, borderRadius: 20,
-            background: "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 16px",
-            boxShadow: "0 8px 24px rgba(30,58,95,0.35)",
-          }}>
-            <img
-              src="/icon-192.png"
-              alt="Uygulama İkonu"
-              style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover" }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          </div>
+          <img
+            src={APP_LOGO_SRC}
+            alt={APP_LOGO_ALT}
+            style={{
+              width: 96,
+              height: 96,
+              objectFit: "contain",
+              margin: "0 auto 16px",
+              display: "block",
+              borderRadius: 20,
+              boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
+            }}
+          />
           <h1 style={{
             fontSize: 20, fontWeight: 800, color: "#0f172a",
             lineHeight: 1.2, marginBottom: 6,
           }}>
-            Nehari Veli Bilgilendirme
+            {APP_BRAND_TITLE}
           </h1>
           <p style={{ fontSize: 13, color: "#64748b", lineHeight: 1.4 }}>
-            Öğretmen ve yurt hocaları için afiş oluşturucu
+            {APP_BRAND_TAGLINE}
           </p>
         </div>
 

@@ -1,11 +1,11 @@
-const CACHE_NAME = "nehari-veli-bilgilendirme-v3";
+const CACHE_NAME = "nehari-veli-bilgilendirme-v4";
 
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
+  "/app-logo.png",
   "/icon-192.png",
   "/icon-512.png",
-  "/favicon.svg",
 ];
 
 const OFFLINE_RESPONSE = new Response("Offline", {
