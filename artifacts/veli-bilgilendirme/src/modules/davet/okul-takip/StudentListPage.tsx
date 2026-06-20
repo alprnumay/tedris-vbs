@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ import type { Student } from "@/modules/davet/okul-takip/types";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
 import {
   deleteStudent,
-  generateId,
   upsertStudent,
   useOkulTakipStore,
 } from "@/modules/davet/okul-takip/store";
@@ -33,10 +32,11 @@ const emptyForm: Omit<Student, "id"> = {
 };
 
 export default function StudentListPage() {
-  const { students } = useOkulTakipStore();
+  const { students, loading, ready } = useOkulTakipStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
 
   const openAdd = () => {
     setEditing(null);
@@ -57,85 +57,122 @@ export default function StudentListPage() {
     setModalOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) {
       toast.error("Ad soyad gerekli.");
       return;
     }
-    const student: Student = {
-      id: editing?.id ?? generateId("s"),
-      ...form,
-    };
-    upsertStudent(student);
-    setModalOpen(false);
-    toast.success(editing ? "Öğrenci güncellendi." : "Öğrenci eklendi.");
+    setSaving(true);
+    try {
+      const student: Student = {
+        id: editing?.id ?? "",
+        ...form,
+      };
+      await upsertStudent(student);
+      setModalOpen(false);
+      toast.success(editing ? "Öğrenci güncellendi." : "Öğrenci eklendi.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kayıt başarısız.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const remove = (id: string) => {
+  const remove = async (id: string) => {
     if (!confirm("Bu öğrenciyi silmek istediğinize emin misiniz?")) return;
-    deleteStudent(id);
-    toast.success("Öğrenci silindi.");
+    try {
+      await deleteStudent(id);
+      toast.success("Öğrenci silindi.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Silme başarısız.");
+    }
   };
+
+  const archive = async (student: Student) => {
+    try {
+      await upsertStudent({ ...student, isActive: false });
+      toast.success("Öğrenci arşivlendi (pasif).");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Güncelleme başarısız.");
+    }
+  };
+
+  const activeStudents = students.filter((s) => s.isActive);
+  const archivedStudents = students.filter((s) => !s.isActive);
+
+  if (!ready && loading) {
+    return (
+      <DavetLayout>
+        <div className="flex min-h-[40vh] items-center justify-center text-sm text-slate-500">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Öğrenciler yükleniyor…
+        </div>
+      </DavetLayout>
+    );
+  }
 
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
         <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-bold">Öğrenci Listesi</h1>
+
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Öğrencilerim</h1>
+            <p className="text-sm text-slate-600">Kendi öğrenci listenizi yönetin</p>
+          </div>
           <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700">
             <Plus size={16} className="mr-2" />
             Öğrenci ekle
           </Button>
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Ad Soyad</th>
-                <th className="px-4 py-3">Sınıf</th>
-                <th className="px-4 py-3">Kurum</th>
-                <th className="px-4 py-3">Grup</th>
-                <th className="px-4 py-3">Veli tel.</th>
-                <th className="px-4 py-3">Durum</th>
-                <th className="px-4 py-3">İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {students.map((s) => (
-                <tr key={s.id} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{s.name}</td>
-                  <td className="px-4 py-3">{s.grade}</td>
-                  <td className="px-4 py-3">{s.institution}</td>
-                  <td className="px-4 py-3">{s.group}</td>
-                  <td className="px-4 py-3">{s.parentPhone}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={
-                        s.isActive
-                          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"
-                          : "rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600"
-                      }
-                    >
-                      {s.isActive ? "Aktif" : "Pasif"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
-                        <Pencil size={16} />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => remove(s.id)}>
-                        <Trash2 size={16} className="text-red-600" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
+        {activeStudents.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+            <p className="text-sm text-slate-600">Henüz öğrenci eklemediniz.</p>
+            <Button onClick={openAdd} className="mt-4 bg-violet-600 hover:bg-violet-700">
+              İlk öğrenciyi ekle
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {activeStudents.map((s) => (
+              <StudentCard
+                key={s.id}
+                student={s}
+                onEdit={() => openEdit(s)}
+                onArchive={() => void archive(s)}
+                onDelete={() => void remove(s.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {archivedStudents.length > 0 ? (
+          <div className="space-y-3">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+              Arşiv (pasif)
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {archivedStudents.map((s) => (
+                <StudentCard
+                  key={s.id}
+                  student={s}
+                  onEdit={() => openEdit(s)}
+                  onRestore={async () => {
+                    try {
+                      await upsertStudent({ ...s, isActive: true });
+                      toast.success("Öğrenci tekrar aktif edildi.");
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Güncelleme başarısız.");
+                    }
+                  }}
+                  onDelete={() => void remove(s.id)}
+                />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
@@ -175,7 +212,7 @@ export default function StudentListPage() {
               />
             </div>
             <div>
-              <Label>Veli telefonu</Label>
+              <Label>Veli telefonu (isteğe bağlı)</Label>
               <Input
                 value={form.parentPhone}
                 onChange={(e) => setForm({ ...form, parentPhone: e.target.value })}
@@ -193,12 +230,77 @@ export default function StudentListPage() {
             <Button variant="outline" onClick={() => setModalOpen(false)}>
               İptal
             </Button>
-            <Button onClick={save} className="bg-violet-600 hover:bg-violet-700">
+            <Button
+              onClick={() => void save()}
+              disabled={saving}
+              className="bg-violet-600 hover:bg-violet-700"
+            >
+              {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
               Kaydet
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </DavetLayout>
+  );
+}
+
+function StudentCard({
+  student,
+  onEdit,
+  onArchive,
+  onRestore,
+  onDelete,
+}: {
+  student: Student;
+  onEdit: () => void;
+  onArchive?: () => void;
+  onRestore?: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-slate-900">{student.name}</p>
+          <p className="text-xs text-slate-500">
+            {student.grade} · {student.group}
+          </p>
+          {student.institution ? (
+            <p className="mt-1 text-xs text-slate-500">{student.institution}</p>
+          ) : null}
+        </div>
+        <span
+          className={
+            student.isActive
+              ? "rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800"
+              : "rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+          }
+        >
+          {student.isActive ? "Aktif" : "Pasif"}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1">
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Pencil size={14} className="mr-1" />
+          Düzenle
+        </Button>
+        {onArchive ? (
+          <Button variant="outline" size="sm" onClick={onArchive}>
+            <Archive size={14} className="mr-1" />
+            Arşivle
+          </Button>
+        ) : null}
+        {onRestore ? (
+          <Button variant="outline" size="sm" onClick={onRestore}>
+            Aktifleştir
+          </Button>
+        ) : null}
+        <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-600">
+          <Trash2 size={14} className="mr-1" />
+          Sil
+        </Button>
+      </div>
+    </div>
   );
 }

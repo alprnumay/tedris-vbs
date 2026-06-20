@@ -759,34 +759,44 @@ export default function FormAlani({
 
   const wizardDesktopNav = (
     <div className="veli-wizard-desktop-nav">
-      <div className="veli-wizard-desktop-nav__slot veli-wizard-desktop-nav__slot--back">
+      <div className="veli-wizard-desktop-nav__left">
         {activeStep > 0 ? (
-          <button type="button" onClick={onWizardGeri ?? (() => setActiveStep(activeStep - 1))} className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary">
+          <button
+            type="button"
+            onClick={onWizardGeri ?? (() => setActiveStep(activeStep - 1))}
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary"
+          >
             Geri
           </button>
         ) : null}
       </div>
-      <div className="veli-wizard-desktop-nav__actions">
+      <div className="veli-wizard-desktop-nav__center">
         {onTaslakKaydet ? (
           <button
             type="button"
             onClick={onTaslakKaydet}
             disabled={taslakKaydediliyor}
-            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary veli-wizard-desktop-nav__btn--draft"
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary"
           >
-            {taslakKaydediliyor ? "..." : "Kaydet"}
+            {taslakKaydediliyor ? "Kaydediliyor…" : "Kaydet"}
           </button>
         ) : null}
+      </div>
+      <div className="veli-wizard-desktop-nav__right">
         {activeStep < VELI_WIZARD_LAST_STEP ? (
           <button
             type="button"
             onClick={onWizardIleri ?? (() => setActiveStep(activeStep + 1))}
-            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--primary"
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--primary veli-wizard-desktop-nav__btn--grow"
           >
             Devam Et
           </button>
         ) : onWizardGeri ? (
-          <button type="button" onClick={onWizardGeri} className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary veli-wizard-desktop-nav__btn--grow">
+          <button
+            type="button"
+            onClick={onWizardGeri}
+            className="veli-wizard-desktop-nav__btn veli-wizard-desktop-nav__btn--secondary veli-wizard-desktop-nav__btn--grow"
+          >
             Düzenlemeye Dön
           </button>
         ) : null}
@@ -1206,17 +1216,19 @@ export default function FormAlani({
 
   if (wizardMode) {
     return (
-      <div className="veli-wizard-form flex flex-col gap-4">
-        <WizardStepper activeStep={activeStep} onStepClick={setActiveStep} compact={mobilMod} />
-        {wizardMeta && mobilMod ? (
-          <p className="text-sm font-semibold text-slate-700">{wizardMeta.title}</p>
-        ) : null}
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={activeStep} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: stepEase }}>
-            {wizardStepContent}
-          </motion.div>
-        </AnimatePresence>
-        {desktopMod ? wizardDesktopNav : null}
+      <div className={`veli-wizard-form flex flex-col gap-4${desktopMod ? " veli-wizard-form--desktop" : ""}`}>
+        <div className={desktopMod ? "veli-wizard-form__scroll" : undefined}>
+          <WizardStepper activeStep={activeStep} onStepClick={setActiveStep} compact={mobilMod} />
+          {wizardMeta && mobilMod ? (
+            <p className="text-sm font-semibold text-slate-700">{wizardMeta.title}</p>
+          ) : null}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div key={activeStep} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: stepEase }}>
+              {wizardStepContent}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+        {desktopMod ? <div className="veli-wizard-form__actions">{wizardDesktopNav}</div> : null}
         {sablonGaleriAcik && (
           <div className="veli-template-modal" role="dialog" aria-modal="true">
             <div className="veli-template-modal__panel">

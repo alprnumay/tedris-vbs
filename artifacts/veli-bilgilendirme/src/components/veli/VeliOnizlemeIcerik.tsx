@@ -38,7 +38,6 @@ function sablonIcerik(form: FormData, sablon: SablonTuru, tarih: string) {
   return <SablonAkademik form={form} tarih={tarih} />;
 }
 
-/** Tek ana afiş renderer — önizleme, PNG, PDF ve WhatsApp paylaşımı buradan beslenir. */
 export function VeliOnizlemeIcerik({
   form,
   sablon,
@@ -53,7 +52,7 @@ export function VeliOnizlemeIcerik({
   const f = { ...form, gorseller: form.gorseller.slice(0, limit) };
 
   return (
-    <VeliPosterArtboard form={f} artboardRef={artboardRef}>
+    <VeliPosterArtboard artboardRef={artboardRef}>
       {sablonIcerik(f, sablon, tarih)}
     </VeliPosterArtboard>
   );

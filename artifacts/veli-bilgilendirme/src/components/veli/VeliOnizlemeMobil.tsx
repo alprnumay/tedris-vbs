@@ -3,46 +3,72 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { FormData, SablonTuru } from "@/types";
 import { VeliOnizlemeIcerik } from "./VeliOnizlemeIcerik";
 import { VeliYanPanel } from "./VeliYanPanel";
-import { VeliPreviewScaler } from "./VeliPreviewScaler";
-import type { VeliPreviewMode } from "./wizard/PreviewModeToggle";
-import { WhatsappChatPreviewShell } from "./wizard/WhatsappChatPreviewShell";
+import { VELI_POSTER_H, VELI_POSTER_W } from "@/lib/sablonlar/posterShell";
+
+const POSTER_W = VELI_POSTER_W;
+const POSTER_H = VELI_POSTER_H;
 
 export function VeliOnizlemeMobil({
   form,
   sablon,
+  zoom,
   wrapperRef,
   onSablonOner,
   paylasBtnlari = null,
-  compact = false,
-  previewMode = "normal",
 }: {
   form: FormData;
   sablon: SablonTuru;
+  zoom: number;
   wrapperRef: RefObject<HTMLDivElement | null>;
   onSablonOner: (id: SablonTuru) => void;
   paylasBtnlari?: React.ReactNode;
-  compact?: boolean;
-  previewMode?: VeliPreviewMode;
 }) {
   const [detayAcik, setDetayAcik] = useState(false);
-
-  const posterPreview = (
-    <VeliPreviewScaler observeRef={wrapperRef} deps={[form, sablon]}>
-      <VeliOnizlemeIcerik form={form} sablon={sablon} />
-    </VeliPreviewScaler>
-  );
+  const scaledW = Math.round(POSTER_W * zoom);
+  const scaledH = Math.round(POSTER_H * zoom);
 
   return (
-    <div className="flex flex-col gap-3 p-4 pb-6" style={{ background: "#e8edf2" }}>
+    <div
+      className="flex flex-col gap-3 p-4 pb-6"
+      style={{ background: "#e8edf2", overflowX: "hidden", maxWidth: "100%" }}
+    >
       <div
         ref={wrapperRef}
-        className={`veli-mobile-preview-stage${compact ? " veli-mobile-preview-stage--compact" : ""}${previewMode === "whatsapp" ? " veli-mobile-preview-stage--chat" : ""}`}
+        className="veli-mobile-preview-frame"
+        style={{
+          width: "100%",
+          maxWidth: "100%",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          overflowX: "hidden",
+        }}
       >
-        {previewMode === "whatsapp" ? (
-          <WhatsappChatPreviewShell>{posterPreview}</WhatsappChatPreviewShell>
-        ) : (
-          posterPreview
-        )}
+        <div
+          className="veli-studio-poster-wrap veli-mobile-preview-scaler"
+          style={{
+            width: scaledW,
+            height: scaledH,
+            flexShrink: 0,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <div
+            className="veli-preview-autofit__artboard"
+            style={{
+              width: POSTER_W,
+              height: POSTER_H,
+              transform: `scale(${zoom})`,
+              transformOrigin: "top left",
+              position: "absolute",
+              top: 0,
+              left: 0,
+            }}
+          >
+            <VeliOnizlemeIcerik form={form} sablon={sablon} />
+          </div>
+        </div>
       </div>
 
       {paylasBtnlari}

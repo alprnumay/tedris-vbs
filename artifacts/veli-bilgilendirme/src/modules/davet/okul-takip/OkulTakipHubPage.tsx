@@ -105,8 +105,8 @@ export default function OkulTakipHubPage() {
               accent="from-orange-500 to-red-500"
             />
             <ActionCard
-              title="Öğrenci Listesi"
-              description="Öğrenci bilgilerini görüntüleyin ve düzenleyin."
+              title="Öğrencilerim"
+              description="Öğrenci ekleme, düzenleme ve arşivleme."
               href={OKUL_TAKIP_OGRENCILER}
               icon={Users}
               accent="from-slate-600 to-slate-800"

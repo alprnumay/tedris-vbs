@@ -55,6 +55,18 @@ function HeroGorseller({ gorseller }: { gorseller: string[] }) {
     );
   }
 
+  if (gorseller.length >= 4) {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", width: "100%", height: "100%", gap: 3 }}>
+        {gorseller.slice(0, 4).map((g, i) => (
+          <div key={i} style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+            <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.45fr 1fr", width: "100%", height: "100%", gap: 3 }}>
       <div style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
@@ -78,7 +90,7 @@ export default function SablonFotografOdakli({ form, tarih }: Props) {
   const gorseller = form.gorseller;
 
   return (
-    <div className="veli-poster-template-root" style={shellFillStyle}>
+    <div className="veli-poster-template-shell" style={shellFillStyle}>
       <div style={{ flex: "0 0 44%", flexShrink: 0, minHeight: 0, overflow: "hidden", position: "relative" }}>
         <HeroGorseller gorseller={gorseller} />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(15,23,42,0.05) 0%, rgba(15,23,42,0.5) 100%)", pointerEvents: "none" }} />
@@ -116,7 +128,7 @@ export default function SablonFotografOdakli({ form, tarih }: Props) {
         </div>
       </div>
 
-      <div className="veli-poster-footer" style={{ ...footerStyle, flexShrink: 0, padding: "12px 20px 16px", display: "flex", alignItems: "center", gap: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+      <div className="veli-poster-template-footer" style={{ ...footerStyle, flexShrink: 0, padding: "12px 20px 16px", display: "flex", alignItems: "center", gap: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(14,165,233,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid rgba(14,165,233,0.4)" }}>
           <svg width={16} height={16} fill="none" stroke="#0ea5e9" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

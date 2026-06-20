@@ -103,6 +103,131 @@ async function upsertCompatJsonRecord(
   return created;
 }
 
+async function upsertOwnedCompatRecord(
+  recordType: string,
+  data: Record<string, unknown>,
+  ctx: MutationContext,
+  existingId?: string,
+): Promise<CompatRecord> {
+  if (!ctx.viewerId && !ctx.admin) {
+    throw new RecordsMutationError("Oturum gerekli.", 401);
+  }
+
+  const ownerId = ctx.viewerId;
+  if (!ownerId) {
+    throw new RecordsMutationError("Oturum gerekli.", 401);
+  }
+
+  const payload = { ...data };
+  delete payload.userId;
+  delete payload.ownerUserId;
+  payload.ownerUserId = ownerId;
+
+  const now = new Date();
+  if (existingId) {
+    const existing = await getCompatRecord(recordType, existingId);
+    if (!existing) throw new RecordsMutationError("Kayıt bulunamadı.", 404);
+    assertOwnerOrAdmin(existing.userId != null ? String(existing.userId) : null, ctx, "Güncelleme");
+    await db.execute(sql`
+      UPDATE compat_records
+      SET data = ${JSON.stringify(payload)}::jsonb,
+          updated_at = ${now}
+      WHERE id = ${existingId} AND record_type = ${recordType}
+    `);
+    const updated = await getCompatRecord(recordType, existingId);
+    if (!updated) throw new RecordsMutationError("Kayıt güncellenemedi.", 500);
+    return updated;
+  }
+
+  const [inserted] = (
+    await db.execute(sql`
+      INSERT INTO compat_records (record_type, user_id, data, created_at, updated_at)
+      VALUES (${recordType}, ${ownerId}, ${JSON.stringify(payload)}::jsonb, ${now}, ${now})
+      RETURNING id
+    `)
+  ).rows as { id: string }[] | undefined;
+  const id = inserted?.id;
+  if (!id) throw new RecordsMutationError("Kayıt oluşturulamadı.", 500);
+  const created = await getCompatRecord(recordType, id);
+  if (!created) throw new RecordsMutationError("Kayıt oluşturulamadı.", 500);
+  return created;
+}
+
+async function assertOkulStudentOwnedByViewer(studentId: string, ctx: MutationContext) {
+  const student = await getCompatRecord("okul_student", studentId);
+  if (!student) throw new RecordsMutationError("Öğrenci bulunamadı.", 404);
+  assertOwnerOrAdmin(student.userId != null ? String(student.userId) : null, ctx, "Öğrenci erişimi");
+}
+
+function normalizeOkulStudentData(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    name: str(data.name),
+    grade: str(data.grade),
+    institution: str(data.institution),
+    group: str(data.group),
+    parentPhone: str(data.parentPhone),
+    isActive: data.isActive !== false,
+  };
+}
+
+function normalizeOkulDailyRecordData(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    studentId: str(data.studentId),
+    date: str(data.date),
+    institution: str(data.institution),
+    group: str(data.group),
+    attendanceStatus: data.attendanceStatus ?? null,
+    homeworkStatus: data.homeworkStatus ?? null,
+    note: str(data.note),
+  };
+}
+
+async function upsertOkulStudent(
+  data: Record<string, unknown>,
+  ctx: MutationContext,
+  existingId?: string,
+): Promise<CompatRecord> {
+  const normalized = normalizeOkulStudentData(data);
+  if (!normalized.name) throw new RecordsMutationError("Öğrenci adı zorunludur.", 400);
+  return upsertOwnedCompatRecord("okul_student", normalized, ctx, existingId);
+}
+
+async function upsertOkulDailyRecord(
+  data: Record<string, unknown>,
+  ctx: MutationContext,
+  existingId?: string,
+): Promise<CompatRecord> {
+  const normalized = normalizeOkulDailyRecordData(data);
+  if (!normalized.studentId) throw new RecordsMutationError("Öğrenci kimliği zorunludur.", 400);
+  if (!normalized.date) throw new RecordsMutationError("Tarih zorunludur.", 400);
+  await assertOkulStudentOwnedByViewer(String(normalized.studentId), ctx);
+  return upsertOwnedCompatRecord("okul_daily_record", normalized, ctx, existingId);
+}
+
+async function deleteOkulStudent(id: string, ctx: MutationContext): Promise<void> {
+  const existing = await getCompatRecord("okul_student", id);
+  if (!existing) throw new RecordsMutationError("Öğrenci bulunamadı.", 404);
+  assertOwnerOrAdmin(existing.userId != null ? String(existing.userId) : null, ctx, "Öğrenci silme");
+
+  const ownerId = ctx.viewerId;
+  if (ownerId) {
+    await db.execute(sql`
+      DELETE FROM compat_records
+      WHERE record_type = 'okul_daily_record'
+        AND user_id = ${ownerId}
+        AND data->>'studentId' = ${id}
+    `);
+  } else if (ctx.admin) {
+    await db.execute(sql`
+      DELETE FROM compat_records
+      WHERE record_type = 'okul_daily_record'
+        AND data->>'studentId' = ${id}
+    `);
+  }
+
+  await db.execute(sql`DELETE FROM compat_records WHERE id = ${id} AND record_type = 'okul_student'`);
+}
+
 async function createAppUser(data: Record<string, unknown>, ctx: MutationContext): Promise<CompatRecord> {
   assertAdmin(ctx, "Kullanıcı oluşturma");
 
@@ -459,6 +584,10 @@ export async function createCompatRecord(
       return createUserProfile(data, ctx);
     case "poster_draft":
       return upsertCompatJsonRecord("poster_draft", data, ctx);
+    case "okul_student":
+      return upsertOkulStudent(data, ctx);
+    case "okul_daily_record":
+      return upsertOkulDailyRecord(data, ctx);
     default:
       throw new RecordsMutationError(`Desteklenmeyen kayıt türü: ${recordType}`, 400);
   }
@@ -485,6 +614,10 @@ export async function updateCompatRecord(
       return upsertAdminSetting({ ...data, key: str(data.key) || id }, ctx, id);
     case "poster_draft":
       return upsertCompatJsonRecord("poster_draft", data, ctx, id);
+    case "okul_student":
+      return upsertOkulStudent(data, ctx, id);
+    case "okul_daily_record":
+      return upsertOkulDailyRecord(data, ctx, id);
     default:
       throw new RecordsMutationError(`${recordType} güncellemesi desteklenmiyor.`, 400);
   }
@@ -544,6 +677,17 @@ export async function deleteCompatRecord(
       if (!existing) throw new RecordsMutationError("Taslak bulunamadı.", 404);
       assertOwnerOrAdmin(existing.userId != null ? String(existing.userId) : null, ctx, "Taslak silme");
       await db.execute(sql`DELETE FROM compat_records WHERE id = ${id} AND record_type = 'poster_draft'`);
+      break;
+    }
+    case "okul_student": {
+      await deleteOkulStudent(id, ctx);
+      break;
+    }
+    case "okul_daily_record": {
+      const existing = await getCompatRecord("okul_daily_record", id);
+      if (!existing) throw new RecordsMutationError("Kayıt bulunamadı.", 404);
+      assertOwnerOrAdmin(existing.userId != null ? String(existing.userId) : null, ctx, "Kayıt silme");
+      await db.execute(sql`DELETE FROM compat_records WHERE id = ${id} AND record_type = 'okul_daily_record'`);
       break;
     }
     case "activity_log": {

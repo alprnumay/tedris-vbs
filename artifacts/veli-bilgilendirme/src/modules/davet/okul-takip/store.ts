@@ -1,35 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { MOCK_DAILY_RECORDS, MOCK_STUDENTS } from "@/modules/davet/okul-takip/mockData";
-import { STORAGE_KEY } from "@/modules/davet/okul-takip/constants";
+import {
+  fetchOkulTakipStore,
+  removeStudent as apiRemoveStudent,
+  saveDailyRecords as apiSaveDailyRecords,
+  saveStudent as apiSaveStudent,
+} from "@/modules/davet/okul-takip/okulTakipApi";
 import type {
   DailyRecord,
   OkulTakipStore,
   Student,
 } from "@/modules/davet/okul-takip/types";
 
-function loadStore(): OkulTakipStore {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as OkulTakipStore;
-      if (parsed.students?.length && parsed.dailyRecords) {
-        return parsed;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return {
-    students: MOCK_STUDENTS,
-    dailyRecords: MOCK_DAILY_RECORDS,
-  };
-}
+const EMPTY_STORE: OkulTakipStore = { students: [], dailyRecords: [] };
 
-function saveStore(store: OkulTakipStore) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-
-let storeCache = loadStore();
+let storeCache: OkulTakipStore = EMPTY_STORE;
+let storeLoading = false;
+let storeReady = false;
+let reloadPromise: Promise<OkulTakipStore> | null = null;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -45,70 +32,91 @@ export function subscribeOkulTakip(fn: () => void) {
   return () => listeners.delete(fn);
 }
 
-export function resetOkulTakipStore() {
-  storeCache = {
-    students: MOCK_STUDENTS,
-    dailyRecords: MOCK_DAILY_RECORDS,
-  };
-  saveStore(storeCache);
+export async function reloadOkulTakipStore(): Promise<OkulTakipStore> {
+  if (reloadPromise) return reloadPromise;
+
+  storeLoading = true;
   notify();
+
+  reloadPromise = (async () => {
+    try {
+      storeCache = await fetchOkulTakipStore();
+    } catch (err) {
+      console.warn("[okul-takip] store load failed", err);
+      storeCache = EMPTY_STORE;
+    } finally {
+      storeLoading = false;
+      storeReady = true;
+      reloadPromise = null;
+      notify();
+    }
+    return storeCache;
+  })();
+
+  return reloadPromise;
 }
 
-export function upsertDailyRecords(records: DailyRecord[]) {
+export async function upsertDailyRecords(records: DailyRecord[]): Promise<void> {
+  const saved = await apiSaveDailyRecords(records);
   const map = new Map(storeCache.dailyRecords.map((r) => [`${r.studentId}-${r.date}`, r]));
-  const now = new Date().toISOString();
-  for (const rec of records) {
-    const key = `${rec.studentId}-${rec.date}`;
-    const existing = map.get(key);
-    map.set(key, {
-      ...rec,
-      id: existing?.id ?? rec.id,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    });
+  for (const rec of saved) {
+    map.set(`${rec.studentId}-${rec.date}`, rec);
   }
   storeCache = { ...storeCache, dailyRecords: [...map.values()] };
-  saveStore(storeCache);
   notify();
 }
 
-export function upsertStudent(student: Student) {
+export async function upsertStudent(student: Student): Promise<Student> {
+  const saved = await apiSaveStudent(student);
   const idx = storeCache.students.findIndex((s) => s.id === student.id);
   const students =
     idx >= 0
-      ? storeCache.students.map((s, i) => (i === idx ? student : s))
-      : [...storeCache.students, student];
+      ? storeCache.students.map((s, i) => (i === idx ? saved : s))
+      : [...storeCache.students, saved];
   storeCache = { ...storeCache, students };
-  saveStore(storeCache);
   notify();
+  return saved;
 }
 
-export function deleteStudent(id: string) {
+export async function deleteStudent(id: string): Promise<void> {
+  await apiRemoveStudent(id);
   storeCache = {
     students: storeCache.students.filter((s) => s.id !== id),
     dailyRecords: storeCache.dailyRecords.filter((r) => r.studentId !== id),
   };
-  saveStore(storeCache);
   notify();
 }
 
-export function useOkulTakipStore(): OkulTakipStore {
+export type OkulTakipStoreState = OkulTakipStore & {
+  loading: boolean;
+  ready: boolean;
+};
+
+export function useOkulTakipStore(): OkulTakipStoreState {
   const [, setTick] = useState(0);
+
   useEffect(() => subscribeOkulTakip(() => setTick((t) => t + 1)), []);
-  return storeCache;
+
+  useEffect(() => {
+    if (!storeReady && !reloadPromise) {
+      void reloadOkulTakipStore();
+    }
+  }, []);
+
+  return {
+    ...storeCache,
+    loading: storeLoading,
+    ready: storeReady,
+  };
 }
 
 export function useOkulTakipActions() {
-  const refresh = useCallback(() => {
-    storeCache = loadStore();
-    notify();
-  }, []);
+  const refresh = useCallback(() => reloadOkulTakipStore(), []);
 
   return {
     upsertDailyRecords,
     upsertStudent,
     deleteStudent,
-    resetOkulTakipStore,
     refresh,
   };
 }

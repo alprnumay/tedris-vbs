@@ -1,6 +1,16 @@
 import React from "react";
 import { FormData } from "../../types";
 import { baslikolustur } from "../../lib/dil";
+import {
+  POSTER_BODY_CLS,
+  POSTER_FOOTER_CLS,
+  POSTER_HEADER_CLS,
+  POSTER_SHELL_CLS,
+  posterBodyStyle,
+  posterFooterStyle,
+  posterHeaderStyle,
+  posterShellStyle,
+} from "../../lib/sablonlar/posterShell";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -64,8 +74,8 @@ export default function SablonAkademik({ form, tarih }: Props) {
   const aktifFaaliyetler = form.faaliyetler.slice(0, form.faaliyetSayisi).filter((f) => f.tur || f.alan);
 
   return (
-    <div style={{ width: "100%", borderRadius: 16, overflow: "hidden", background: "linear-gradient(160deg, #1e3a5f 0%, #2d5a9e 60%, #1a4a7a 100%)", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
-      <div style={{ padding: "22px 26px 18px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, background: "linear-gradient(160deg, #1e3a5f 0%, #2d5a9e 60%, #1a4a7a 100%)", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
+      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: "22px 26px 18px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.9)" }}>
             Öğrenci Bilgi Formu
@@ -76,7 +86,7 @@ export default function SablonAkademik({ form, tarih }: Props) {
         {form.kurumAdi && <p style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.78)", margin: "6px 0 0", letterSpacing: "0.02em" }}>{form.kurumAdi}</p>}
       </div>
 
-      <div style={{ padding: "22px 26px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "22px 26px 24px", gap: 18 }}>
         {form.gorseller.length > 0 && <GorselAlan gorseller={form.gorseller} />}
 
         {aktifFaaliyetler.length > 0 && (
@@ -90,18 +100,18 @@ export default function SablonAkademik({ form, tarih }: Props) {
           </div>
         )}
 
-        <div style={{ borderRadius: 12, padding: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.6)", marginBottom: 8 }}>Faaliyet Özeti</div>
-          <p style={{ fontSize: 14.5, lineHeight: 1.75, color: "rgba(255,255,255,0.94)", margin: 0, fontWeight: 450 }}>{aciklama}</p>
+        <div style={{ borderRadius: 12, padding: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.6)", marginBottom: 8, flexShrink: 0 }}>Faaliyet Özeti</div>
+          <p style={{ fontSize: 14.5, lineHeight: 1.75, color: "rgba(255,255,255,0.94)", margin: 0, fontWeight: 450, overflow: "hidden" }}>{aciklama}</p>
         </div>
+      </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-          <div>
-            {form.isim && <p style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", margin: 0, letterSpacing: "-0.01em" }}>{form.isim}</p>}
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", margin: "4px 0 0", fontWeight: 500 }}>{form.rol || "Sorumlu Hoca"}</p>
-          </div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Veli Bilgilendirme</div>
+      <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 26px 22px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+        <div>
+          {form.isim && <p style={{ fontSize: 15, fontWeight: 700, color: "#ffffff", margin: 0, letterSpacing: "-0.01em" }}>{form.isim}</p>}
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", margin: "4px 0 0", fontWeight: 500 }}>{form.rol || "Sorumlu Hoca"}</p>
         </div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Veli Bilgilendirme</div>
       </div>
     </div>
   );

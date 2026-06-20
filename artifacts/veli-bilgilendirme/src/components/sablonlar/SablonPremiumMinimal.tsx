@@ -1,5 +1,15 @@
 import { FormData } from "../../types";
 import { baslikolustur } from "../../lib/dil";
+import {
+  POSTER_BODY_CLS,
+  POSTER_FOOTER_CLS,
+  POSTER_HEADER_CLS,
+  POSTER_SHELL_CLS,
+  posterBodyStyle,
+  posterFooterStyle,
+  posterHeaderStyle,
+  posterShellStyle,
+} from "../../lib/sablonlar/posterShell";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -9,20 +19,17 @@ export default function SablonPremiumMinimal({ form, tarih }: Props) {
   const aktif = form.faaliyetler.slice(0, form.faaliyetSayisi).filter((f) => f.tur || f.alan);
 
   return (
-    <div style={{ width: "100%", background: "#ffffff", fontFamily: "'Inter', Arial, sans-serif", borderRadius: 16, overflow: "hidden", border: "1px solid #e2e8f0" }}>
-      {/* Üst ince şerit */}
-      <div style={{ height: 5, background: "linear-gradient(90deg, #334155 0%, #64748b 50%, #94a3b8 100%)" }} />
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, background: "#ffffff", fontFamily: "'Inter', Arial, sans-serif", borderRadius: 16, border: "1px solid #e2e8f0" }}>
+      <div style={{ height: 5, background: "linear-gradient(90deg, #334155 0%, #64748b 50%, #94a3b8 100%)", flexShrink: 0 }} />
 
-      {/* Kapak Görsel - eğer varsa */}
       {form.gorseller.length > 0 && (
-        <div style={{ height: 240, overflow: "hidden" }}>
+        <div style={{ flex: "1 1 38%", minHeight: 160, maxHeight: 300, overflow: "hidden", flexShrink: 0 }}>
           <img src={form.gorseller[0]} alt="Kapak" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
       )}
 
-      {/* Başlık alanı */}
-      <div style={{ padding: form.gorseller.length > 0 ? "24px 32px 16px" : "32px 32px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: form.gorseller.length > 0 ? "20px 32px 12px" : "28px 32px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           {form.kurumAdi && (
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94a3b8" }}>
               {form.kurumAdi}
@@ -35,47 +42,42 @@ export default function SablonPremiumMinimal({ form, tarih }: Props) {
         </h1>
       </div>
 
-      {/* İnce ayraç */}
-      <div style={{ height: 1, background: "#f1f5f9", margin: "0 32px" }} />
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "0 32px", gap: 14 }}>
+        <div style={{ height: 1, background: "#f1f5f9", flexShrink: 0 }} />
 
-      {/* Faaliyet etiketleri */}
-      {aktif.length > 0 && (
-        <div style={{ padding: "16px 32px", display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {aktif.map((f, i) => (
-            <span key={i} style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "6px 14px", borderRadius: 20,
-              background: "#f8fafc", border: "1px solid #e2e8f0",
-              fontSize: 12, fontWeight: 600, color: "#334155",
-            }}>
-              {f.tur && <span style={{ color: "#94a3b8" }}>{f.tur}</span>}
-              {f.tur && f.alan && <span style={{ color: "#cbd5e1" }}>·</span>}
-              {f.alan && <span>{f.alan}</span>}
-            </span>
-          ))}
+        {aktif.length > 0 && (
+          <div style={{ paddingTop: 14, display: "flex", flexWrap: "wrap", gap: 8, flexShrink: 0 }}>
+            {aktif.map((f, i) => (
+              <span key={i} style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 20,
+                background: "#f8fafc", border: "1px solid #e2e8f0",
+                fontSize: 12, fontWeight: 600, color: "#334155",
+              }}>
+                {f.tur && <span style={{ color: "#94a3b8" }}>{f.tur}</span>}
+                {f.tur && f.alan && <span style={{ color: "#cbd5e1" }}>·</span>}
+                {f.alan && <span>{f.alan}</span>}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", overflow: "hidden" }}>
+          <p style={{ fontSize: 14, lineHeight: 1.85, color: "#475569", margin: 0, overflow: "hidden" }}>{aciklama}</p>
         </div>
-      )}
 
-      {/* Metin */}
-      <div style={{ padding: aktif.length > 0 ? "0 32px 24px" : "16px 32px 24px" }}>
-        <p style={{ fontSize: 14, lineHeight: 1.85, color: "#475569", margin: 0 }}>
-          {aciklama}
-        </p>
+        {form.gorseller.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, paddingBottom: 8 }}>
+            {form.gorseller.slice(1, 4).map((g, i) => (
+              <div key={i} style={{ flex: 1, borderRadius: 10, overflow: "hidden", minHeight: 0 }}>
+                <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Küçük görsel sırası (2+ görsel varsa) */}
-      {form.gorseller.length > 1 && (
-        <div style={{ padding: "0 32px 24px", display: "flex", gap: 8 }}>
-          {form.gorseller.slice(1, 4).map((g, i) => (
-            <div key={i} style={{ flex: 1, borderRadius: 10, overflow: "hidden" }}>
-              <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Footer */}
-      <div style={{ padding: "16px 32px", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, padding: "16px 32px", borderTop: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           {form.isim && <p style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", margin: 0 }}>{form.isim}</p>}
           <p style={{ fontSize: 11, color: "#94a3b8", margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>

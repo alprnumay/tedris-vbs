@@ -21,6 +21,8 @@ export type Student = {
   group: string;
   parentPhone: string;
   isActive: boolean;
+  /** Sunucu tarafında compat_records.user_id + data.ownerUserId ile tutulur */
+  ownerUserId?: string;
 };
 
 export type DailyRecord = {

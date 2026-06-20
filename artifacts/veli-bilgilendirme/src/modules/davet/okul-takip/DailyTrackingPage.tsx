@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Save, Search, StickyNote } from "lucide-react";
+import { Layers, Loader2, Save, Search, StickyNote } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -12,31 +15,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { BulkActionSheet } from "@/modules/davet/okul-takip/components/BulkActionSheet";
 import {
   AttendanceButtonGroup,
   HomeworkButtonGroup,
 } from "@/modules/davet/okul-takip/components/StatusButtonGroup";
-import { DailyTrackingListRow } from "@/modules/davet/okul-takip/components/DailyTrackingListRow";
 import { DailyTrackingProgress } from "@/modules/davet/okul-takip/components/DailyTrackingProgress";
-import { DailyTrackingSequentialView } from "@/modules/davet/okul-takip/components/DailyTrackingSequentialView";
 import {
   applyAbsentHomework,
   applyHomeworkToAttendance,
   isHomeworkDisabled,
 } from "@/modules/davet/okul-takip/calculations";
-import {
-  buildTabOptions,
-  isStudentMarked,
-  matchesStatusFilter,
-  matchesTabFilter,
-  parseTabKey,
-  STATUS_FILTER_OPTIONS,
-  VIEW_MODE_OPTIONS,
-  type StatusFilter,
-  type ViewMode,
-} from "@/modules/davet/okul-takip/dailyTrackingHelpers";
+import { isStudentMarked } from "@/modules/davet/okul-takip/dailyTrackingHelpers";
 import { getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { AttendanceStatus, DailyDraft, DailyRecord, HomeworkStatus, Student } from "@/modules/davet/okul-takip/types";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
@@ -53,35 +44,32 @@ function emptyDraft(studentId: string): DailyDraft {
 }
 
 export default function DailyTrackingPage() {
-  const { students, dailyRecords } = useOkulTakipStore();
+  const { students, dailyRecords, loading, ready } = useOkulTakipStore();
   const [date, setDate] = useState(todayIso());
   const [institution, setInstitution] = useState<string>("all");
-  const [tabKey, setTabKey] = useState("all");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [hideMarkedOnly, setHideMarkedOnly] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [onlyUnmarked, setOnlyUnmarked] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, DailyDraft>>({});
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [noteStudentId, setNoteStudentId] = useState<string | null>(null);
-  const [sequentialIndex, setSequentialIndex] = useState(0);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const institutions = useMemo(() => getInstitutions(students), [students]);
-  const tabFilter = parseTabKey(tabKey);
 
   const baseStudents = useMemo(
     () =>
       students
         .filter((s) => s.isActive)
-        .filter((s) => institution === "all" || s.institution === institution),
-    [students, institution],
+        .filter((s) => institution === "all" || s.institution === institution)
+        .filter((s) => groupFilter === "all" || s.group === groupFilter),
+    [students, institution, groupFilter],
   );
 
-  const tabOptions = useMemo(() => buildTabOptions(baseStudents), [baseStudents]);
-
-  const scopeStudents = useMemo(
-    () => baseStudents.filter((s) => matchesTabFilter(s, tabFilter)),
-    [baseStudents, tabFilter],
+  const groupOptions = useMemo(
+    () => [...new Set(baseStudents.map((s) => s.group).filter(Boolean))].sort(),
+    [baseStudents],
   );
 
   useEffect(() => {
@@ -98,7 +86,6 @@ export default function DailyTrackingPage() {
     setDrafts(next);
     setDirty(false);
     setNoteStudentId(null);
-    setSequentialIndex(0);
   }, [baseStudents, dailyRecords, date]);
 
   useEffect(() => {
@@ -135,141 +122,77 @@ export default function DailyTrackingPage() {
     [],
   );
 
-  const advanceSequential = useCallback(
-    (fromStudentId?: string) => {
-      setDrafts((currentDrafts) => {
-        const list = scopeStudents
-          .filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()))
-          .filter((s) => matchesStatusFilter(currentDrafts[s.id], statusFilter))
-          .filter((s) => !hideMarkedOnly || !isStudentMarked(currentDrafts[s.id]))
-          .sort((a, b) => a.name.localeCompare(b.name, "tr"));
+  const setAttendance = useCallback((studentId: string, status: AttendanceStatus) => {
+    setDrafts((prev) => {
+      const current = prev[studentId] ?? emptyDraft(studentId);
+      const updated: DailyDraft =
+        status === "absent"
+          ? {
+              ...current,
+              attendanceStatus: status,
+              homeworkStatus: applyAbsentHomework(),
+            }
+          : { ...current, attendanceStatus: status };
+      return { ...prev, [studentId]: updated };
+    });
+    setDirty(true);
+  }, []);
 
-        if (list.length === 0) return currentDrafts;
+  const setHomework = useCallback((studentId: string, status: HomeworkStatus) => {
+    setDrafts((prev) => {
+      const current = prev[studentId] ?? emptyDraft(studentId);
+      if (isHomeworkDisabled(current.attendanceStatus)) return prev;
 
-        const currentIdx = fromStudentId
-          ? list.findIndex((s) => s.id === fromStudentId)
-          : sequentialIndex;
-
-        const nextUnmarked = list.findIndex(
-          (s, i) => i > currentIdx && !isStudentMarked(currentDrafts[s.id]),
-        );
-        if (nextUnmarked >= 0) {
-          setSequentialIndex(nextUnmarked);
-        } else {
-          const firstUnmarked = list.findIndex((s) => !isStudentMarked(currentDrafts[s.id]));
-          if (firstUnmarked >= 0 && firstUnmarked !== currentIdx) {
-            setSequentialIndex(firstUnmarked);
-          } else if (currentIdx < list.length - 1) {
-            setSequentialIndex(currentIdx + 1);
-          }
-        }
-        setNoteStudentId(null);
-        return currentDrafts;
-      });
-    },
-    [scopeStudents, search, statusFilter, hideMarkedOnly, sequentialIndex],
-  );
-
-  const setAttendance = useCallback(
-    (studentId: string, status: AttendanceStatus, autoAdvance = false) => {
-      setDrafts((prev) => {
-        const current = prev[studentId] ?? emptyDraft(studentId);
-        const updated: DailyDraft =
-          status === "absent"
-            ? {
-                ...current,
-                attendanceStatus: status,
-                homeworkStatus: applyAbsentHomework(),
-              }
-            : { ...current, attendanceStatus: status };
-
-        if (autoAdvance && viewMode === "sequential" && isStudentMarked(updated)) {
-          queueMicrotask(() => advanceSequential(studentId));
-        }
-        return { ...prev, [studentId]: updated };
-      });
-      setDirty(true);
-    },
-    [advanceSequential, viewMode],
-  );
-
-  const setHomework = useCallback(
-    (studentId: string, status: HomeworkStatus, autoAdvance = false) => {
-      setDrafts((prev) => {
-        const current = prev[studentId] ?? emptyDraft(studentId);
-        if (isHomeworkDisabled(current.attendanceStatus)) return prev;
-
-        const updated: DailyDraft = {
-          ...current,
-          homeworkStatus: status,
-          attendanceStatus: applyHomeworkToAttendance(),
-        };
-
-        if (autoAdvance && viewMode === "sequential" && isStudentMarked(updated)) {
-          queueMicrotask(() => advanceSequential(studentId));
-        }
-        return { ...prev, [studentId]: updated };
-      });
-      setDirty(true);
-    },
-    [advanceSequential, viewMode],
-  );
+      const updated: DailyDraft = {
+        ...current,
+        homeworkStatus: status,
+        attendanceStatus: applyHomeworkToAttendance(),
+      };
+      return { ...prev, [studentId]: updated };
+    });
+    setDirty(true);
+  }, []);
 
   const displayStudents = useMemo(() => {
-    return scopeStudents
+    return baseStudents
       .filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()))
-      .filter((s) => matchesStatusFilter(drafts[s.id], statusFilter))
-      .filter((s) => !hideMarkedOnly || !isStudentMarked(drafts[s.id]))
+      .filter((s) => !onlyUnmarked || !isStudentMarked(drafts[s.id]))
       .sort((a, b) => a.name.localeCompare(b.name, "tr"));
-  }, [scopeStudents, search, statusFilter, hideMarkedOnly, drafts]);
+  }, [baseStudents, search, onlyUnmarked, drafts]);
 
   const markedCount = useMemo(
-    () => scopeStudents.filter((s) => isStudentMarked(drafts[s.id])).length,
-    [scopeStudents, drafts],
+    () => baseStudents.filter((s) => isStudentMarked(drafts[s.id])).length,
+    [baseStudents, drafts],
   );
 
-  useEffect(() => {
-    if (sequentialIndex >= displayStudents.length) {
-      setSequentialIndex(Math.max(0, displayStudents.length - 1));
+  const saveAll = async () => {
+    setSaving(true);
+    try {
+      const records: DailyRecord[] = scopeStudentsForSave(baseStudents, drafts, dailyRecords, date);
+      await upsertDailyRecords(records);
+      setDirty(false);
+      toast.success("Günlük takip kaydedildi.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Kayıt başarısız.");
+    } finally {
+      setSaving(false);
     }
-  }, [displayStudents.length, sequentialIndex]);
-
-  const saveAll = () => {
-    const records: DailyRecord[] = scopeStudents.map((s) => {
-      const d = drafts[s.id] ?? emptyDraft(s.id);
-      const existing = getRecordForStudentDate(dailyRecords, s.id, date);
-      return {
-        id: existing?.id ?? generateId("dr"),
-        studentId: s.id,
-        date,
-        institution: s.institution,
-        group: s.group,
-        attendanceStatus: d.attendanceStatus,
-        homeworkStatus: d.homeworkStatus,
-        note: d.note,
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    });
-    upsertDailyRecords(records);
-    setDirty(false);
-    toast.success("Günlük takip kaydedildi.");
   };
 
   const bulkPresentAndComplete = () => {
-    applyBulk(scopeStudents, (d) => {
+    applyBulk(baseStudents, (d) => {
       if (d.attendanceStatus === "absent") return d;
       return { ...d, attendanceStatus: "present", homeworkStatus: "completed" };
     });
   };
 
   const bulkPresent = () => {
-    applyBulk(scopeStudents, (d) => ({ ...d, attendanceStatus: "present" }));
+    applyBulk(baseStudents, (d) => ({ ...d, attendanceStatus: "present" }));
   };
 
   const bulkUnmarkedAbsent = () => {
     applyBulk(
-      scopeStudents.filter((s) => !isStudentMarked(drafts[s.id])),
+      baseStudents.filter((s) => !isStudentMarked(drafts[s.id])),
       (d) => ({
         ...d,
         attendanceStatus: "absent",
@@ -278,8 +201,19 @@ export default function DailyTrackingPage() {
     );
   };
 
+  const bulkNotChecked = () => {
+    applyBulk(baseStudents, (d) => {
+      if (d.attendanceStatus === "absent") return d;
+      return {
+        ...d,
+        attendanceStatus: d.attendanceStatus ?? "present",
+        homeworkStatus: "not_checked",
+      };
+    });
+  };
+
   const clearAll = () => {
-    applyBulk(scopeStudents, (d) => ({
+    applyBulk(baseStudents, (d) => ({
       ...d,
       attendanceStatus: null,
       homeworkStatus: null,
@@ -287,288 +221,243 @@ export default function DailyTrackingPage() {
     }));
   };
 
-  const sequentialStudent = displayStudents[sequentialIndex];
-  const sequentialRemaining = displayStudents.filter(
-    (s) => !isStudentMarked(drafts[s.id]),
-  ).length;
+  if (!ready && loading) {
+    return (
+      <DavetLayout>
+        <div className="flex min-h-[40vh] items-center justify-center text-sm text-slate-500">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Veriler yükleniyor…
+        </div>
+      </DavetLayout>
+    );
+  }
 
   return (
     <DavetLayout>
-      <div className="space-y-4 pb-24">
+      <div className="space-y-4 pb-28">
         <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
 
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Günlük Takip</h1>
-            <p className="text-sm text-slate-600">Hızlı yoklama ve okul ödevi işaretleme</p>
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Günlük Takip</h1>
+          <p className="text-sm text-slate-600">Yoklama ve okul ödevi takibi</p>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Filtreler</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label className="mb-1.5 block text-xs text-slate-500">Tarih</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div>
+              <Label className="mb-1.5 block text-xs text-slate-500">Kurum</Label>
+              <Select value={institution} onValueChange={setInstitution}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kurum" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tümü</SelectItem>
+                  {institutions.map((i) => (
+                    <SelectItem key={i} value={i}>
+                      {i}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="mb-1.5 block text-xs text-slate-500">Grup</Label>
+              <Select value={groupFilter} onValueChange={setGroupFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Grup" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tüm gruplar</SelectItem>
+                  {groupOptions.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="mb-1.5 block text-xs text-slate-500">Arama</Label>
+              <div className="relative">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <Input
+                  className="pl-9"
+                  placeholder="Öğrenci adı..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex rounded-xl border border-slate-200 bg-white p-1">
-            {VIEW_MODE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  setViewMode(opt.value);
-                  setSequentialIndex(0);
-                }}
-                className={cn(
-                  "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
-                  viewMode === opt.value
-                    ? "bg-violet-600 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <Label htmlFor="only-unmarked" className="text-sm font-medium text-slate-700">
+              Sadece işaretlenmemişler
+            </Label>
+            <Switch id="only-unmarked" checked={onlyUnmarked} onCheckedChange={setOnlyUnmarked} />
           </div>
         </div>
 
-        <DailyTrackingProgress
-          total={scopeStudents.length}
-          marked={markedCount}
+        <DailyTrackingProgress total={baseStudents.length} marked={markedCount} />
+
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => setBulkOpen(true)}>
+            <Layers size={16} className="mr-2" />
+            Toplu İşlem
+          </Button>
+        </div>
+
+        <BulkActionSheet
+          open={bulkOpen}
+          onOpenChange={setBulkOpen}
+          actions={[
+            { label: "Hepsini Var + Ödev Tamam yap", onSelect: bulkPresentAndComplete },
+            { label: "Hepsini Var yap", onSelect: bulkPresent },
+            { label: "İşaretlenmeyenleri Yok yap", onSelect: bulkUnmarkedAbsent },
+            { label: "Ödevi kontrol edilmedi yap", onSelect: bulkNotChecked },
+            {
+              label: "Tümünü temizle",
+              onSelect: clearAll,
+              variant: "destructive",
+            },
+          ]}
         />
 
-        <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">Tarih</label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-500">Kurum</label>
-            <Select value={institution} onValueChange={setInstitution}>
-              <SelectTrigger>
-                <SelectValue placeholder="Kurum" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tümü</SelectItem>
-                {institutions.map((i) => (
-                  <SelectItem key={i} value={i}>
-                    {i}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="sm:col-span-2 lg:col-span-1">
-            <label className="mb-1 block text-xs font-semibold text-slate-500">Arama</label>
-            <div className="relative">
-              <Search
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <Input
-                className="pl-9"
-                placeholder="Öğrenci adı yaz..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {tabOptions.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => {
-                setTabKey(tab.key);
-                setSequentialIndex(0);
-              }}
-              className={cn(
-                "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                tabKey === tab.key
-                  ? "border-violet-500 bg-violet-600 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {STATUS_FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setStatusFilter(opt.value)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-xs font-semibold",
-                statusFilter === opt.value
-                  ? "border-slate-800 bg-slate-800 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <label className="ml-auto flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-            <input
-              type="checkbox"
-              checked={hideMarkedOnly}
-              onChange={(e) => setHideMarkedOnly(e.target.checked)}
-              className="rounded"
-            />
-            Sadece işaretlenmemişler
-          </label>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5">
-          <Button variant="outline" size="sm" onClick={bulkPresentAndComplete}>
-            Var + Ödev Tamam
-          </Button>
-          <Button variant="outline" size="sm" onClick={bulkPresent}>
-            Hepsini Var
-          </Button>
-          <Button variant="outline" size="sm" onClick={bulkUnmarkedAbsent}>
-            İşaretlenmeyenleri Yok
-          </Button>
-          <Button variant="outline" size="sm" onClick={clearAll}>
-            Tümünü temizle
-          </Button>
-        </div>
-
-        {viewMode === "sequential" ? (
-          sequentialStudent ? (
-            <DailyTrackingSequentialView
-              student={sequentialStudent}
-              draft={drafts[sequentialStudent.id]}
-              hwDisabled={isHomeworkDisabled(drafts[sequentialStudent.id]?.attendanceStatus ?? null)}
-              index={sequentialIndex}
-              total={displayStudents.length}
-              remaining={sequentialRemaining}
-              noteOpen={noteStudentId === sequentialStudent.id}
-              onToggleNote={() =>
-                setNoteStudentId(
-                  noteStudentId === sequentialStudent.id ? null : sequentialStudent.id,
-                )
-              }
-              onAttendance={(v) => setAttendance(sequentialStudent.id, v, true)}
-              onHomework={(v) => setHomework(sequentialStudent.id, v, true)}
-              onNoteChange={(note) => updateDraft(sequentialStudent.id, { note })}
-              onPrev={() => {
-                setSequentialIndex((i) => Math.max(0, i - 1));
-                setNoteStudentId(null);
-              }}
-              onNext={() => {
-                setSequentialIndex((i) => Math.min(displayStudents.length - 1, i + 1));
-                setNoteStudentId(null);
-              }}
-              canPrev={sequentialIndex > 0}
-              canNext={sequentialIndex < displayStudents.length - 1}
-            />
-          ) : (
+        <div className="space-y-3">
+          {displayStudents.length === 0 ? (
             <p className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">
-              Bu filtrede öğrenci bulunamadı.
+              {baseStudents.length === 0
+                ? "Henüz öğrenci yok. Öğrencilerim sayfasından ekleyin."
+                : "Bu filtrede öğrenci bulunamadı."}
             </p>
-          )
-        ) : viewMode === "list" ? (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400 lg:grid lg:grid-cols-[minmax(140px,1.1fr)_minmax(120px,0.8fr)_auto_auto_36px] lg:gap-3">
-              <span>Öğrenci</span>
-              <span>Sınıf / Grup</span>
-              <span>Yoklama</span>
-              <span>Okul Ödevi</span>
-              <span />
-            </div>
-            {displayStudents.length === 0 ? (
-              <p className="p-6 text-center text-sm text-slate-500">Liste boş.</p>
-            ) : (
-              displayStudents.map((student) => (
-                <DailyTrackingListRow
+          ) : (
+            displayStudents.map((student) => {
+              const draft = drafts[student.id];
+              const hwDisabled = isHomeworkDisabled(draft?.attendanceStatus ?? null);
+              const unmarked = !isStudentMarked(draft);
+
+              return (
+                <div
                   key={student.id}
-                  student={student}
-                  draft={drafts[student.id]}
-                  hwDisabled={isHomeworkDisabled(drafts[student.id]?.attendanceStatus ?? null)}
-                  noteOpen={noteStudentId === student.id}
-                  unmarked={!isStudentMarked(drafts[student.id])}
-                  onToggleNote={() =>
-                    setNoteStudentId(noteStudentId === student.id ? null : student.id)
-                  }
-                  onAttendance={(v) => setAttendance(student.id, v)}
-                  onHomework={(v) => setHomework(student.id, v)}
-                  onNoteChange={(note) => updateDraft(student.id, { note })}
-                />
-              ))
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {displayStudents.length === 0 ? (
-              <p className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">
-                Liste boş.
-              </p>
-            ) : (
-              displayStudents.map((student) => {
-                const draft = drafts[student.id];
-                const hwDisabled = isHomeworkDisabled(draft?.attendanceStatus ?? null);
-                return (
-                  <div
-                    key={student.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <p className="font-bold text-slate-900">{student.name}</p>
-                        <p className="text-xs text-slate-500">
-                          {student.grade} · {student.group}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setNoteStudentId(noteStudentId === student.id ? null : student.id)
-                        }
-                      >
-                        <StickyNote size={16} className="mr-1" />
-                        Not
-                      </Button>
+                  className={cn(
+                    "rounded-2xl border bg-white p-4 shadow-sm",
+                    unmarked ? "border-amber-200" : "border-slate-200",
+                  )}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-bold text-slate-900">{student.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {student.grade} · {student.group}
+                      </p>
                     </div>
-                    <div className="space-y-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() =>
+                        setNoteStudentId(noteStudentId === student.id ? null : student.id)
+                      }
+                    >
+                      <StickyNote size={16} />
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Yoklama
+                      </p>
                       <AttendanceButtonGroup
+                        compact
+                        showIcons={false}
                         value={draft?.attendanceStatus ?? null}
                         onChange={(v) => setAttendance(student.id, v)}
                       />
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Ödev
+                      </p>
                       <HomeworkButtonGroup
+                        compact
+                        showIcons={false}
                         value={draft?.homeworkStatus ?? null}
                         onChange={(v) => setHomework(student.id, v)}
                         disabled={hwDisabled}
                       />
-                      {noteStudentId === student.id ? (
-                        <Textarea
-                          placeholder="Kısa not..."
-                          value={draft?.note ?? ""}
-                          onChange={(e) => updateDraft(student.id, { note: e.target.value })}
-                          rows={2}
-                        />
-                      ) : null}
                     </div>
+                    {noteStudentId === student.id ? (
+                      <Textarea
+                        placeholder="Kısa not..."
+                        value={draft?.note ?? ""}
+                        onChange={(e) => updateDraft(student.id, { note: e.target.value })}
+                        rows={2}
+                      />
+                    ) : null}
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        <p className="text-xs text-slate-500">
-          Görünen: {displayStudents.length} · Seçili grup/kapsam: {scopeStudents.length}
-        </p>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 p-3 backdrop-blur sm:static sm:mt-2 sm:border-0 sm:bg-transparent sm:p-0">
-        <Button
-          size="lg"
-          className="w-full bg-violet-600 hover:bg-violet-700 sm:w-auto"
-          onClick={saveAll}
-        >
-          <Save size={18} className="mr-2" />
-          Kaydet
-          {dirty ? " · Kaydedilmemiş" : ""}
-        </Button>
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <p className="min-w-0 flex-1 text-sm text-slate-700">
+            <span className="font-semibold text-slate-900">{baseStudents.length}</span> öğrenciden{" "}
+            <span className="font-semibold text-violet-700">{markedCount}</span>&apos;ü işaretlendi
+            {dirty ? (
+              <span className="ml-1 text-xs text-amber-700">· kaydedilmedi</span>
+            ) : null}
+          </p>
+          <Button
+            size="lg"
+            className="shrink-0 bg-violet-600 px-6 hover:bg-violet-700"
+            onClick={() => void saveAll()}
+            disabled={saving || baseStudents.length === 0}
+          >
+            {saving ? (
+              <Loader2 size={18} className="mr-2 animate-spin" />
+            ) : (
+              <Save size={18} className="mr-2" />
+            )}
+            Kaydet
+          </Button>
+        </div>
       </div>
     </DavetLayout>
   );
+}
+
+function scopeStudentsForSave(
+  students: Student[],
+  drafts: Record<string, DailyDraft>,
+  dailyRecords: DailyRecord[],
+  date: string,
+): DailyRecord[] {
+  return students.map((s) => {
+    const d = drafts[s.id] ?? emptyDraft(s.id);
+    const existing = getRecordForStudentDate(dailyRecords, s.id, date);
+    return {
+      id: existing?.id ?? generateId("dr"),
+      studentId: s.id,
+      date,
+      institution: s.institution,
+      group: s.group,
+      attendanceStatus: d.attendanceStatus,
+      homeworkStatus: d.homeworkStatus,
+      note: d.note,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
 }

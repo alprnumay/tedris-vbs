@@ -19,6 +19,7 @@ import { BottomActionBar } from "./components/veli/wizard/BottomActionBar";
 import GirisEkrani from "./components/GirisEkrani";
 import DestekModal from "./components/DestekModal";
 import AdminSayfasi from "./components/AdminSayfasi";
+import { VELI_POSTER_H, VELI_POSTER_W } from "./lib/sablonlar/posterShell";
 import { AppBrand } from "./components/AppBrand";
 import { CategoryHome } from "./components/ana-giris/CategoryHome";
 import { DenemeSinaviModulu } from "./components/deneme/DenemeSinaviModulu";
@@ -37,8 +38,8 @@ const KurumsalKimlikModulu = lazy(() =>
   })),
 );
 
-const POSTER_W = 520;
-const POSTER_H_FALLBACK = 720;
+const POSTER_W = VELI_POSTER_W;
+const POSTER_H = VELI_POSTER_H;
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -60,6 +61,39 @@ const baslangicForm: FormData = {
 function isPosterDraftData(data: unknown): data is PosterDraftData {
   const d = data as Partial<PosterDraftData> | null;
   return Boolean(d && typeof d === "object" && d.form && typeof d.seciliSablon === "string");
+}
+
+async function waitForImages(node: HTMLElement): Promise<void> {
+  const images = Array.from(node.querySelectorAll("img"));
+  await Promise.all(
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete && img.naturalWidth > 0) {
+            resolve();
+            return;
+          }
+
+          let timeoutId = 0;
+          const done = () => {
+            window.clearTimeout(timeoutId);
+            img.removeEventListener("load", done);
+            img.removeEventListener("error", done);
+            resolve();
+          };
+
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+          timeoutId = window.setTimeout(done, 3000);
+
+          if (typeof img.decode === "function") {
+            img.decode().then(done).catch(() => {
+              if (img.complete) done();
+            });
+          }
+        }),
+    ),
+  );
 }
 
 function MainApp() {
@@ -201,7 +235,7 @@ function MainApp() {
     const pad = 12;
     const aw = Math.max(1, area.clientWidth - pad * 2);
     const ah = Math.max(1, area.clientHeight - pad * 2);
-    const s = Math.min(aw / POSTER_W, ah / POSTER_H_FALLBACK, 1);
+    const s = Math.min(aw / POSTER_W, ah / POSTER_H, 1);
     setDesktopZoom(s);
   }, []);
 
@@ -219,7 +253,7 @@ function MainApp() {
   }, [desktopOlcekHesapla]);
 
   const desktopScaledW = Math.round(POSTER_W * desktopZoom);
-  const desktopScaledH = Math.round(POSTER_H_FALLBACK * desktopZoom);
+  const desktopScaledH = Math.round(POSTER_H * desktopZoom);
 
   useEffect(() => {
     if (captureSnapshot && captureResolveFn.current) {
@@ -246,14 +280,20 @@ function MainApp() {
       setCaptureSnapshot({ form, sablon: seciliSablon });
     });
 
-    if (!downloadRef.current) {
+    const posterNode = downloadRef.current;
+    if (!posterNode) {
       setCaptureSnapshot(null);
       return null;
     }
 
     try {
-      const canvas = await html2canvas(downloadRef.current, {
+      await waitForImages(posterNode);
+      const canvas = await html2canvas(posterNode, {
         scale: 2.5,
+        width: POSTER_W,
+        height: POSTER_H,
+        windowWidth: POSTER_W,
+        windowHeight: POSTER_H,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
@@ -384,7 +424,7 @@ function MainApp() {
       const pdfH = pdf.internal.pageSize.getHeight();
       const margin = 15;
       const imgW = pdfW - margin * 2;
-      const imgH = (imgW * (downloadRef.current?.offsetHeight ?? 750)) / POSTER_W;
+      const imgH = (imgW * POSTER_H) / POSTER_W;
       const finalH = Math.min(imgH, pdfH - margin * 2);
       const y = (pdfH - finalH) / 2;
 
@@ -915,7 +955,7 @@ function MainApp() {
                         className="veli-preview-autofit__artboard"
                         style={{
                           width: POSTER_W,
-                          height: POSTER_H_FALLBACK,
+                          height: POSTER_H,
                           transform: `scale(${desktopZoom})`,
                           transformOrigin: "top left",
                         }}
@@ -1071,7 +1111,7 @@ function MainApp() {
       </div>
 
       {captureSnapshot && (
-        <div style={{ position: "absolute", top: -9999, left: 0, pointerEvents: "none" }}>
+        <div style={{ position: "absolute", top: -9999, left: 0, width: POSTER_W, height: POSTER_H, overflow: "hidden", pointerEvents: "none" }}>
           <VeliOnizlemeIcerik
             form={captureSnapshot.form}
             sablon={captureSnapshot.sablon}

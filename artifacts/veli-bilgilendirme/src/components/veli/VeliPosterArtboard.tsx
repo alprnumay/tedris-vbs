@@ -1,35 +1,28 @@
 import type { ReactNode, Ref } from "react";
-import type { FormData } from "@/types";
-import {
-  VELI_POSTER_H,
-  VELI_POSTER_W,
-  veliPosterCssVars,
-  veliPosterDensity,
-} from "@/lib/veli/veliPosterEngine";
+import { VELI_POSTER_H, VELI_POSTER_W } from "@/lib/sablonlar/posterShell";
 
 type Props = {
-  form: FormData;
   children: ReactNode;
-  className?: string;
-  /** PNG/PDF yakalama — dış artboard öğesine ref. */
   artboardRef?: Ref<HTMLDivElement>;
 };
 
-export function VeliPosterArtboard({ form, children, className, artboardRef }: Props) {
-  const density = veliPosterDensity(form);
-
+/** Sabit poster tuvali — export ve önizleme aynı boyutu kullanır. */
+export function VeliPosterArtboard({ children, artboardRef }: Props) {
   return (
     <div
       ref={artboardRef}
-      className={`veli-poster-artboard${className ? ` ${className}` : ""}`}
-      data-density={density}
+      className="veli-poster-artboard"
       style={{
         width: VELI_POSTER_W,
         height: VELI_POSTER_H,
-        ...veliPosterCssVars(form),
+        minWidth: VELI_POSTER_W,
+        maxWidth: VELI_POSTER_W,
+        minHeight: VELI_POSTER_H,
+        maxHeight: VELI_POSTER_H,
+        flexShrink: 0,
       }}
     >
-      <div className="veli-poster-artboard__inner">{children}</div>
+      <div className="veli-poster-template-root">{children}</div>
     </div>
   );
 }

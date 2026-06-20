@@ -21,9 +21,9 @@ export const ATTENDANCE_ICONS: Record<AttendanceStatus, string> = {
 export const HOMEWORK_LABELS: Record<HomeworkStatus, string> = {
   completed: "Tamam",
   incomplete: "Eksik",
-  not_done: "Yapmamış",
+  not_done: "Yapmadı",
   no_homework: "Ödev Yok",
-  not_checked: "Kontrol Edilmedi",
+  not_checked: "Kontrol edilmedi",
 };
 
 export const HOMEWORK_ICONS: Record<HomeworkStatus, string> = {

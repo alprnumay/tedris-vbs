@@ -131,7 +131,7 @@ export function ModulePageHeader({
   const bar = accent ? accentStyles[accent].headerBar : "from-slate-600/90 to-slate-700/70";
 
   const breadcrumb: BreadcrumbItem[] = [
-    { label: "Ana Sayfa", href: "/", external: true },
+    // Wouter href="/" → base=/davet ile /davet'e gider. external:true YOK (ana uygulamaya gitmesin)
     { label: "Nehari Platformu", href: "/" },
     ...(title ? [{ label: title }] : []),
   ];

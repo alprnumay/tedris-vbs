@@ -25,6 +25,8 @@ export const RECORD_TYPES = new Set([
   "activity_log",
   "user_profile",
   "poster_draft",
+  "okul_student",
+  "okul_daily_record",
 ]);
 
 export type CompatRecord = {
@@ -502,20 +504,24 @@ async function listUserProfiles(opts: ListOpts): Promise<{ records: CompatRecord
   }
 }
 
-async function listPosterDrafts(opts: ListOpts): Promise<{ records: CompatRecord[]; total: number }> {
+async function listCompatJsonRecords(
+  recordType: string,
+  opts: ListOpts,
+): Promise<{ records: CompatRecord[]; total: number }> {
   try {
     const result = opts.admin
       ? await db.execute(sql`
           SELECT id, user_id, data, created_at, updated_at
           FROM compat_records
-          WHERE record_type = 'poster_draft'
+          WHERE record_type = ${recordType}
           ORDER BY updated_at DESC
         `)
       : opts.viewerId
         ? await db.execute(sql`
             SELECT id, user_id, data, created_at, updated_at
             FROM compat_records
-            WHERE record_type = 'poster_draft' AND user_id = ${opts.viewerId}
+            WHERE record_type = ${recordType}
+              AND user_id = ${opts.viewerId}
             ORDER BY updated_at DESC
           `)
         : { rows: [] };
@@ -528,7 +534,7 @@ async function listPosterDrafts(opts: ListOpts): Promise<{ records: CompatRecord
       updated_at: row.updated_at,
     }));
     const mapped = rows.map((row) =>
-      compatJsonToRecord("poster_draft", {
+      compatJsonToRecord(recordType, {
         id: row.id,
         user_id: row.user_id,
         data: row.data,
@@ -539,9 +545,31 @@ async function listPosterDrafts(opts: ListOpts): Promise<{ records: CompatRecord
     const total = mapped.length;
     return { records: mapped.slice(opts.offset, opts.offset + opts.limit), total };
   } catch (err) {
-    console.warn("[recordsCompat] poster_draft list failed", err);
+    console.warn(`[recordsCompat] ${recordType} list failed`, err);
     return { records: [], total: 0 };
   }
+}
+
+async function listPosterDrafts(opts: ListOpts): Promise<{ records: CompatRecord[]; total: number }> {
+  return listCompatJsonRecords("poster_draft", opts);
+}
+
+async function getCompatJsonRecord(recordType: string, id: string): Promise<CompatRecord | null> {
+  const result = await db.execute(sql`
+    SELECT id, user_id, data, created_at, updated_at
+    FROM compat_records
+    WHERE id = ${id} AND record_type = ${recordType}
+    LIMIT 1
+  `);
+  const row = (result as { rows?: Record<string, unknown>[] }).rows?.[0];
+  if (!row) return null;
+  return compatJsonToRecord(recordType, {
+    id: String(row.id),
+    user_id: row.user_id != null ? String(row.user_id) : null,
+    data: row.data,
+    created_at: new Date(String(row.created_at)),
+    updated_at: new Date(String(row.updated_at)),
+  });
 }
 
 export async function listCompatRecords(
@@ -563,6 +591,10 @@ export async function listCompatRecords(
       return listUserProfiles(opts);
     case "poster_draft":
       return listPosterDrafts(opts);
+    case "okul_student":
+      return listCompatJsonRecords("okul_student", opts);
+    case "okul_daily_record":
+      return listCompatJsonRecords("okul_daily_record", opts);
     default:
       return { records: [], total: 0 };
   }
@@ -619,23 +651,12 @@ export async function getCompatRecord(
       const [row] = await db.select().from(savedProfilesTable).where(eq(savedProfilesTable.id, id)).limit(1);
       return row ? savedProfileToRecord(row) : null;
     }
-    case "poster_draft": {
-      const result = await db.execute(sql`
-        SELECT id, user_id, data, created_at, updated_at
-        FROM compat_records
-        WHERE id = ${id} AND record_type = 'poster_draft'
-        LIMIT 1
-      `);
-      const row = (result as { rows?: Record<string, unknown>[] }).rows?.[0];
-      if (!row) return null;
-      return compatJsonToRecord("poster_draft", {
-        id: String(row.id),
-        user_id: row.user_id != null ? String(row.user_id) : null,
-        data: row.data,
-        created_at: new Date(String(row.created_at)),
-        updated_at: new Date(String(row.updated_at)),
-      });
-    }
+    case "poster_draft":
+      return getCompatJsonRecord("poster_draft", id);
+    case "okul_student":
+      return getCompatJsonRecord("okul_student", id);
+    case "okul_daily_record":
+      return getCompatJsonRecord("okul_daily_record", id);
     default:
       return null;
   }

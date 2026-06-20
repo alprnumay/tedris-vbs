@@ -1,5 +1,15 @@
 import { FormData, SablonTuru } from "../../types";
 import { baslikolustur } from "../../lib/dil";
+import {
+  POSTER_BODY_CLS,
+  POSTER_FOOTER_CLS,
+  POSTER_HEADER_CLS,
+  POSTER_SHELL_CLS,
+  posterBodyStyle,
+  posterFooterStyle,
+  posterHeaderStyle,
+  posterShellStyle,
+} from "../../lib/sablonlar/posterShell";
 
 interface Tema {
   baslik: string;
@@ -191,8 +201,8 @@ function LayoutKlasik({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
   t: Tema; form: FormData; tarih: string; baslik: string; aciklama: string; aktifFaaliyetler: FormData["faaliyetler"];
 }) {
   return (
-    <div style={{ width: "100%", borderRadius: 16, overflow: "hidden", background: t.bodyBg, border: `2px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif" }}>
-      <div style={{ background: t.headerGradient, padding: "18px 22px 16px" }}>
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, background: t.bodyBg, border: `2px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif" }}>
+      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, background: t.headerGradient, padding: "18px 22px 16px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", padding: "3px 10px", borderRadius: 20, background: t.headerBadgeBg, color: t.headerTextColor }}>
             Veli Bilgilendirme
@@ -202,10 +212,10 @@ function LayoutKlasik({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
         <h1 style={{ fontSize: 19, fontWeight: 800, color: t.headerTextColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
         {form.kurumAdi && <div style={{ fontSize: 13, fontWeight: 600, color: t.headerSubColor }}>{form.kurumAdi}</div>}
       </div>
-      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 20px", gap: 14 }}>
         {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
         {aktifFaaliyetler.length > 0 && (
-          <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${t.borderColor}` }}>
+          <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${t.borderColor}`, flexShrink: 0 }}>
             {aktifFaaliyetler.map((f, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "40% 60%", background: i % 2 === 0 ? t.accentLight : t.bodyBg, borderBottom: i < aktifFaaliyetler.length - 1 ? "1px solid " + t.borderColor : "none" }}>
                 <div style={{ padding: "8px 12px", fontSize: 11, fontWeight: 700, color: t.labelColor }}>{aktifFaaliyetler.length > 1 ? `${i + 1}. Alan` : "Alan"}</div>
@@ -214,16 +224,16 @@ function LayoutKlasik({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
             ))}
           </div>
         )}
-        <div style={{ borderRadius: 10, padding: 14, background: t.accentLight, borderLeft: `4px solid ${t.accentColor}` }}>
-          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0 }}>{aciklama}</p>
+        <div style={{ flex: 1, minHeight: 0, borderRadius: 10, padding: 14, background: t.accentLight, borderLeft: `4px solid ${t.accentColor}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${t.borderColor}` }}>
-          <div>
-            {form.isim && <p style={{ fontSize: 14, fontWeight: 700, color: t.textColor, margin: 0 }}>{form.isim}</p>}
-            <p style={{ fontSize: 11, color: t.subTextColor, margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
-          </div>
-          <div style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 600, background: t.accentColor, color: "#ffffff" }}>Veliye Özel</div>
+      </div>
+      <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px", borderTop: `1px solid ${t.borderColor}`, background: t.bodyBg }}>
+        <div>
+          {form.isim && <p style={{ fontSize: 14, fontWeight: 700, color: t.textColor, margin: 0 }}>{form.isim}</p>}
+          <p style={{ fontSize: 11, color: t.subTextColor, margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
         </div>
+        <div style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 600, background: t.accentColor, color: "#ffffff" }}>Veliye Özel</div>
       </div>
     </div>
   );
@@ -234,7 +244,7 @@ function LayoutSidebar({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
   t: Tema; form: FormData; tarih: string; baslik: string; aciklama: string; aktifFaaliyetler: FormData["faaliyetler"];
 }) {
   return (
-    <div style={{ width: "100%", borderRadius: 16, overflow: "hidden", display: "flex", border: `2px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif" }}>
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, display: "flex", flexDirection: "row", border: `2px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif", background: t.bodyBg }}>
       {/* Left sidebar */}
       <div style={{ width: 60, background: t.headerGradient, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between", padding: "16px 0", flexShrink: 0 }}>
         <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.headerBadgeBg, border: `2px solid ${t.headerSubColor}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -248,26 +258,28 @@ function LayoutSidebar({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
         <div style={{ fontSize: 9, color: t.headerSubColor, transform: "rotate(180deg)", writingMode: "vertical-rl", letterSpacing: "0.04em" }}>{tarih}</div>
       </div>
       {/* Right content */}
-      <div style={{ flex: 1, background: t.bodyBg, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ borderBottom: `2px solid ${t.borderColor}`, paddingBottom: 10 }}>
-          <h1 style={{ fontSize: 18, fontWeight: 800, color: t.textColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
-          {form.kurumAdi && <p style={{ fontSize: 12, color: t.subTextColor, margin: 0, fontWeight: 600 }}>{form.kurumAdi}</p>}
-        </div>
-        {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
-        {aktifFaaliyetler.length > 0 && (
-          <div style={{ borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderColor}` }}>
-            {aktifFaaliyetler.map((f, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: i % 2 === 0 ? t.accentLight : t.bodyBg, borderBottom: i < aktifFaaliyetler.length - 1 ? "1px solid " + t.borderColor : "none" }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.accentColor, flexShrink: 0 }} />
-                <span style={{ fontSize: 11, color: t.textColor, fontWeight: 600 }}>{[f.tur, f.alan].filter(Boolean).join(" — ")}</span>
-              </div>
-            ))}
+      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", background: t.bodyBg }}>
+        <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, flex: 1, padding: "16px 18px", gap: 12 }}>
+          <div style={{ borderBottom: `2px solid ${t.borderColor}`, paddingBottom: 10, flexShrink: 0 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 800, color: t.textColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
+            {form.kurumAdi && <p style={{ fontSize: 12, color: t.subTextColor, margin: 0, fontWeight: 600 }}>{form.kurumAdi}</p>}
           </div>
-        )}
-        <div style={{ borderRadius: 8, padding: 12, background: t.accentLight, borderLeft: `3px solid ${t.accentColor}` }}>
-          <p style={{ fontSize: 13, lineHeight: 1.75, color: t.textColor, margin: 0 }}>{aciklama}</p>
+          {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
+          {aktifFaaliyetler.length > 0 && (
+            <div style={{ borderRadius: 8, overflow: "hidden", border: `1px solid ${t.borderColor}`, flexShrink: 0 }}>
+              {aktifFaaliyetler.map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: i % 2 === 0 ? t.accentLight : t.bodyBg, borderBottom: i < aktifFaaliyetler.length - 1 ? "1px solid " + t.borderColor : "none" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.accentColor, flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: t.textColor, fontWeight: 600 }}>{[f.tur, f.alan].filter(Boolean).join(" — ")}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ borderRadius: 8, padding: 12, background: t.accentLight, borderLeft: `3px solid ${t.accentColor}`, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <p style={{ fontSize: 13, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 8, borderTop: `1px solid ${t.borderColor}` }}>
+        <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 18px 14px", borderTop: `1px solid ${t.borderColor}` }}>
           <div>
             {form.isim && <p style={{ fontSize: 13, fontWeight: 700, color: t.textColor, margin: 0 }}>{form.isim}</p>}
             <p style={{ fontSize: 10, color: t.subTextColor, margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
@@ -284,11 +296,9 @@ function LayoutKarti({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
   t: Tema; form: FormData; tarih: string; baslik: string; aciklama: string; aktifFaaliyetler: FormData["faaliyetler"];
 }) {
   return (
-    <div style={{ width: "100%", borderRadius: 16, overflow: "hidden", background: "#ffffff", border: `1.5px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif" }}>
-      {/* Top stripe */}
-      <div style={{ height: 6, background: t.headerGradient }} />
-      {/* Title area */}
-      <div style={{ padding: "16px 20px 12px", background: "#fff", borderBottom: `1px solid ${t.borderColor}` }}>
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, background: "#ffffff", border: `1.5px solid ${t.borderColor}`, fontFamily: "'Inter', Arial, sans-serif" }}>
+      <div style={{ height: 6, background: t.headerGradient, flexShrink: 0 }} />
+      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: "16px 20px 12px", background: "#fff", borderBottom: `1px solid ${t.borderColor}` }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: t.accentColor }} />
@@ -303,8 +313,7 @@ function LayoutKarti({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
           </div>
         )}
       </div>
-      {/* Body */}
-      <div style={{ padding: "14px 20px", display: "flex", flexDirection: "column", gap: 14, background: t.bodyBg }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "14px 20px", gap: 14, background: t.bodyBg }}>
         {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
         {aktifFaaliyetler.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -316,16 +325,16 @@ function LayoutKarti({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
             ))}
           </div>
         )}
-        <div style={{ borderRadius: 10, padding: 14, background: "#fff", border: `1px solid ${t.borderColor}`, borderLeft: `4px solid ${t.accentColor}` }}>
-          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0 }}>{aciklama}</p>
+        <div style={{ borderRadius: 10, padding: 14, background: "#fff", border: `1px solid ${t.borderColor}`, borderLeft: `4px solid ${t.accentColor}`, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `2px solid ${t.accentColor}` }}>
-          <div>
-            {form.isim && <p style={{ fontSize: 14, fontWeight: 700, color: t.textColor, margin: 0 }}>{form.isim}</p>}
-            <p style={{ fontSize: 11, color: t.subTextColor, margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
-          </div>
-          <div style={{ fontSize: 10, padding: "4px 10px", borderRadius: 20, fontWeight: 700, background: t.accentColor, color: "#fff" }}>Veliye Özel</div>
+      </div>
+      <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px", borderTop: `2px solid ${t.accentColor}`, background: t.bodyBg }}>
+        <div>
+          {form.isim && <p style={{ fontSize: 14, fontWeight: 700, color: t.textColor, margin: 0 }}>{form.isim}</p>}
+          <p style={{ fontSize: 11, color: t.subTextColor, margin: "2px 0 0" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
         </div>
+        <div style={{ fontSize: 10, padding: "4px 10px", borderRadius: 20, fontWeight: 700, background: t.accentColor, color: "#fff" }}>Veliye Özel</div>
       </div>
     </div>
   );

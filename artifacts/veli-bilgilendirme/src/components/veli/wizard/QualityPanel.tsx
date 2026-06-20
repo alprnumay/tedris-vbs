@@ -30,14 +30,6 @@ export function QualityPanel({ form, seciliSablon, full = false }: { form: FormD
           ))}
         </ul>
       </div>
-      {full && kalite.tasmaRiski && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-3">
-          <p className="text-xs font-extrabold text-amber-900">Metin yoğunluğu</p>
-          <p className="mt-1 text-[11px] leading-snug text-amber-900">
-            Bu şablonda metin uzun olabilir. Daha kısa metin önerilir; afişte otomatik küçültme uygulanır.
-          </p>
-        </div>
-      )}
       {full && kalite.uyarilar.length > 0 && (
         <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-3">
           <p className="text-xs font-extrabold text-amber-900">Öneriler</p>

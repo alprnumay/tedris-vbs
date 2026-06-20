@@ -1,5 +1,15 @@
 import { FormData } from "../../types";
 import { baslikolustur } from "../../lib/dil";
+import {
+  POSTER_BODY_CLS,
+  POSTER_FOOTER_CLS,
+  POSTER_HEADER_CLS,
+  POSTER_SHELL_CLS,
+  posterBodyStyle,
+  posterFooterStyle,
+  posterHeaderStyle,
+  posterShellStyle,
+} from "../../lib/sablonlar/posterShell";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -52,8 +62,8 @@ export default function SablonBulten({ form, tarih }: Props) {
   });
 
   return (
-    <div style={{ width: "100%", borderRadius: 16, overflow: "hidden", background: "#fdf6e3", border: "2px solid #d97706", fontFamily: "'Georgia', serif" }}>
-      <div style={{ padding: "16px 24px", background: "linear-gradient(135deg, #78350f 0%, #b45309 100%)", borderBottom: "3px solid #d97706" }}>
+    <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, background: "#fdf6e3", border: "2px solid #d97706", fontFamily: "'Georgia', serif" }}>
+      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, borderBottom: "4px double #1e293b", padding: "20px 32px 16px", textAlign: "center", background: "linear-gradient(135deg, #78350f 0%, #b45309 100%)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.7)", fontFamily: "'Inter', Arial, sans-serif", marginBottom: 4 }}>
@@ -68,7 +78,7 @@ export default function SablonBulten({ form, tarih }: Props) {
         )}
       </div>
 
-      <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 24px", gap: 14 }}>
         {form.gorseller.length > 0 && <GorselAlan gorseller={form.gorseller} />}
 
         {satirlar.length > 0 && (
@@ -86,12 +96,12 @@ export default function SablonBulten({ form, tarih }: Props) {
           </div>
         )}
 
-        <div style={{ display: "flex" }}>
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <div style={{ width: 4, borderRadius: 4, background: "#d97706", flexShrink: 0, marginRight: 14 }} />
-          <p style={{ fontSize: 14, lineHeight: 1.8, color: "#451a03", margin: 0 }}>{aciklama}</p>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: "#451a03", margin: 0, overflow: "hidden" }}>{aciklama}</p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "1px dashed rgba(217,119,6,0.5)" }}>
+        <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "1px dashed rgba(217,119,6,0.5)" }}>
           <div>
             {form.isim && <p style={{ fontSize: 14, fontWeight: 700, color: "#78350f", margin: 0, fontFamily: "'Inter', Arial, sans-serif" }}>{form.isim}</p>}
             <p style={{ fontSize: 11, color: "#92400e", margin: "2px 0 0", fontFamily: "'Inter', Arial, sans-serif" }}>{form.rol || "Öğretmen / Yurt Hocası"}</p>
