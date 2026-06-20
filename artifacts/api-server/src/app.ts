@@ -76,6 +76,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
     commit: process.env.DEPLOY_COMMIT || process.env.GIT_SHA || null,
     schemaVersion: 4,
     supportedRecordTypes: [...RECORD_TYPES],
+    okulTakip: true,
   });
 });
 

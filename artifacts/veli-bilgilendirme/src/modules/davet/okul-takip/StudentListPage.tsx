@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { Student } from "@/modules/davet/okul-takip/types";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
+import { getOkulTakipUserMessage } from "@/modules/davet/okul-takip/okulTakipApi";
 import {
   deleteStudent,
   upsertStudent,
@@ -72,7 +73,7 @@ export default function StudentListPage() {
       setModalOpen(false);
       toast.success(editing ? "Öğrenci güncellendi." : "Öğrenci eklendi.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Kayıt başarısız.");
+      toast.error(getOkulTakipUserMessage(err));
     } finally {
       setSaving(false);
     }
@@ -84,7 +85,7 @@ export default function StudentListPage() {
       await deleteStudent(id);
       toast.success("Öğrenci silindi.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Silme başarısız.");
+      toast.error(getOkulTakipUserMessage(err, "Öğrenci silinemedi. Lütfen tekrar deneyin."));
     }
   };
 
@@ -93,7 +94,7 @@ export default function StudentListPage() {
       await upsertStudent({ ...student, isActive: false });
       toast.success("Öğrenci arşivlendi (pasif).");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Güncelleme başarısız.");
+      toast.error(getOkulTakipUserMessage(err));
     }
   };
 
@@ -170,7 +171,7 @@ export default function StudentListPage() {
                       await upsertStudent({ ...s, isActive: true });
                       toast.success("Öğrenci tekrar aktif edildi.");
                     } catch (err) {
-                      toast.error(err instanceof Error ? err.message : "Güncelleme başarısız.");
+                      toast.error(getOkulTakipUserMessage(err));
                     }
                   }}
                   onDelete={() => void remove(s.id)}

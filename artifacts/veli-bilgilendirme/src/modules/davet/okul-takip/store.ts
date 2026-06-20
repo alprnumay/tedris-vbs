@@ -44,11 +44,14 @@ export async function reloadOkulTakipStore(): Promise<OkulTakipStore> {
     try {
       const apiCheck = await checkOkulTakipApiReady();
       storeApiIssue = apiCheck.ok ? null : apiCheck.message ?? null;
+      if (!apiCheck.ok) {
+        storeCache = EMPTY_STORE;
+        return storeCache;
+      }
       storeCache = await fetchOkulTakipStore();
     } catch (err) {
       console.warn("[okul-takip] store load failed", err);
-      storeApiIssue =
-        err instanceof Error ? err.message : "Okul takip verileri yüklenemedi.";
+      storeApiIssue = null;
       storeCache = EMPTY_STORE;
     } finally {
       storeLoading = false;

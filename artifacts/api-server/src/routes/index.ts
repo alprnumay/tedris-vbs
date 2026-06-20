@@ -11,6 +11,7 @@ import recordsRouter from "./records";
 import vpsRepairRouter from "./vpsRepair";
 import davetShowcaseRouter from "./davetShowcase";
 import pushRouter from "./push";
+import okulTakipRouter from "./okulTakip";
 
 const router: IRouter = Router();
 
@@ -19,6 +20,7 @@ router.use(authRouter);
 router.use(localAuthRouter);
 router.use(activityRouter);
 router.use(recordsRouter);
+router.use(okulTakipRouter);
 router.use(postersRouter);
 router.use(supportRouter);
 router.use(vpsRepairRouter);

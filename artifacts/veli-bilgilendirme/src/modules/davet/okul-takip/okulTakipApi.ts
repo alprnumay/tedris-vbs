@@ -1,54 +1,143 @@
 import { resolveApiBaseUrl } from "@/lib/apiBase";
-import { backendApi, type BackendRecord } from "@/lib/backendApi";
+import { getBackendToken } from "@/lib/backendApi";
 import type { DailyRecord, OkulTakipStore, Student } from "@/modules/davet/okul-takip/types";
 
-const OKUL_STUDENT = "okul_student";
-const OKUL_DAILY = "okul_daily_record";
-
 const API_OUTDATED_MESSAGE =
-  "Okul takip API sunucusu henüz güncellenmemiş. Yönetici sunucuda scripts/vps-update-api.sh çalıştırmalı.";
+  "Okul takip sunucusu güncelleniyor. Lütfen birkaç dakika sonra tekrar deneyin.";
 
-function mapStudent(record: BackendRecord): Student {
-  const data = (record.data ?? {}) as Record<string, unknown>;
-  return {
-    id: String(record.id),
-    name: String(data.name ?? ""),
-    grade: String(data.grade ?? ""),
-    institution: String(data.institution ?? ""),
-    group: String(data.group ?? ""),
-    parentPhone: String(data.parentPhone ?? ""),
-    isActive: data.isActive !== false,
-  };
-}
+const USER_SAVE_ERROR = "Öğrenci kaydedilemedi. Lütfen bilgileri kontrol edin.";
+const USER_DELETE_ERROR = "Öğrenci silinemedi. Lütfen tekrar deneyin.";
+const USER_DAILY_ERROR = "Günlük kayıt kaydedilemedi. Lütfen tekrar deneyin.";
 
-function mapDailyRecord(record: BackendRecord): DailyRecord {
-  const data = (record.data ?? {}) as Record<string, unknown>;
-  const createdAt = String(record.createdAt ?? record.created_at ?? new Date().toISOString());
-  const updatedAt = String(record.updatedAt ?? record.updated_at ?? createdAt);
-  return {
-    id: String(record.id),
-    studentId: String(data.studentId ?? ""),
-    date: String(data.date ?? ""),
-    institution: String(data.institution ?? ""),
-    group: String(data.group ?? ""),
-    attendanceStatus: (data.attendanceStatus as DailyRecord["attendanceStatus"]) ?? null,
-    homeworkStatus: (data.homeworkStatus as DailyRecord["homeworkStatus"]) ?? null,
-    note: String(data.note ?? ""),
-    createdAt,
-    updatedAt,
-  };
-}
+const PROJECT_API_KEY = import.meta.env.VITE_PROJECT_API_KEY || "";
+const REQUEST_TIMEOUT_MS = 15_000;
 
-function wrapApiError(err: unknown): Error {
-  const message = err instanceof Error ? err.message : String(err);
-  if (
-    message.includes("Geçersiz record_type") ||
-    message.includes("Desteklenmeyen kayıt") ||
-    message.includes("güncellenmemiş")
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export class OkulTakipApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+    userMessage: string,
   ) {
-    return new Error(API_OUTDATED_MESSAGE);
+    super(userMessage);
+    this.name = "OkulTakipApiError";
   }
-  return err instanceof Error ? err : new Error(message);
+}
+
+function headers(json = true): Headers {
+  const h = new Headers();
+  if (json) h.set("Content-Type", "application/json");
+  if (PROJECT_API_KEY) h.set("X-Project-Key", PROJECT_API_KEY);
+  const token = getBackendToken();
+  if (token) h.set("Authorization", `Bearer ${token}`);
+  return h;
+}
+
+async function okulRequest<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  const base = resolveApiBaseUrl();
+  if (!base) {
+    throw new OkulTakipApiError(0, "API base URL missing", USER_SAVE_ERROR);
+  }
+
+  const res = await fetch(`${base}${path}`, {
+    method,
+    headers: headers(body !== undefined),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: "include",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  const text = await res.text();
+  let payload: unknown = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { error: text };
+  }
+
+  if (!res.ok) {
+    const detail =
+      typeof (payload as { error?: unknown }).error === "string"
+        ? String((payload as { error?: string }).error)
+        : `${res.status} ${res.statusText}`;
+    console.error("[okul-takip] API error", { method, path, status: res.status, detail, body });
+    const userMessage =
+      res.status === 404
+        ? API_OUTDATED_MESSAGE
+        : method === "GET"
+          ? "Veriler yüklenemedi."
+          : path.includes("daily-records")
+            ? USER_DAILY_ERROR
+            : method === "DELETE"
+              ? USER_DELETE_ERROR
+              : USER_SAVE_ERROR;
+    throw new OkulTakipApiError(res.status, detail, userMessage);
+  }
+
+  return payload as T;
+}
+
+type ApiStudent = {
+  id: string;
+  name: string;
+  grade: string;
+  institution: string;
+  group: string;
+  parentPhone: string;
+  isActive: boolean;
+};
+
+type ApiDailyRecord = {
+  id: string;
+  studentId: string;
+  date: string;
+  institution: string;
+  group: string;
+  attendanceStatus: DailyRecord["attendanceStatus"];
+  homeworkStatus: DailyRecord["homeworkStatus"];
+  note: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+function mapStudent(api: ApiStudent): Student {
+  return {
+    id: api.id,
+    name: api.name,
+    grade: api.grade,
+    institution: api.institution,
+    group: api.group,
+    parentPhone: api.parentPhone,
+    isActive: api.isActive !== false,
+  };
+}
+
+function mapDailyRecord(api: ApiDailyRecord): DailyRecord {
+  const createdAt = api.createdAt ?? new Date().toISOString();
+  return {
+    id: api.id,
+    studentId: api.studentId,
+    date: api.date,
+    institution: api.institution,
+    group: api.group,
+    attendanceStatus: api.attendanceStatus ?? null,
+    homeworkStatus: api.homeworkStatus ?? null,
+    note: api.note ?? "",
+    createdAt,
+    updatedAt: api.updatedAt ?? createdAt,
+  };
+}
+
+function studentPayload(student: Student) {
+  return {
+    name: student.name.trim(),
+    grade: student.grade.trim(),
+    institution: student.institution.trim(),
+    group: student.group.trim(),
+    parentPhone: student.parentPhone.trim(),
+    isActive: student.isActive,
+  };
 }
 
 export async function checkOkulTakipApiReady(): Promise<{ ok: boolean; message?: string }> {
@@ -56,87 +145,77 @@ export async function checkOkulTakipApiReady(): Promise<{ ok: boolean; message?:
     const base = resolveApiBaseUrl();
     if (!base) return { ok: false, message: API_OUTDATED_MESSAGE };
 
-    const res = await fetch(`${base}/health`, { credentials: "include" });
-    if (!res.ok) return { ok: false, message: API_OUTDATED_MESSAGE };
+    const res = await fetch(`${base}/okul-takip/health`, {
+      credentials: "include",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
 
-    const data = (await res.json()) as { supportedRecordTypes?: string[] };
-    const types = data.supportedRecordTypes ?? [];
-    if (!types.includes(OKUL_STUDENT)) {
-      return { ok: false, message: API_OUTDATED_MESSAGE };
+    if (!res.ok) {
+      return { ok: false, message: res.status === 404 ? API_OUTDATED_MESSAGE : undefined };
     }
-    return { ok: true };
+
+    const data = (await res.json()) as { ok?: boolean; feature?: string };
+    if (data.ok && data.feature === "okul_takip") {
+      return { ok: true };
+    }
+    return { ok: false, message: API_OUTDATED_MESSAGE };
   } catch {
-    return { ok: false, message: "Sunucuya bağlanılamadı." };
+    return { ok: false };
   }
 }
 
 export async function fetchOkulTakipStore(): Promise<OkulTakipStore> {
-  try {
-    const [studentRecords, dailyRecordsRaw] = await Promise.all([
-      backendApi.fetchAllRecords(OKUL_STUDENT),
-      backendApi.fetchAllRecords(OKUL_DAILY),
-    ]);
+  const [studentsRes, dailyRes] = await Promise.all([
+    okulRequest<{ students?: ApiStudent[] }>("GET", "/okul-takip/students"),
+    okulRequest<{ records?: ApiDailyRecord[] }>("GET", "/okul-takip/daily-records"),
+  ]);
 
-    return {
-      students: studentRecords.map(mapStudent),
-      dailyRecords: dailyRecordsRaw.map(mapDailyRecord),
-    };
-  } catch (err) {
-    throw wrapApiError(err);
-  }
+  return {
+    students: (studentsRes.students ?? []).map(mapStudent),
+    dailyRecords: (dailyRes.records ?? []).map(mapDailyRecord),
+  };
 }
 
 export async function saveStudent(student: Student): Promise<Student> {
-  const payload = {
-    name: student.name,
-    grade: student.grade,
-    institution: student.institution,
-    group: student.group,
-    parentPhone: student.parentPhone,
-    isActive: student.isActive,
-  };
+  const payload = studentPayload(student);
+  const isExistingUuid = /^[0-9a-f-]{36}$/i.test(student.id);
 
-  try {
-    const isExistingUuid = /^[0-9a-f-]{36}$/i.test(student.id);
-    const saved = isExistingUuid
-      ? await backendApi.updateRecord(student.id, OKUL_STUDENT, payload)
-      : await backendApi.createRecord(OKUL_STUDENT, payload);
-    return mapStudent(saved);
-  } catch (err) {
-    throw wrapApiError(err);
+  const res = isExistingUuid
+    ? await okulRequest<{ student?: ApiStudent }>("PATCH", `/okul-takip/students/${encodeURIComponent(student.id)}`, payload)
+    : await okulRequest<{ student?: ApiStudent }>("POST", "/okul-takip/students", payload);
+
+  if (!res.student) {
+    throw new OkulTakipApiError(500, "empty student response", USER_SAVE_ERROR);
   }
+  return mapStudent(res.student);
 }
 
 export async function removeStudent(id: string): Promise<void> {
-  try {
-    await backendApi.deleteRecord(id);
-  } catch (err) {
-    throw wrapApiError(err);
-  }
-}
-
-export async function saveDailyRecord(record: DailyRecord): Promise<DailyRecord> {
-  const payload = {
-    studentId: record.studentId,
-    date: record.date,
-    institution: record.institution,
-    group: record.group,
-    attendanceStatus: record.attendanceStatus,
-    homeworkStatus: record.homeworkStatus,
-    note: record.note,
-  };
-
-  try {
-    const isExistingUuid = /^[0-9a-f-]{36}$/i.test(record.id);
-    const saved = isExistingUuid
-      ? await backendApi.updateRecord(record.id, OKUL_DAILY, payload)
-      : await backendApi.createRecord(OKUL_DAILY, payload);
-    return mapDailyRecord(saved);
-  } catch (err) {
-    throw wrapApiError(err);
-  }
+  await okulRequest("DELETE", `/okul-takip/students/${encodeURIComponent(id)}`);
 }
 
 export async function saveDailyRecords(records: DailyRecord[]): Promise<DailyRecord[]> {
-  return Promise.all(records.map((r) => saveDailyRecord(r)));
+  const payload = {
+    records: records.map((record) => ({
+      id: /^[0-9a-f-]{36}$/i.test(record.id) ? record.id : undefined,
+      studentId: record.studentId,
+      date: record.date,
+      institution: record.institution,
+      group: record.group,
+      attendanceStatus: record.attendanceStatus,
+      homeworkStatus: record.homeworkStatus,
+      note: record.note,
+    })),
+  };
+
+  const res = await okulRequest<{ records?: ApiDailyRecord[] }>("PUT", "/okul-takip/daily-records", payload);
+  return (res.records ?? []).map(mapDailyRecord);
+}
+
+export function getOkulTakipUserMessage(
+  err: unknown,
+  fallback = USER_SAVE_ERROR,
+): string {
+  if (err instanceof OkulTakipApiError) return err.message;
+  return fallback;
 }

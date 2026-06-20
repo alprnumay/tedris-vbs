@@ -31,6 +31,7 @@ import { isStudentMarked } from "@/modules/davet/okul-takip/dailyTrackingHelpers
 import { getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { AttendanceStatus, DailyDraft, DailyRecord, HomeworkStatus, Student } from "@/modules/davet/okul-takip/types";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
+import { getOkulTakipUserMessage } from "@/modules/davet/okul-takip/okulTakipApi";
 import {
   generateId,
   getRecordForStudentDate,
@@ -173,7 +174,7 @@ export default function DailyTrackingPage() {
       setDirty(false);
       toast.success("Günlük takip kaydedildi.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Kayıt başarısız.");
+      toast.error(getOkulTakipUserMessage(err, "Günlük kayıt kaydedilemedi. Lütfen tekrar deneyin."));
     } finally {
       setSaving(false);
     }
