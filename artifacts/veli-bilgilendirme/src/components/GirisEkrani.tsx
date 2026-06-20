@@ -8,40 +8,19 @@ interface Props {
 }
 
 export default function GirisEkrani({ onGiris }: Props) {
-  const [mod, setMod] = useState<"giris" | "kayit">("giris");
   const [email, setEmail] = useState("");
   const [sifre, setSifre] = useState("");
-  const [adSoyad, setAdSoyad] = useState("");
   const [hata, setHata] = useState("");
   const [yukleniyor, setYukleniyor] = useState(false);
-
-  const temizle = (yeniMod: "giris" | "kayit") => {
-    setHata("");
-    setEmail("");
-    setSifre("");
-    setAdSoyad("");
-    setMod(yeniMod);
-  };
 
   const gonder = async (e: React.FormEvent) => {
     e.preventDefault();
     setHata("");
     setYukleniyor(true);
     try {
-      if (mod === "giris") {
-        const r = await api.girisYap(email, sifre);
-        void backendApi.usageEvent("login", { source: "veli_bilgilendirme", mode: "giris" }).catch(() => {});
-        onGiris(r.user);
-      } else {
-        if (!adSoyad.trim()) {
-          setHata("Ad soyad boş olamaz.");
-          setYukleniyor(false);
-          return;
-        }
-        const r = await api.kayitOl(email, sifre, adSoyad.trim());
-        void backendApi.usageEvent("login", { source: "veli_bilgilendirme", mode: "kayit" }).catch(() => {});
-        onGiris(r.user);
-      }
+      const r = await api.girisYap(email, sifre);
+      void backendApi.usageEvent("login", { source: "veli_bilgilendirme", mode: "giris" }).catch(() => {});
+      onGiris(r.user);
     } catch (err) {
       setHata(err instanceof Error ? err.message : "Bir hata oluştu.");
     } finally {
@@ -138,57 +117,8 @@ export default function GirisEkrani({ onGiris }: Props) {
           </p>
         </div>
 
-        {/* Sekme geçişi */}
-        <div style={{
-          display: "flex", borderRadius: 12,
-          background: "#f1f5f9", padding: 4,
-          marginBottom: 24,
-        }}>
-          {(["giris", "kayit"] as const).map((m) => (
-            <button key={m} onClick={() => temizle(m)}
-              style={{
-                flex: 1, padding: "10px 0", borderRadius: 9,
-                border: "none", cursor: "pointer",
-                fontWeight: 700, fontSize: 14,
-                transition: "all 0.2s",
-                background: mod === m
-                  ? "linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 100%)"
-                  : "transparent",
-                color: mod === m ? "#ffffff" : "#64748b",
-                boxShadow: mod === m ? "0 2px 8px rgba(30,58,95,0.3)" : "none",
-              }}>
-              {m === "giris" ? "Giriş Yap" : "Hesap Oluştur"}
-            </button>
-          ))}
-        </div>
-
         {/* Form */}
         <form onSubmit={gonder} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {mod === "kayit" && (
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 }}>
-                Ad Soyad
-              </label>
-              <input
-                type="text"
-                placeholder="Adınızı ve soyadınızı girin"
-                value={adSoyad}
-                onChange={(e) => setAdSoyad(e.target.value)}
-                required
-                style={{
-                  width: "100%", padding: "13px 16px",
-                  borderRadius: 12, border: "1.5px solid #e2e8f0",
-                  fontSize: 15, color: "#0f172a", outline: "none",
-                  boxSizing: "border-box",
-                  transition: "border-color 0.2s",
-                  background: "#fafafa",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "#2d5a9e")}
-                onBlur={(e) => (e.target.style.borderColor = "#e2e8f0")}
-              />
-            </div>
-          )}
-
           <div>
             <label style={{ fontSize: 12, fontWeight: 700, color: "#374151", display: "block", marginBottom: 6 }}>
               E-posta Adresi
@@ -218,7 +148,7 @@ export default function GirisEkrani({ onGiris }: Props) {
             </label>
             <input
               type="password"
-              placeholder={mod === "kayit" ? "En az 6 karakter" : "Şifrenizi girin"}
+              placeholder="Şifrenizi girin"
               value={sifre}
               onChange={(e) => setSifre(e.target.value)}
               required
@@ -275,26 +205,13 @@ export default function GirisEkrani({ onGiris }: Props) {
                   animation: "spin 0.7s linear infinite",
                   display: "inline-block",
                 }} />
-                {mod === "giris" ? "Giriş yapılıyor..." : "Hesap oluşturuluyor..."}
+                Giriş yapılıyor...
               </>
             ) : (
-              mod === "giris" ? "Giriş Yap" : "Hesap Oluştur"
+              "Giriş Yap"
             )}
           </button>
         </form>
-
-        <p style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 24 }}>
-          {mod === "giris"
-            ? "Hesabınız yok mu? "
-            : "Zaten hesabınız var mı? "}
-          <button onClick={() => temizle(mod === "giris" ? "kayit" : "giris")}
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              color: "#2d5a9e", fontWeight: 700, fontSize: 12, padding: 0,
-            }}>
-            {mod === "giris" ? "Ücretsiz kayıt ol" : "Giriş yap"}
-          </button>
-        </p>
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
