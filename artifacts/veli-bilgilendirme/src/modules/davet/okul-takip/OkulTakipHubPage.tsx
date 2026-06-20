@@ -15,6 +15,7 @@ import {
   detectRiskStudent,
   getLast7Dates,
 } from "@/modules/davet/okul-takip/calculations";
+import { OKUL_TAKIP_MODULE_TITLE } from "@/modules/davet/okul-takip/constants";
 import {
   NEHARI_PLATFORM_HOME,
   OKUL_TAKIP_GUNLUK,
@@ -56,7 +57,7 @@ export default function OkulTakipHubPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
-                Okul Ödevi ve Yoklama Takibi
+                {OKUL_TAKIP_MODULE_TITLE}
               </h1>
               <p className="mt-1 text-sm text-slate-600">
                 Günlük yoklama ve okul ödevi takibi, haftalık analizli kişisel karneler.

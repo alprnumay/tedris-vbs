@@ -1,6 +1,6 @@
 import { resolveApiBaseUrl } from "@/lib/apiBase";
 import { getBackendToken } from "@/lib/backendApi";
-import type { DailyRecord, OkulTakipStore, Student } from "@/modules/davet/okul-takip/types";
+import type { DailyRecord, OkulTakipStore, Student, ViewerInstitutionOption } from "@/modules/davet/okul-takip/types";
 
 const API_OUTDATED_MESSAGE =
   "Okul takip sunucusu güncelleniyor. Lütfen birkaç dakika sonra tekrar deneyin.";
@@ -83,6 +83,10 @@ type ApiStudent = {
   name: string;
   grade: string;
   institution: string;
+  institutionName?: string;
+  institutionId?: string | null;
+  mintikaName?: string;
+  needsInstitutionMapping?: boolean;
   group: string;
   parentPhone: string;
   isActive: boolean;
@@ -102,11 +106,16 @@ type ApiDailyRecord = {
 };
 
 function mapStudent(api: ApiStudent): Student {
+  const institutionName = api.institutionName ?? api.institution;
   return {
     id: api.id,
     name: api.name,
     grade: api.grade,
-    institution: api.institution,
+    institution: institutionName,
+    institutionName,
+    institutionId: api.institutionId ?? null,
+    mintikaName: api.mintikaName ?? "",
+    needsInstitutionMapping: api.needsInstitutionMapping === true,
     group: api.group,
     parentPhone: api.parentPhone,
     isActive: api.isActive !== false,
@@ -129,15 +138,23 @@ function mapDailyRecord(api: ApiDailyRecord): DailyRecord {
   };
 }
 
-function studentPayload(student: Student) {
+function studentPayload(student: Student, institutionId?: string | null) {
   return {
     name: student.name.trim(),
     grade: student.grade.trim(),
-    institution: student.institution.trim(),
+    institutionId: institutionId ?? student.institutionId ?? undefined,
     group: student.group.trim(),
     parentPhone: student.parentPhone.trim(),
     isActive: student.isActive,
   };
+}
+
+export async function fetchMyInstitutions(): Promise<ViewerInstitutionOption[]> {
+  const res = await okulRequest<{ institutions?: ViewerInstitutionOption[] }>(
+    "GET",
+    "/okul-takip/my-institutions",
+  );
+  return res.institutions ?? [];
 }
 
 export async function checkOkulTakipApiReady(): Promise<{ ok: boolean; message?: string }> {
@@ -176,8 +193,11 @@ export async function fetchOkulTakipStore(): Promise<OkulTakipStore> {
   };
 }
 
-export async function saveStudent(student: Student): Promise<Student> {
-  const payload = studentPayload(student);
+export async function saveStudent(
+  student: Student,
+  institutionId?: string | null,
+): Promise<Student> {
+  const payload = studentPayload(student, institutionId);
   const isExistingUuid = /^[0-9a-f-]{36}$/i.test(student.id);
 
   const res = isExistingUuid

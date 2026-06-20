@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { requireAuth } from "../middlewares/requireAdmin";
+import { requireAuth, requireAdmin, requireReportAccess } from "../middlewares/requireAdmin";
 import { type CompatRecord, listCompatRecords } from "../lib/recordsCompat";
 import {
   createCompatRecord,
@@ -8,8 +8,45 @@ import {
   RecordsMutationError,
   type MutationContext,
 } from "../lib/recordsMutations";
+import {
+  buildOkulTakipInstitutionDetail,
+  buildOkulTakipMissingReport,
+  buildOkulTakipSummaryReport,
+  todayIsoDate,
+  validateReportDate,
+} from "../lib/okulTakipReports";
+import {
+  getViewerInstitutionOptions,
+  listUnmappedStudents,
+  OkulTakipInstitutionError,
+  remapStudentInstitution,
+} from "../lib/okulTakipInstitutionResolver";
+import { resolveDistrictFilter, type ReportAccess } from "../lib/reportAccess";
 
 const router: IRouter = Router();
+
+type ReportRequest = Request & { reportAccess?: ReportAccess };
+
+function reportAccess(req: Request): ReportAccess {
+  return (req as ReportRequest).reportAccess ?? { type: "own", mintikas: [] };
+}
+
+function parseReportQuery(req: Request, res: Response): { date: string; mintika: string | null } | null {
+  const date = validateReportDate(String(req.query.date ?? todayIsoDate())) ?? todayIsoDate();
+  const access = reportAccess(req);
+  const requestedMintika =
+    typeof req.query.mintika === "string"
+      ? req.query.mintika
+      : typeof req.query.district === "string"
+        ? req.query.district
+        : null;
+  const mintika = resolveDistrictFilter(access, requestedMintika);
+  if (mintika === undefined) {
+    res.status(403).json({ error: "Bu mıntıka için rapor erişiminiz yok." });
+    return null;
+  }
+  return { date, mintika };
+}
 
 function mutationContext(req: Request): MutationContext {
   return {
@@ -31,7 +68,7 @@ function studentInput(body: Record<string, unknown>) {
   return {
     name: body.name,
     grade: body.grade ?? body.classLevel,
-    institution: body.institution ?? body.institutionName,
+    institutionId: body.institutionId ?? null,
     group: body.group ?? body.groupName,
     parentPhone: body.parentPhone ?? "",
     isActive: body.isActive ?? body.active ?? true,
@@ -52,11 +89,16 @@ function dailyInput(body: Record<string, unknown>) {
 
 function recordToStudent(record: CompatRecord) {
   const data = record.data ?? {};
+  const institutionName = String(data.institutionName ?? data.institution ?? "");
   return {
     id: String(record.id),
     name: String(data.name ?? ""),
     grade: String(data.grade ?? ""),
-    institution: String(data.institution ?? ""),
+    institution: institutionName,
+    institutionName,
+    institutionId: data.institutionId != null ? String(data.institutionId) : null,
+    mintikaName: String(data.mintikaName ?? ""),
+    needsInstitutionMapping: data.needsInstitutionMapping === true,
     group: String(data.group ?? ""),
     parentPhone: String(data.parentPhone ?? ""),
     isActive: data.isActive !== false,
@@ -68,15 +110,20 @@ function recordToStudent(record: CompatRecord) {
 
 function recordToDaily(record: CompatRecord) {
   const data = record.data ?? {};
+  const institutionName = String(data.institutionName ?? data.institution ?? "");
   return {
     id: String(record.id),
     studentId: String(data.studentId ?? ""),
     date: String(data.date ?? ""),
-    institution: String(data.institution ?? ""),
+    institution: institutionName,
+    institutionName,
+    institutionId: data.institutionId != null ? String(data.institutionId) : null,
     group: String(data.group ?? ""),
+    mintikaName: String(data.mintikaName ?? ""),
     attendanceStatus: data.attendanceStatus ?? null,
     homeworkStatus: data.homeworkStatus ?? null,
     note: String(data.note ?? ""),
+    completedByUserId: data.completedByUserId ?? null,
     createdAt: record.createdAt ?? record.created_at,
     updatedAt: record.updatedAt ?? record.updated_at,
   };
@@ -92,7 +139,51 @@ function sendError(res: Response, err: unknown, logLabel: string) {
 }
 
 router.get("/okul-takip/health", (_req: Request, res: Response) => {
-  res.json({ ok: true, feature: "okul_takip", studentRecordType: "okul_student" });
+  res.json({
+    ok: true,
+    feature: "okul_takip",
+    studentRecordType: "okul_student",
+    reportsEnabled: true,
+    institutionBinding: true,
+  });
+});
+
+router.get("/okul-takip/my-institutions", requireAuth, async (req: Request, res: Response) => {
+  if (!requireViewer(req, res)) return;
+  try {
+    const institutions = await getViewerInstitutionOptions(mutationContext(req));
+    res.json({ institutions });
+  } catch (err) {
+    sendError(res, err, "my-institutions failed");
+  }
+});
+
+router.get("/okul-takip/unmapped-students", requireReportAccess, async (_req: Request, res: Response) => {
+  try {
+    const students = await listUnmappedStudents();
+    res.json({ students });
+  } catch (err) {
+    sendError(res, err, "unmapped students failed");
+  }
+});
+
+router.post("/okul-takip/remap-student", requireAdmin, async (req: Request, res: Response) => {
+  const studentId = String((req.body as { studentId?: unknown }).studentId ?? "");
+  const institutionId = String((req.body as { institutionId?: unknown }).institutionId ?? "");
+  if (!studentId || !institutionId) {
+    res.status(400).json({ error: "Öğrenci ve kurum kimliği gerekli." });
+    return;
+  }
+  try {
+    const result = await remapStudentInstitution(studentId, institutionId);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof OkulTakipInstitutionError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    sendError(res, err, "remap student failed");
+  }
 });
 
 router.get("/okul-takip/students", requireAuth, async (req: Request, res: Response) => {
@@ -201,5 +292,60 @@ router.put("/okul-takip/daily-records", requireAuth, async (req: Request, res: R
     sendError(res, err, "upsert daily records failed");
   }
 });
+
+router.get("/okul-takip/reports/summary", requireReportAccess, async (req: Request, res: Response) => {
+  const parsed = parseReportQuery(req, res);
+  if (!parsed) return;
+
+  try {
+    const report = await buildOkulTakipSummaryReport(parsed.date, reportAccess(req), parsed.mintika);
+    res.json(report);
+  } catch (err) {
+    sendError(res, err, "summary report failed");
+  }
+});
+
+router.get("/okul-takip/reports/missing", requireReportAccess, async (req: Request, res: Response) => {
+  const parsed = parseReportQuery(req, res);
+  if (!parsed) return;
+
+  try {
+    const report = await buildOkulTakipMissingReport(parsed.date, reportAccess(req), parsed.mintika);
+    res.json(report);
+  } catch (err) {
+    sendError(res, err, "missing report failed");
+  }
+});
+
+router.get(
+  "/okul-takip/reports/institution/:institutionName",
+  requireReportAccess,
+  async (req: Request, res: Response) => {
+    const parsed = parseReportQuery(req, res);
+    if (!parsed) return;
+
+    const institutionName = String(
+      Array.isArray(req.params.institutionName)
+        ? req.params.institutionName[0]
+        : req.params.institutionName,
+    );
+
+    try {
+      const detail = await buildOkulTakipInstitutionDetail(
+        parsed.date,
+        institutionName,
+        reportAccess(req),
+        parsed.mintika,
+      );
+      if (!detail) {
+        res.status(403).json({ error: "Bu kurum için rapor erişiminiz yok." });
+        return;
+      }
+      res.json(detail);
+    } catch (err) {
+      sendError(res, err, "institution report failed");
+    }
+  },
+);
 
 export default router;

@@ -86,6 +86,11 @@ export const WEEKDAY_LABELS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", 
 
 export const STORAGE_KEY = "nehari-okul-takip-v1";
 
+export const OKUL_TAKIP_MODULE_TITLE = "Yurt Ödev ve Yoklama Takibi";
+export const OKUL_TAKIP_HOME_BACK_LABEL = `${OKUL_TAKIP_MODULE_TITLE} Ana Sayfası`;
+export const OKUL_TAKIP_INSTITUTION_HINT =
+  "Öğrenci, hesabınıza bağlı yurda kaydedilecektir.";
+
 export const RISK_ACTIONS: Record<string, string> = {
   low_general: "Hoca efendi birebir ilgilenecek",
   low_attendance: "Veli aranacak",

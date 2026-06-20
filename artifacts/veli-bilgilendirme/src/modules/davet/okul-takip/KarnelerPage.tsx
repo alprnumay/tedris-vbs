@@ -19,7 +19,7 @@ import {
   computeWeeklyStats,
   getWeekRange,
 } from "@/modules/davet/okul-takip/calculations";
-import { GENERAL_STATUS_COLORS, GENERAL_STATUS_LABELS } from "@/modules/davet/okul-takip/constants";
+import { GENERAL_STATUS_COLORS, GENERAL_STATUS_LABELS, OKUL_TAKIP_HOME_BACK_LABEL } from "@/modules/davet/okul-takip/constants";
 import { getGrades, getGroups, getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { GeneralStatus } from "@/modules/davet/okul-takip/types";
 import {
@@ -74,7 +74,7 @@ export default function KarnelerPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
+        <BackButton label={OKUL_TAKIP_HOME_BACK_LABEL} href={OKUL_TAKIP_HOME} />
         <h1 className="text-xl font-bold">Kişisel Karneler</h1>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -136,7 +136,7 @@ export const davetHomeModules: DavetModuleDef[] = [
     href: "/yatili-program",
   },
   {
-    title: "Okul Ödevi ve Yoklama Takibi",
+    title: "Yurt Ödev ve Yoklama Takibi",
     shortDescription: "Günlük yoklama ve okul ödevi",
     description:
       "Günlük yoklamayı ve okul ödevi takibini yapın, hafta sonunda analizli kişisel karne alın.",

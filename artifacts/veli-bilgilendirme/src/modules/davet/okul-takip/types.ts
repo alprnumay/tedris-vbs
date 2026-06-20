@@ -18,6 +18,10 @@ export type Student = {
   name: string;
   grade: string;
   institution: string;
+  institutionName?: string;
+  institutionId?: string | null;
+  mintikaName?: string;
+  needsInstitutionMapping?: boolean;
   group: string;
   parentPhone: string;
   isActive: boolean;
@@ -30,6 +34,9 @@ export type DailyRecord = {
   studentId: string;
   date: string;
   institution: string;
+  institutionName?: string;
+  institutionId?: string | null;
+  mintikaName?: string;
   group: string;
   attendanceStatus: AttendanceStatus | null;
   homeworkStatus: HomeworkStatus | null;
@@ -101,4 +108,11 @@ export type KarneAnalysis = {
 export type OkulTakipStore = {
   students: Student[];
   dailyRecords: DailyRecord[];
+};
+
+export type ViewerInstitutionOption = {
+  id: string;
+  institutionName: string;
+  mintikaName: string;
+  isPrimary: boolean;
 };

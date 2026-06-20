@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
@@ -14,19 +14,38 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import type { Student } from "@/modules/davet/okul-takip/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { Student, ViewerInstitutionOption } from "@/modules/davet/okul-takip/types";
+import {
+  OKUL_TAKIP_HOME_BACK_LABEL,
+  OKUL_TAKIP_INSTITUTION_HINT,
+} from "@/modules/davet/okul-takip/constants";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
-import { getOkulTakipUserMessage } from "@/modules/davet/okul-takip/okulTakipApi";
+import {
+  fetchMyInstitutions,
+  getOkulTakipUserMessage,
+} from "@/modules/davet/okul-takip/okulTakipApi";
 import {
   deleteStudent,
   upsertStudent,
   useOkulTakipStore,
 } from "@/modules/davet/okul-takip/store";
 
-const emptyForm: Omit<Student, "id"> = {
+type StudentForm = Omit<Student, "id">;
+
+const emptyForm: StudentForm = {
   name: "",
   grade: "",
   institution: "",
+  institutionName: "",
+  institutionId: null,
+  mintikaName: "",
   group: "",
   parentPhone: "",
   isActive: true,
@@ -36,12 +55,49 @@ export default function StudentListPage() {
   const { students, loading, ready, apiIssue } = useOkulTakipStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<StudentForm>(emptyForm);
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>("");
+  const [institutions, setInstitutions] = useState<ViewerInstitutionOption[]>([]);
+  const [institutionsLoading, setInstitutionsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setInstitutionsLoading(true);
+    void fetchMyInstitutions()
+      .then((list) => {
+        if (cancelled) return;
+        setInstitutions(list);
+        if (list.length === 1) setSelectedInstitutionId(list[0].id);
+      })
+      .catch(() => {
+        if (!cancelled) setInstitutions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setInstitutionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedInstitution = useMemo(() => {
+    if (selectedInstitutionId) {
+      return institutions.find((item) => item.id === selectedInstitutionId) ?? null;
+    }
+    return institutions.length === 1 ? institutions[0] : null;
+  }, [institutions, selectedInstitutionId]);
 
   const openAdd = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      institution: selectedInstitution?.institutionName ?? "",
+      institutionName: selectedInstitution?.institutionName ?? "",
+      institutionId: selectedInstitution?.id ?? null,
+      mintikaName: selectedInstitution?.mintikaName ?? "",
+    });
+    if (selectedInstitution) setSelectedInstitutionId(selectedInstitution.id);
     setModalOpen(true);
   };
 
@@ -50,11 +106,16 @@ export default function StudentListPage() {
     setForm({
       name: s.name,
       grade: s.grade,
-      institution: s.institution,
+      institution: s.institutionName ?? s.institution,
+      institutionName: s.institutionName ?? s.institution,
+      institutionId: s.institutionId ?? null,
+      mintikaName: s.mintikaName ?? "",
+      needsInstitutionMapping: s.needsInstitutionMapping,
       group: s.group,
       parentPhone: s.parentPhone,
       isActive: s.isActive,
     });
+    if (s.institutionId) setSelectedInstitutionId(s.institutionId);
     setModalOpen(true);
   };
 
@@ -63,13 +124,27 @@ export default function StudentListPage() {
       toast.error("Ad soyad gerekli.");
       return;
     }
+    if (!selectedInstitution && institutions.length === 0 && !editing?.institutionId) {
+      toast.error("Hesabınıza bağlı yurt/kurum bulunamadı. Lütfen yönetici ile iletişime geçin.");
+      return;
+    }
+    if (institutions.length > 1 && !selectedInstitutionId && !editing?.institutionId) {
+      toast.error("Lütfen yurt/kurum seçin.");
+      return;
+    }
+
     setSaving(true);
     try {
+      const institutionId = selectedInstitutionId || editing?.institutionId || selectedInstitution?.id || null;
       const student: Student = {
         id: editing?.id ?? "",
         ...form,
+        institution: selectedInstitution?.institutionName ?? form.institutionName ?? form.institution,
+        institutionName: selectedInstitution?.institutionName ?? form.institutionName ?? form.institution,
+        institutionId,
+        mintikaName: selectedInstitution?.mintikaName ?? form.mintikaName ?? "",
       };
-      await upsertStudent(student);
+      await upsertStudent(student, institutionId);
       setModalOpen(false);
       toast.success(editing ? "Öğrenci güncellendi." : "Öğrenci eklendi.");
     } catch (err) {
@@ -91,7 +166,7 @@ export default function StudentListPage() {
 
   const archive = async (student: Student) => {
     try {
-      await upsertStudent({ ...student, isActive: false });
+      await upsertStudent({ ...student, isActive: false }, student.institutionId);
       toast.success("Öğrenci arşivlendi (pasif).");
     } catch (err) {
       toast.error(getOkulTakipUserMessage(err));
@@ -100,6 +175,7 @@ export default function StudentListPage() {
 
   const activeStudents = students.filter((s) => s.isActive);
   const archivedStudents = students.filter((s) => !s.isActive);
+  const unmappedCount = students.filter((s) => s.needsInstitutionMapping).length;
 
   if (!ready && loading) {
     return (
@@ -115,14 +191,14 @@ export default function StudentListPage() {
   return (
     <DavetLayout>
       <div className="space-y-5 pb-8">
-        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
+        <BackButton label={OKUL_TAKIP_HOME_BACK_LABEL} href={OKUL_TAKIP_HOME} />
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-slate-900">Öğrencilerim</h1>
             <p className="text-sm text-slate-600">Kendi öğrenci listenizi yönetin</p>
           </div>
-          <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700">
+          <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700" disabled={institutionsLoading}>
             <Plus size={16} className="mr-2" />
             Öğrenci ekle
           </Button>
@@ -131,6 +207,20 @@ export default function StudentListPage() {
         {apiIssue ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             {apiIssue}
+          </div>
+        ) : null}
+
+        {!institutionsLoading && institutions.length === 0 ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            Hesabınıza bağlı yurt/kurum tanımı bulunamadı. Öğrenci eklemek için yöneticinizden kurum
+            eşleştirmesi isteyin.
+          </div>
+        ) : null}
+
+        {unmappedCount > 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {unmappedCount} öğrencinin yurt eşleştirmesi eksik. Kayıtlar raporlarda “Eşleştirilmemiş
+            Kayıtlar” altında görünür; yönetici eşleştirme yapabilir.
           </div>
         ) : null}
 
@@ -168,7 +258,7 @@ export default function StudentListPage() {
                   onEdit={() => openEdit(s)}
                   onRestore={async () => {
                     try {
-                      await upsertStudent({ ...s, isActive: true });
+                      await upsertStudent({ ...s, isActive: true }, s.institutionId);
                       toast.success("Öğrenci tekrar aktif edildi.");
                     } catch (err) {
                       toast.error(getOkulTakipUserMessage(err));
@@ -211,13 +301,46 @@ export default function StudentListPage() {
                 />
               </div>
             </div>
-            <div>
-              <Label>Kurum</Label>
-              <Input
-                value={form.institution}
-                onChange={(e) => setForm({ ...form, institution: e.target.value })}
-              />
-            </div>
+
+            {institutions.length > 1 ? (
+              <div>
+                <Label>Yurt / Kurum</Label>
+                <Select value={selectedInstitutionId} onValueChange={setSelectedInstitutionId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Yurt seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {institutions.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.institutionName} · {item.mintikaName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Yurt / Kurum</Label>
+                  <Input
+                    readOnly
+                    value={selectedInstitution?.institutionName ?? form.institutionName ?? form.institution}
+                    className="bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <Label>Mıntıka</Label>
+                  <Input
+                    readOnly
+                    value={selectedInstitution?.mintikaName ?? form.mintikaName ?? ""}
+                    className="bg-slate-50"
+                  />
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-500">{OKUL_TAKIP_INSTITUTION_HINT}</p>
+
             <div>
               <Label>Veli telefonu (isteğe bağlı)</Label>
               <Input
@@ -273,8 +396,14 @@ function StudentCard({
           <p className="text-xs text-slate-500">
             {student.grade} · {student.group}
           </p>
-          {student.institution ? (
-            <p className="mt-1 text-xs text-slate-500">{student.institution}</p>
+          {student.institutionName || student.institution ? (
+            <p className="mt-1 text-xs text-slate-500">
+              {student.institutionName ?? student.institution}
+              {student.mintikaName ? ` · ${student.mintikaName}` : ""}
+            </p>
+          ) : null}
+          {student.needsInstitutionMapping ? (
+            <p className="mt-1 text-[10px] font-semibold text-amber-700">Yurt eşleştirmesi eksik</p>
           ) : null}
         </div>
         <span

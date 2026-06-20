@@ -30,6 +30,7 @@ import {
 import { isStudentMarked } from "@/modules/davet/okul-takip/dailyTrackingHelpers";
 import { getInstitutions } from "@/modules/davet/okul-takip/mockData";
 import type { AttendanceStatus, DailyDraft, DailyRecord, HomeworkStatus, Student } from "@/modules/davet/okul-takip/types";
+import { OKUL_TAKIP_HOME_BACK_LABEL } from "@/modules/davet/okul-takip/constants";
 import { OKUL_TAKIP_HOME } from "@/modules/davet/okul-takip/routes";
 import { getOkulTakipUserMessage } from "@/modules/davet/okul-takip/okulTakipApi";
 import {
@@ -236,7 +237,7 @@ export default function DailyTrackingPage() {
   return (
     <DavetLayout>
       <div className="space-y-4 pb-28">
-        <BackButton label="Okul Takip Ana Sayfası" href={OKUL_TAKIP_HOME} />
+        <BackButton label={OKUL_TAKIP_HOME_BACK_LABEL} href={OKUL_TAKIP_HOME} />
 
         <div>
           <h1 className="text-xl font-bold text-slate-900">Günlük Takip</h1>

@@ -38,6 +38,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, kullaniciRaporGorebilirMi, type KullaniciBilgisi } from "@/lib/api";
+import { APP_BRAND_SHORT, APP_BRAND_TITLE, APP_LOGO_ALT } from "@/lib/appLogo";
+import { OKUL_TAKIP_MODULE_TITLE } from "@/modules/davet/okul-takip/constants";
 import { NOTIFICATION_SETTINGS } from "@/modules/davet/okul-takip/routes";
 
 async function handleCikis() {
@@ -76,7 +78,7 @@ function DesktopSidebar({
 
   const navLinks: SidebarLink[] = [
     { label: "Ana Sayfa", icon: Home, href: "/", wouter: true, exact: true },
-    { label: "Okul Takibi", icon: ClipboardCheck, href: "/okul-takip", wouter: true },
+    { label: "Yurt Ödev ve Yoklama", icon: ClipboardCheck, href: "/okul-takip", wouter: true },
     { label: "Faydalı Çalışmalar", icon: BookOpen, href: "/yayindaki-calismalar", wouter: true },
     { label: "Veli Bilgilendirme", icon: Megaphone, href: "/?modul=veli", wouter: false },
     { label: "Davet ve Programlar", icon: FileText, href: "/veli", wouter: true },
@@ -132,12 +134,12 @@ function DesktopSidebar({
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.06]">
         <img
           src="/app-logo.png"
-          alt="Antalya Bölge Veli Bilgilendirme"
+          alt={APP_LOGO_ALT}
           className="h-10 w-10 shrink-0 rounded-xl object-contain bg-white p-0.5 shadow-md"
         />
         <div>
-          <p className="text-[13px] font-extrabold leading-none text-white">Antalya Bölge Veli Bilgilendirme</p>
-          <p className="mt-0.5 text-[10px] leading-none text-slate-400">ABVB · Çalışma Paneli</p>
+          <p className="text-[13px] font-extrabold leading-none text-white">{APP_BRAND_TITLE}</p>
+          <p className="mt-0.5 text-[10px] leading-none text-slate-400">{APP_BRAND_SHORT} · Çalışma Paneli</p>
         </div>
       </div>
 
@@ -355,11 +357,11 @@ function MobileTopBar({ user }: { user: KullaniciBilgisi | null | undefined }) {
       <div className="flex items-center gap-2.5 min-w-0">
         <img
           src="/app-logo.png"
-          alt="Antalya Bölge Veli Bilgilendirme"
+          alt={APP_LOGO_ALT}
           className="h-9 w-9 shrink-0 rounded-xl object-contain bg-white p-0.5 shadow-sm"
         />
         <div className="min-w-0">
-          <p className="text-[13px] font-extrabold leading-none text-slate-800">ABVB</p>
+          <p className="text-[13px] font-extrabold leading-none text-slate-800">{APP_BRAND_SHORT}</p>
           {name && (
             <p className="mt-0.5 truncate text-[11px] leading-none text-slate-400">
               Hoş geldiniz, <span className="font-semibold text-slate-600">{name}</span>
@@ -445,7 +447,7 @@ function OkulTakipCard() {
                 BUGÜNKÜ ANA İŞ
               </p>
               <h3 className="mb-2 text-xl font-extrabold leading-tight tracking-tight sm:text-[22px]">
-                Okul Ödevi ve Yoklama Takibi
+                {OKUL_TAKIP_MODULE_TITLE}
               </h3>
               <p className="mb-5 text-sm leading-relaxed text-blue-100/90">
                 Bugünkü yoklamayı alın, okul ödevlerini takip edin ve hafta sonunda kişisel karne oluşturun.

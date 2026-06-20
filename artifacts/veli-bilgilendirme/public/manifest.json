@@ -1,8 +1,8 @@
 ﻿{
   "id": "/",
-  "name": "Antalya Bölge Veli Bilgilendirme",
-  "short_name": "ABVB",
-  "description": "Antalya Bölge Veli Bilgilendirme — öğretmen ve yurt hocaları için profesyonel afiş oluşturucu",
+  "name": "Antalya Nehari Platformu",
+  "short_name": "Nehari",
+  "description": "Antalya Nehari Platformu — öğretmen ve yurt hocaları için dijital çalışma platformu",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -46,7 +46,7 @@
       "sizes": "1200x630",
       "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "Antalya Bölge Veli Bilgilendirme"
+      "label": "Antalya Nehari Platformu"
     }
   ]
 }

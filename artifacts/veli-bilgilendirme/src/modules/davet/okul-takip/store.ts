@@ -75,8 +75,11 @@ export async function upsertDailyRecords(records: DailyRecord[]): Promise<void> 
   notify();
 }
 
-export async function upsertStudent(student: Student): Promise<Student> {
-  const saved = await apiSaveStudent(student);
+export async function upsertStudent(
+  student: Student,
+  institutionId?: string | null,
+): Promise<Student> {
+  const saved = await apiSaveStudent(student, institutionId);
   const idx = storeCache.students.findIndex((s) => s.id === student.id);
   const students =
     idx >= 0

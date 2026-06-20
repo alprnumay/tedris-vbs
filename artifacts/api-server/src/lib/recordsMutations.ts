@@ -11,6 +11,11 @@ import {
 } from "@workspace/db";
 import { normalizeRole } from "./roleUtils";
 import { normalizeDistrictName } from "./trackedDistricts";
+import {
+  OkulTakipInstitutionError,
+  resolveInstitutionForViewer,
+  resolveInstitutionFromStudentData,
+} from "./okulTakipInstitutionResolver";
 import { resolveReportScopeFields } from "./reportAccess";
 import {
   type CompatRecord,
@@ -162,11 +167,15 @@ async function assertOkulStudentOwnedByViewer(studentId: string, ctx: MutationCo
 function normalizeOkulStudentData(data: Record<string, unknown>): Record<string, unknown> {
   return {
     name: str(data.name),
-    grade: str(data.grade),
-    institution: str(data.institution),
-    group: str(data.group),
+    grade: str(data.grade ?? data.classLevel),
+    institution: str(data.institution ?? data.institutionName),
+    institutionName: str(data.institutionName ?? data.institution),
+    institutionId: str(data.institutionId),
+    group: str(data.group ?? data.groupName),
     parentPhone: str(data.parentPhone),
-    isActive: data.isActive !== false,
+    isActive: data.isActive !== false && data.active !== false,
+    mintikaName: str(data.mintikaName),
+    needsInstitutionMapping: data.needsInstitutionMapping === true,
   };
 }
 
@@ -174,12 +183,27 @@ function normalizeOkulDailyRecordData(data: Record<string, unknown>): Record<str
   return {
     studentId: str(data.studentId),
     date: str(data.date),
-    institution: str(data.institution),
-    group: str(data.group),
+    institution: str(data.institution ?? data.institutionName),
+    institutionName: str(data.institutionName ?? data.institution),
+    institutionId: str(data.institutionId),
+    group: str(data.group ?? data.groupName),
+    mintikaName: str(data.mintikaName),
     attendanceStatus: data.attendanceStatus ?? null,
     homeworkStatus: data.homeworkStatus ?? null,
     note: str(data.note),
+    completedByUserId: str(data.completedByUserId),
   };
+}
+
+function applyResolvedInstitution(
+  target: Record<string, unknown>,
+  resolved: Awaited<ReturnType<typeof resolveInstitutionForViewer>>,
+): void {
+  target.institutionId = resolved.institutionId ?? "";
+  target.institutionName = resolved.institutionName;
+  target.institution = resolved.institutionName;
+  target.mintikaName = resolved.mintikaName;
+  target.needsInstitutionMapping = resolved.needsInstitutionMapping;
 }
 
 async function upsertOkulStudent(
@@ -189,6 +213,21 @@ async function upsertOkulStudent(
 ): Promise<CompatRecord> {
   const normalized = normalizeOkulStudentData(data);
   if (!normalized.name) throw new RecordsMutationError("Öğrenci adı zorunludur.", 400);
+
+  try {
+    const resolved = await resolveInstitutionForViewer(
+      ctx,
+      str(normalized.institutionId) || null,
+      str(normalized.institutionName) || str(normalized.institution) || null,
+    );
+    applyResolvedInstitution(normalized, resolved);
+  } catch (err) {
+    if (err instanceof OkulTakipInstitutionError) {
+      throw new RecordsMutationError(err.message, err.status);
+    }
+    throw err;
+  }
+
   return upsertOwnedCompatRecord("okul_student", normalized, ctx, existingId);
 }
 
@@ -201,6 +240,18 @@ async function upsertOkulDailyRecord(
   if (!normalized.studentId) throw new RecordsMutationError("Öğrenci kimliği zorunludur.", 400);
   if (!normalized.date) throw new RecordsMutationError("Tarih zorunludur.", 400);
   await assertOkulStudentOwnedByViewer(String(normalized.studentId), ctx);
+
+  const student = await getCompatRecord("okul_student", String(normalized.studentId));
+  const studentData = student?.data ?? {};
+  const ownerId = student?.userId != null ? String(student.userId) : ctx.viewerId ?? null;
+  const resolved = await resolveInstitutionFromStudentData(studentData, ownerId);
+
+  normalized.institutionId = resolved.institutionId ?? "";
+  normalized.institutionName = resolved.institutionName;
+  normalized.institution = resolved.institutionName;
+  normalized.mintikaName = resolved.mintikaName;
+  normalized.completedByUserId = ctx.viewerId ?? "";
+
   return upsertOwnedCompatRecord("okul_daily_record", normalized, ctx, existingId);
 }
 

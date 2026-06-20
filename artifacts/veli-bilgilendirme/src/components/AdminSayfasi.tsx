@@ -27,6 +27,8 @@ import { indirAdminExcel } from "../lib/admin/adminExcel";
 import { excelKurumImportOku, type KurumImportSatiri } from "../lib/admin/adminExcelImport";
 import { AppBrand } from "./AppBrand";
 import { AdminKullaniciForm } from "./admin/AdminKullaniciForm";
+import AdminOkulTakipRaporlari from "./admin/AdminOkulTakipRaporlari";
+import { fetchOkulTakipMissingReport, resolveOkulTakipReportDate } from "../lib/okulTakipReportsApi";
 import {
   StatKart,
   DurumRozet,
@@ -43,6 +45,7 @@ type Sekme =
   | "genel"
   | "mintika"
   | "yurt"
+  | "okul_takip"
   | "kullanicilar"
   | "aktivite"
   | "veri"
@@ -53,6 +56,7 @@ const SEKMELER: { id: Sekme; label: string; simge: string }[] = [
   { id: "genel", label: "Genel Bakış", simge: "📊" },
   { id: "mintika", label: "Mıntıka Panosu", simge: "🗺️" },
   { id: "yurt", label: "Yurt Takibi", simge: "🏫" },
+  { id: "okul_takip", label: "Yurt Ödev ve Yoklama Raporları", simge: "📚" },
   { id: "kullanicilar", label: "Kullanıcılar", simge: "👥" },
   { id: "aktivite", label: "Aktivite Takibi", simge: "📋" },
   { id: "veri", label: "Veri Sağlığı", simge: "🩺" },
@@ -130,6 +134,9 @@ export default function AdminSayfasi({ viewer = null }: AdminSayfasiProps) {
   const [raporYetkiSecim, setRaporYetkiSecim] = useState<ReportYetkiSecim>("own");
   const [raporYetkiMintikalari, setRaporYetkiMintikalari] = useState<string[]>([]);
   const [mintikaListesi, setMintikaListesi] = useState<string[]>([...TRACKED_DISTRICTS]);
+  const [okulTakipEksikSayisi, setOkulTakipEksikSayisi] = useState(0);
+  const [okulTakipEksikMintika, setOkulTakipEksikMintika] = useState<string | null>(null);
+  const [okulTakipScrollMissing, setOkulTakipScrollMissing] = useState(false);
 
   const reportAccess = useMemo(() => getReportAccessForUser(viewer), [viewer]);
   const tamYetkili = kullaniciTamRaporYetkiliMi(viewer);
@@ -157,6 +164,29 @@ export default function AdminSayfasi({ viewer = null }: AdminSayfasiProps) {
       setAktifSekme("genel");
     }
   }, [tamYetkili, aktifSekme]);
+
+  useEffect(() => {
+    const bugun = resolveOkulTakipReportDate("today");
+    void fetchOkulTakipMissingReport(bugun)
+      .then((report) => {
+        setOkulTakipEksikSayisi(report.missingInstitutions.length);
+        const mintikaSayaci = new Map<string, number>();
+        for (const row of report.missingInstitutions) {
+          mintikaSayaci.set(row.mintikaName, (mintikaSayaci.get(row.mintikaName) ?? 0) + 1);
+        }
+        if (reportAccess.type === "mintika" && reportAccess.mintikas.length === 1) {
+          setOkulTakipEksikMintika(reportAccess.mintikas[0]);
+        } else if (mintikaSayaci.size === 1) {
+          setOkulTakipEksikMintika(Array.from(mintikaSayaci.keys())[0] ?? null);
+        } else {
+          setOkulTakipEksikMintika(null);
+        }
+      })
+      .catch(() => {
+        setOkulTakipEksikSayisi(0);
+        setOkulTakipEksikMintika(null);
+      });
+  }, [reportAccess]);
   const filtreParams = useCallback(
     () => ({
       district: mintika || undefined,
@@ -521,6 +551,24 @@ export default function AdminSayfasi({ viewer = null }: AdminSayfasiProps) {
             {dashboard.summary.dataIssueCount > 0 && <button type="button" onClick={() => setAktifSekme("veri")} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: "#991b1b", color: "#fff", fontSize: 11, fontWeight: 800 }}>Veri Sağlığına Git</button>}
           </div>
         )}
+        {okulTakipEksikSayisi > 0 && (
+          <div style={{ padding: 12, borderRadius: 10, background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412", fontSize: 12, marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span>
+              Bugün {okulTakipEksikMintika ? `${okulTakipEksikMintika} mıntıkasında ` : ""}
+              {okulTakipEksikSayisi} yurt yoklama/ödev takibini tamamlamadı.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setAktifSekme("okul_takip");
+                setOkulTakipScrollMissing(true);
+              }}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: "#ea580c", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+            >
+              Eksikleri Gör
+            </button>
+          </div>
+        )}
         <div style={{ padding: 12, borderRadius: 10, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 12, marginBottom: 12, lineHeight: 1.55 }}>
           Genel Bakış tüm mıntıkaların girişlerini; Mıntıka Panosu seçili mıntıkanın girişlerini listeler. Excel raporlarında her giriş ayrı satır olarak yer alır.
         </div>
@@ -733,6 +781,14 @@ export default function AdminSayfasi({ viewer = null }: AdminSayfasiProps) {
               {yurts.length === 0 && <p style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Veri yok</p>}
             </div>
           </div>
+        )}
+
+        {aktifSekme === "okul_takip" && (
+          <AdminOkulTakipRaporlari
+            reportAccess={reportAccess}
+            scrollToMissing={okulTakipScrollMissing}
+            onScrollHandled={() => setOkulTakipScrollMissing(false)}
+          />
         )}
 
         {!yukleniyor && aktifSekme === "kullanicilar" && tamYetkili && (
