@@ -152,7 +152,15 @@ router.get("/okul-takip/my-institutions", requireAuth, async (req: Request, res:
   if (!requireViewer(req, res)) return;
   try {
     const institutions = await getViewerInstitutionOptions(mutationContext(req));
-    res.json({ institutions });
+    const defaultInstitution = institutions.find((institution) => institution.isDefault) ?? institutions[0] ?? null;
+    res.json({
+      institutions,
+      defaultInstitutionId: defaultInstitution?.id ?? null,
+      needsInstitutionMapping: institutions.length === 0,
+      ...(institutions.length === 0
+        ? { message: "Kullanıcının bağlı olduğu yurt/kurum bulunamadı." }
+        : {}),
+    });
   } catch (err) {
     sendError(res, err, "my-institutions failed");
   }

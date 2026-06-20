@@ -1,6 +1,11 @@
 import { resolveApiBaseUrl } from "@/lib/apiBase";
 import { getBackendToken } from "@/lib/backendApi";
-import type { DailyRecord, OkulTakipStore, Student, ViewerInstitutionOption } from "@/modules/davet/okul-takip/types";
+import type {
+  DailyRecord,
+  OkulTakipStore,
+  Student,
+  ViewerInstitutionsResponse,
+} from "@/modules/davet/okul-takip/types";
 
 const API_OUTDATED_MESSAGE =
   "Okul takip sunucusu güncelleniyor. Lütfen birkaç dakika sonra tekrar deneyin.";
@@ -149,12 +154,19 @@ function studentPayload(student: Student, institutionId?: string | null) {
   };
 }
 
-export async function fetchMyInstitutions(): Promise<ViewerInstitutionOption[]> {
-  const res = await okulRequest<{ institutions?: ViewerInstitutionOption[] }>(
+export async function fetchMyInstitutions(): Promise<ViewerInstitutionsResponse> {
+  const res = await okulRequest<Partial<ViewerInstitutionsResponse>>(
     "GET",
     "/okul-takip/my-institutions",
   );
-  return res.institutions ?? [];
+  const institutions = res.institutions ?? [];
+  return {
+    institutions,
+    defaultInstitutionId:
+      res.defaultInstitutionId ?? institutions.find((item) => item.isDefault)?.id ?? institutions[0]?.id ?? null,
+    needsInstitutionMapping: res.needsInstitutionMapping ?? (institutions.length === 0),
+    message: res.message,
+  };
 }
 
 export async function checkOkulTakipApiReady(): Promise<{ ok: boolean; message?: string }> {

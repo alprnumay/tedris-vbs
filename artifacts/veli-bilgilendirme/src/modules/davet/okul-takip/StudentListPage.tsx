@@ -58,6 +58,8 @@ export default function StudentListPage() {
   const [form, setForm] = useState<StudentForm>(emptyForm);
   const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>("");
   const [institutions, setInstitutions] = useState<ViewerInstitutionOption[]>([]);
+  const [needsInstitutionMapping, setNeedsInstitutionMapping] = useState(false);
+  const [institutionMessage, setInstitutionMessage] = useState<string | null>(null);
   const [institutionsLoading, setInstitutionsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -65,13 +67,23 @@ export default function StudentListPage() {
     let cancelled = false;
     setInstitutionsLoading(true);
     void fetchMyInstitutions()
-      .then((list) => {
+      .then((res) => {
         if (cancelled) return;
-        setInstitutions(list);
-        if (list.length === 1) setSelectedInstitutionId(list[0].id);
+        setInstitutions(res.institutions);
+        setNeedsInstitutionMapping(res.needsInstitutionMapping);
+        setInstitutionMessage(res.message ?? null);
+        if (res.defaultInstitutionId) {
+          setSelectedInstitutionId(res.defaultInstitutionId);
+        } else if (res.institutions.length === 1) {
+          setSelectedInstitutionId(res.institutions[0].id);
+        }
       })
       .catch(() => {
-        if (!cancelled) setInstitutions([]);
+        if (!cancelled) {
+          setInstitutions([]);
+          setNeedsInstitutionMapping(true);
+          setInstitutionMessage("Kullanıcının bağlı olduğu yurt/kurum bulunamadı.");
+        }
       })
       .finally(() => {
         if (!cancelled) setInstitutionsLoading(false);
@@ -124,8 +136,8 @@ export default function StudentListPage() {
       toast.error("Ad soyad gerekli.");
       return;
     }
-    if (!selectedInstitution && institutions.length === 0 && !editing?.institutionId) {
-      toast.error("Hesabınıza bağlı yurt/kurum bulunamadı. Lütfen yönetici ile iletişime geçin.");
+    if (needsInstitutionMapping || (!selectedInstitution && institutions.length === 0 && !editing?.institutionId)) {
+      toast.error("Bu kullanıcı için yurt/kurum eşleştirmesi yapılmamış. Lütfen yönetici ile görüşün.");
       return;
     }
     if (institutions.length > 1 && !selectedInstitutionId && !editing?.institutionId) {
@@ -210,10 +222,9 @@ export default function StudentListPage() {
           </div>
         ) : null}
 
-        {!institutionsLoading && institutions.length === 0 ? (
+        {!institutionsLoading && (needsInstitutionMapping || institutions.length === 0) ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-            Hesabınıza bağlı yurt/kurum tanımı bulunamadı. Öğrenci eklemek için yöneticinizden kurum
-            eşleştirmesi isteyin.
+            {institutionMessage ?? "Bu kullanıcı için yurt/kurum eşleştirmesi yapılmamış. Lütfen yönetici ile görüşün."}
           </div>
         ) : null}
 
@@ -362,7 +373,7 @@ export default function StudentListPage() {
             </Button>
             <Button
               onClick={() => void save()}
-              disabled={saving}
+              disabled={saving || needsInstitutionMapping || institutions.length === 0}
               className="bg-violet-600 hover:bg-violet-700"
             >
               {saving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}

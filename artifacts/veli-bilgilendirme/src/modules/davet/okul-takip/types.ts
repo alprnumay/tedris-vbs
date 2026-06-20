@@ -114,5 +114,12 @@ export type ViewerInstitutionOption = {
   id: string;
   institutionName: string;
   mintikaName: string;
-  isPrimary: boolean;
+  isDefault: boolean;
+};
+
+export type ViewerInstitutionsResponse = {
+  institutions: ViewerInstitutionOption[];
+  defaultInstitutionId: string | null;
+  needsInstitutionMapping: boolean;
+  message?: string;
 };

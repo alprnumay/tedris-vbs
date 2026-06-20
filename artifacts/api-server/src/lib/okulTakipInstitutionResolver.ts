@@ -38,7 +38,7 @@ export type ViewerInstitutionOption = {
   id: string;
   institutionName: string;
   mintikaName: string;
-  isPrimary: boolean;
+  isDefault: boolean;
 };
 
 function foldTr(s: string): string {
@@ -181,7 +181,7 @@ export async function getViewerInstitutionOptions(ctx: OwnerContext): Promise<Vi
       id: primary.id,
       institutionName: primary.institutionName,
       mintikaName: primary.districtName,
-      isPrimary: true,
+      isDefault: true,
     },
   ];
 }
@@ -227,12 +227,10 @@ export async function resolveInstitutionForViewer(
     };
   }
 
-  return {
-    institutionId: null,
-    institutionName: legacyName || normalizeInstitutionName(user?.institutionName) || UNMAPPED_INSTITUTION_LABEL,
-    mintikaName: mintikaHint ?? "",
-    needsInstitutionMapping: true,
-  };
+  throw new OkulTakipInstitutionError(
+    "Bu kullanıcı için yurt/kurum eşleştirmesi yapılmamış. Lütfen yönetici ile görüşün.",
+    403,
+  );
 }
 
 export async function resolveInstitutionFromStudentData(
