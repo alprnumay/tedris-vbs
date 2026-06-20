@@ -190,54 +190,63 @@ function filterMintikaName(access: ReportAccess, mintikaFilter: string | null | 
 }
 
 async function loadStudents(): Promise<RawStudentRow[]> {
-  const result = await db.execute(sql`
-    SELECT
-      s.id,
-      s.user_id,
-      s.data->>'name' AS name,
-      s.data->>'grade' AS grade,
-      s.data->>'group' AS group_name,
-      COALESCE(s.data->>'institutionName', s.data->>'institution') AS institution,
-      s.data->>'institutionId' AS institution_id,
-      s.data->>'mintikaName' AS mintika_name,
-      s.data->>'needsInstitutionMapping' AS needs_mapping,
-      s.data->>'isActive' AS is_active,
-      u.institution_name AS owner_institution,
-      COALESCE(u.district_name, u.district) AS owner_district,
-      i.institution_name AS registry_institution,
-      i.district_name AS registry_mintika
-    FROM compat_records s
-    LEFT JOIN local_users u ON u.id = s.user_id AND u.deleted_at IS NULL
-    LEFT JOIN institutions i ON i.id = NULLIF(trim(s.data->>'institutionId'), '')
-    WHERE s.record_type = 'okul_student'
-  `);
-  return (result.rows ?? []) as RawStudentRow[];
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        s.id,
+        s.user_id,
+        s.data->>'name' AS name,
+        s.data->>'grade' AS grade,
+        s.data->>'group' AS group_name,
+        COALESCE(s.data->>'institutionName', s.data->>'institution') AS institution,
+        s.data->>'institutionId' AS institution_id,
+        s.data->>'mintikaName' AS mintika_name,
+        s.data->>'needsInstitutionMapping' AS needs_mapping,
+        s.data->>'isActive' AS is_active,
+        u.institution_name AS owner_institution,
+        u.district_name AS owner_district,
+        i.institution_name AS registry_institution,
+        i.district_name AS registry_mintika
+      FROM compat_records s
+      LEFT JOIN local_users u ON u.id = s.user_id AND u.deleted_at IS NULL
+      LEFT JOIN institutions i ON i.id = NULLIF(trim(s.data->>'institutionId'), '')
+      WHERE s.record_type = 'okul_student'
+    `);
+    return (result.rows ?? []) as RawStudentRow[];
+  } catch (err) {
+    console.error("[okul-takip reports] students query failed", err);
+    return [];
+  }
 }
 
 async function loadDailyRecords(date: string): Promise<Map<string, RawDailyRow>> {
-  const result = await db.execute(sql`
-    SELECT
-      d.data->>'studentId' AS student_id,
-      d.data->>'attendanceStatus' AS attendance_status,
-      d.data->>'homeworkStatus' AS homework_status,
-      d.updated_at
-    FROM compat_records d
-    WHERE d.record_type = 'okul_daily_record'
-      AND d.data->>'date' = ${date}
-  `);
-
   const map = new Map<string, RawDailyRow>();
-  for (const row of (result.rows ?? []) as RawDailyRow[]) {
-    const studentId = str(row.student_id);
-    if (!studentId) continue;
-    const existing = map.get(studentId);
-    if (!existing) {
-      map.set(studentId, row);
-      continue;
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        d.data->>'studentId' AS student_id,
+        d.data->>'attendanceStatus' AS attendance_status,
+        d.data->>'homeworkStatus' AS homework_status,
+        d.updated_at
+      FROM compat_records d
+      WHERE d.record_type = 'okul_daily_record'
+        AND d.data->>'date' = ${date}
+    `);
+
+    for (const row of (result.rows ?? []) as RawDailyRow[]) {
+      const studentId = str(row.student_id);
+      if (!studentId) continue;
+      const existing = map.get(studentId);
+      if (!existing) {
+        map.set(studentId, row);
+        continue;
+      }
+      const existingTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+      const rowTs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+      if (rowTs >= existingTs) map.set(studentId, row);
     }
-    const existingTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-    const rowTs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
-    if (rowTs >= existingTs) map.set(studentId, row);
+  } catch (err) {
+    console.error("[okul-takip reports] daily records query failed", err);
   }
   return map;
 }
