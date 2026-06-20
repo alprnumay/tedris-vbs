@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  checkOkulTakipApiReady,
   fetchOkulTakipStore,
   removeStudent as apiRemoveStudent,
   saveDailyRecords as apiSaveDailyRecords,
@@ -16,6 +17,7 @@ const EMPTY_STORE: OkulTakipStore = { students: [], dailyRecords: [] };
 let storeCache: OkulTakipStore = EMPTY_STORE;
 let storeLoading = false;
 let storeReady = false;
+let storeApiIssue: string | null = null;
 let reloadPromise: Promise<OkulTakipStore> | null = null;
 const listeners = new Set<() => void>();
 
@@ -40,9 +42,13 @@ export async function reloadOkulTakipStore(): Promise<OkulTakipStore> {
 
   reloadPromise = (async () => {
     try {
+      const apiCheck = await checkOkulTakipApiReady();
+      storeApiIssue = apiCheck.ok ? null : apiCheck.message ?? null;
       storeCache = await fetchOkulTakipStore();
     } catch (err) {
       console.warn("[okul-takip] store load failed", err);
+      storeApiIssue =
+        err instanceof Error ? err.message : "Okul takip verileri yüklenemedi.";
       storeCache = EMPTY_STORE;
     } finally {
       storeLoading = false;
@@ -90,6 +96,7 @@ export async function deleteStudent(id: string): Promise<void> {
 export type OkulTakipStoreState = OkulTakipStore & {
   loading: boolean;
   ready: boolean;
+  apiIssue: string | null;
 };
 
 export function useOkulTakipStore(): OkulTakipStoreState {
@@ -107,6 +114,7 @@ export function useOkulTakipStore(): OkulTakipStoreState {
     ...storeCache,
     loading: storeLoading,
     ready: storeReady,
+    apiIssue: storeApiIssue,
   };
 }
 

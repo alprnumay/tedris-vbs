@@ -1,77 +1,12 @@
 import { resolveApiBaseUrl } from "@/lib/apiBase";
-import { getBackendToken, type BackendRecord } from "@/lib/backendApi";
+import { backendApi, type BackendRecord } from "@/lib/backendApi";
 import type { DailyRecord, OkulTakipStore, Student } from "@/modules/davet/okul-takip/types";
 
 const OKUL_STUDENT = "okul_student";
 const OKUL_DAILY = "okul_daily_record";
-const API_BASE = resolveApiBaseUrl();
-const REQUEST_TIMEOUT_MS = 15_000;
 
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
-
-function headers(json = true): Headers {
-  const h = new Headers();
-  if (json) h.set("Content-Type", "application/json");
-  const token = getBackendToken();
-  if (token) h.set("Authorization", `Bearer ${token}`);
-  return h;
-}
-
-function normalizeRecords<T>(payload: unknown): BackendRecord<T>[] {
-  const p = payload as { records?: unknown; data?: unknown; items?: unknown; record?: unknown };
-  const d = p.data as { records?: unknown; items?: unknown } | undefined;
-  if (Array.isArray(p.records)) return p.records as BackendRecord<T>[];
-  if (Array.isArray(p.items)) return p.items as BackendRecord<T>[];
-  if (d && Array.isArray(d.records)) return d.records as BackendRecord<T>[];
-  if (d && Array.isArray(d.items)) return d.items as BackendRecord<T>[];
-  if (p.record && typeof p.record === "object") return [p.record as BackendRecord<T>];
-  return [];
-}
-
-async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
-  if (!API_BASE) throw new Error("Sunucu bağlantı ayarları eksik.");
-
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: headers(body !== undefined),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: "include",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : ({} as T);
-
-  if (!res.ok) {
-    const err = data as { error?: string };
-    throw new Error(err.error || `İstek başarısız (${res.status})`);
-  }
-
-  return data;
-}
-
-async function listRecords<T>(recordType: string): Promise<BackendRecord<T>[]> {
-  const all: BackendRecord<T>[] = [];
-  const limit = 100;
-  let offset = 0;
-
-  for (let page = 0; page < 50; page += 1) {
-    const params = new URLSearchParams({
-      record_type: recordType,
-      limit: String(limit),
-      offset: String(offset),
-      page: String(page + 1),
-    });
-    const payload = await request<unknown>("GET", `/records?${params.toString()}`);
-    const batch = normalizeRecords<T>(payload);
-    if (!batch.length) break;
-    all.push(...batch);
-    if (batch.length < limit) break;
-    offset += limit;
-  }
-
-  return all;
-}
+const API_OUTDATED_MESSAGE =
+  "Okul takip API sunucusu henüz güncellenmemiş. Yönetici sunucuda scripts/vps-update-api.sh çalıştırmalı.";
 
 function mapStudent(record: BackendRecord): Student {
   const data = (record.data ?? {}) as Record<string, unknown>;
@@ -104,16 +39,51 @@ function mapDailyRecord(record: BackendRecord): DailyRecord {
   };
 }
 
-export async function fetchOkulTakipStore(): Promise<OkulTakipStore> {
-  const [studentRecords, dailyRecordsRaw] = await Promise.all([
-    listRecords(OKUL_STUDENT),
-    listRecords(OKUL_DAILY),
-  ]);
+function wrapApiError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (
+    message.includes("Geçersiz record_type") ||
+    message.includes("Desteklenmeyen kayıt") ||
+    message.includes("güncellenmemiş")
+  ) {
+    return new Error(API_OUTDATED_MESSAGE);
+  }
+  return err instanceof Error ? err : new Error(message);
+}
 
-  return {
-    students: studentRecords.map(mapStudent),
-    dailyRecords: dailyRecordsRaw.map(mapDailyRecord),
-  };
+export async function checkOkulTakipApiReady(): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const base = resolveApiBaseUrl();
+    if (!base) return { ok: false, message: API_OUTDATED_MESSAGE };
+
+    const res = await fetch(`${base}/health`, { credentials: "include" });
+    if (!res.ok) return { ok: false, message: API_OUTDATED_MESSAGE };
+
+    const data = (await res.json()) as { supportedRecordTypes?: string[] };
+    const types = data.supportedRecordTypes ?? [];
+    if (!types.includes(OKUL_STUDENT)) {
+      return { ok: false, message: API_OUTDATED_MESSAGE };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, message: "Sunucuya bağlanılamadı." };
+  }
+}
+
+export async function fetchOkulTakipStore(): Promise<OkulTakipStore> {
+  try {
+    const [studentRecords, dailyRecordsRaw] = await Promise.all([
+      backendApi.fetchAllRecords(OKUL_STUDENT),
+      backendApi.fetchAllRecords(OKUL_DAILY),
+    ]);
+
+    return {
+      students: studentRecords.map(mapStudent),
+      dailyRecords: dailyRecordsRaw.map(mapDailyRecord),
+    };
+  } catch (err) {
+    throw wrapApiError(err);
+  }
 }
 
 export async function saveStudent(student: Student): Promise<Student> {
@@ -126,23 +96,23 @@ export async function saveStudent(student: Student): Promise<Student> {
     isActive: student.isActive,
   };
 
-  const isExistingUuid = /^[0-9a-f-]{36}$/i.test(student.id);
-  const record = isExistingUuid
-    ? await request<{ record?: BackendRecord }>("PUT", `/records/${encodeURIComponent(student.id)}`, {
-        record_type: OKUL_STUDENT,
-        data: payload,
-      })
-    : await request<{ record?: BackendRecord }>("POST", "/records", {
-        record_type: OKUL_STUDENT,
-        data: payload,
-      });
-
-  const saved = record.record ?? (record as unknown as BackendRecord);
-  return mapStudent(saved);
+  try {
+    const isExistingUuid = /^[0-9a-f-]{36}$/i.test(student.id);
+    const saved = isExistingUuid
+      ? await backendApi.updateRecord(student.id, OKUL_STUDENT, payload)
+      : await backendApi.createRecord(OKUL_STUDENT, payload);
+    return mapStudent(saved);
+  } catch (err) {
+    throw wrapApiError(err);
+  }
 }
 
 export async function removeStudent(id: string): Promise<void> {
-  await request("DELETE", `/records/${encodeURIComponent(id)}?record_type=${OKUL_STUDENT}`);
+  try {
+    await backendApi.deleteRecord(id);
+  } catch (err) {
+    throw wrapApiError(err);
+  }
 }
 
 export async function saveDailyRecord(record: DailyRecord): Promise<DailyRecord> {
@@ -156,19 +126,15 @@ export async function saveDailyRecord(record: DailyRecord): Promise<DailyRecord>
     note: record.note,
   };
 
-  const isExistingUuid = /^[0-9a-f-]{36}$/i.test(record.id);
-  const saved = isExistingUuid
-    ? await request<{ record?: BackendRecord }>("PUT", `/records/${encodeURIComponent(record.id)}`, {
-        record_type: OKUL_DAILY,
-        data: payload,
-      })
-    : await request<{ record?: BackendRecord }>("POST", "/records", {
-        record_type: OKUL_DAILY,
-        data: payload,
-      });
-
-  const rec = saved.record ?? (saved as unknown as BackendRecord);
-  return mapDailyRecord(rec);
+  try {
+    const isExistingUuid = /^[0-9a-f-]{36}$/i.test(record.id);
+    const saved = isExistingUuid
+      ? await backendApi.updateRecord(record.id, OKUL_DAILY, payload)
+      : await backendApi.createRecord(OKUL_DAILY, payload);
+    return mapDailyRecord(saved);
+  } catch (err) {
+    throw wrapApiError(err);
+  }
 }
 
 export async function saveDailyRecords(records: DailyRecord[]): Promise<DailyRecord[]> {

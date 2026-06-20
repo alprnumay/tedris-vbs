@@ -1,6 +1,6 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
 import { rejectClientSideRepair } from "./repairPolicy";
-import { isLocalDevApi, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
+import { isLocalDevApi, isOkulTakipRecordType, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
 const PUSH_DEVICE_KEY = "nehariPushDeviceId";
@@ -308,7 +308,7 @@ export const backendApi = {
   },
 
   createRecord: async <T>(recordType: string, data: T) => {
-    if (isLocalDevApi()) {
+    if (isLocalDevApi() && !isOkulTakipRecordType(recordType)) {
       throw new Error(`Yerel geliştirmede "${recordType}" kaydı VPS /records üzerinden desteklenmiyor.`);
     }
     return normalizeRecord<T>(await request("POST", "/records", { record_type: recordType, data }));
@@ -325,7 +325,7 @@ export const backendApi = {
     recordType?: string,
     opts: { limit?: number; maxPages?: number; includeAuth?: boolean } = {},
   ) => {
-    if (isLocalDevApi()) {
+    if (isLocalDevApi() && recordType && !isOkulTakipRecordType(recordType)) {
       return [] as BackendRecord<T>[];
     }
     const limit = Math.min(Math.max(opts.limit ?? 100, 1), 100);

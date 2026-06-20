@@ -9,6 +9,7 @@ import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/authMiddleware";
 import { db } from "@workspace/db";
 import { ensureDbSchema } from "./lib/ensureDbSchema";
+import { RECORD_TYPES } from "./lib/recordsCompat";
 import { isPushConfigured } from "./lib/push/pushSender";
 
 const app: Express = express();
@@ -74,6 +75,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
     pushConfigured: isPushConfigured(),
     commit: process.env.DEPLOY_COMMIT || process.env.GIT_SHA || null,
     schemaVersion: 4,
+    supportedRecordTypes: [...RECORD_TYPES],
   });
 });
 

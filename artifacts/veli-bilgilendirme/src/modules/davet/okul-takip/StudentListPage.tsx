@@ -32,7 +32,7 @@ const emptyForm: Omit<Student, "id"> = {
 };
 
 export default function StudentListPage() {
-  const { students, loading, ready } = useOkulTakipStore();
+  const { students, loading, ready, apiIssue } = useOkulTakipStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -126,6 +126,12 @@ export default function StudentListPage() {
             Öğrenci ekle
           </Button>
         </div>
+
+        {apiIssue ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {apiIssue}
+          </div>
+        ) : null}
 
         {activeStudents.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">

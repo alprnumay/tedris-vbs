@@ -32,6 +32,13 @@ export function isLocalDevApi(): boolean {
   return import.meta.env.DEV && import.meta.env.VITE_FORCE_REMOTE_API !== "true";
 }
 
+/** Yerel api-server üzerinden desteklenen okul takip kayıt türleri */
+export const OKUL_TAKIP_RECORD_TYPES = new Set(["okul_student", "okul_daily_record"]);
+
+export function isOkulTakipRecordType(recordType: string): boolean {
+  return OKUL_TAKIP_RECORD_TYPES.has(recordType);
+}
+
 export function resolveApiOrigin(apiBase = resolveApiBaseUrl()): string {
   if (!apiBase || apiBase.startsWith("/")) {
     if (typeof window !== "undefined") return window.location.origin;
