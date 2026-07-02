@@ -58,6 +58,91 @@ const baslangicForm: FormData = {
   seciliBaslikIdx: 0,
 };
 
+const VELI_WIZARD_DRAFT_KEY = "veli_wizard_draft";
+const VELI_WIZARD_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+
+interface LocalVeliWizardDraft {
+  form: FormData;
+  seciliSablon: SablonTuru;
+  activeStep: number;
+  metinDuzenlendi: boolean;
+  savedAt: string;
+}
+
+function sablonTuruMu(value: unknown): value is SablonTuru {
+  return typeof value === "string" && SABLON_LISTESI.some((s) => s.id === value);
+}
+
+function normalizeLocalFormDraft(value: unknown): FormData | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<FormData>;
+  return {
+    ...baslangicForm,
+    ...raw,
+    kurumAdi: typeof raw.kurumAdi === "string" ? raw.kurumAdi : "",
+    isim: typeof raw.isim === "string" ? raw.isim : "",
+    rol: typeof raw.rol === "string" ? raw.rol : "",
+    faaliyetSayisi: typeof raw.faaliyetSayisi === "number" ? raw.faaliyetSayisi : baslangicForm.faaliyetSayisi,
+    faaliyetler: Array.isArray(raw.faaliyetler)
+      ? raw.faaliyetler.map((f) => ({
+          tur: typeof f?.tur === "string" ? f.tur : "",
+          alan: typeof f?.alan === "string" ? f.alan : "",
+          ozelNot: typeof f?.ozelNot === "string" ? f.ozelNot : "",
+        }))
+      : baslangicForm.faaliyetler,
+    metinUzunlugu: raw.metinUzunlugu === "kisa" || raw.metinUzunlugu === "detayli" ? raw.metinUzunlugu : baslangicForm.metinUzunlugu,
+    posterMetni: typeof raw.posterMetni === "string" ? raw.posterMetni : "",
+    ekNot: typeof raw.ekNot === "string" ? raw.ekNot : "",
+    gorseller: Array.isArray(raw.gorseller) ? raw.gorseller.filter((g): g is string => typeof g === "string") : [],
+    seciliBaslikIdx: typeof raw.seciliBaslikIdx === "number" ? raw.seciliBaslikIdx : 0,
+  };
+}
+
+function formdaKullaniciVerisiVar(form: FormData, activeStep: number, seciliSablon: SablonTuru, metinDuzenlendi: boolean): boolean {
+  return Boolean(
+    activeStep > 0 ||
+      seciliSablon !== "akademik" ||
+      metinDuzenlendi ||
+      form.kurumAdi.trim() ||
+      form.isim.trim() ||
+      form.rol.trim() ||
+      form.ekNot.trim() ||
+      form.gorseller.length > 0 ||
+      form.faaliyetler.some((f) => f.tur.trim() || f.alan.trim() || f.ozelNot.trim()),
+  );
+}
+
+function readLocalVeliWizardDraft(): LocalVeliWizardDraft | null {
+  try {
+    const raw = localStorage.getItem(VELI_WIZARD_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LocalVeliWizardDraft>;
+    const form = normalizeLocalFormDraft(parsed.form);
+    if (!form || !sablonTuruMu(parsed.seciliSablon)) return null;
+    if (parsed.savedAt && Date.now() - Date.parse(parsed.savedAt) > VELI_WIZARD_DRAFT_MAX_AGE_MS) {
+      localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+      return null;
+    }
+    return {
+      form,
+      seciliSablon: parsed.seciliSablon,
+      activeStep: Math.min(Math.max(Number(parsed.activeStep) || 0, 0), VELI_WIZARD_LAST_STEP),
+      metinDuzenlendi: Boolean(parsed.metinDuzenlendi),
+      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearLocalVeliWizardDraft() {
+  try {
+    localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function isPosterDraftData(data: unknown): data is PosterDraftData {
   const d = data as Partial<PosterDraftData> | null;
   return Boolean(d && typeof d === "object" && d.form && typeof d.seciliSablon === "string");
@@ -124,6 +209,8 @@ function MainApp() {
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
   const veliModulLoglandi = useRef(false);
+  const localTaslakKontrolEdildi = useRef(false);
+  const localTaslakYuklemeKaydiAtla = useRef(false);
 
   const logoGelistirmeAcik =
     import.meta.env.DEV ||
@@ -158,16 +245,49 @@ function MainApp() {
   }, [homeModu, kullanici?.id]);
 
   useEffect(() => {
+    if (homeModu !== "veli" || localTaslakKontrolEdildi.current) return;
+    localTaslakKontrolEdildi.current = true;
+    const draft = readLocalVeliWizardDraft();
+    if (!draft || !formdaKullaniciVerisiVar(draft.form, draft.activeStep, draft.seciliSablon, draft.metinDuzenlendi)) return;
+    localTaslakYuklemeKaydiAtla.current = true;
+    setForm(draft.form);
+    setSeciliSablon(draft.seciliSablon);
+    setActiveStep(draft.activeStep);
+    setMetinDuzenlendi(draft.metinDuzenlendi);
+    toast.info("Kaldığınız afiş taslağı geri yüklendi.");
+  }, [homeModu]);
+
+  useEffect(() => {
     if (homeModu !== "veli") return;
+    if (localTaslakYuklemeKaydiAtla.current) {
+      localTaslakYuklemeKaydiAtla.current = false;
+      return;
+    }
     try {
-      localStorage.setItem(
-        "veli_wizard_draft",
-        JSON.stringify({ form, seciliSablon, activeStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
-      );
+      if (formdaKullaniciVerisiVar(form, activeStep, seciliSablon, metinDuzenlendi)) {
+        localStorage.setItem(
+          VELI_WIZARD_DRAFT_KEY,
+          JSON.stringify({ form, seciliSablon, activeStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
+        );
+      } else {
+        localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+      }
     } catch {
       /* localStorage kapalı */
     }
   }, [form, seciliSablon, activeStep, metinDuzenlendi, homeModu]);
+
+  const formdaKaydedilecekVeriVar = homeModu === "veli" && formdaKullaniciVerisiVar(form, activeStep, seciliSablon, metinDuzenlendi);
+
+  useEffect(() => {
+    if (!formdaKaydedilecekVeriVar) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [formdaKaydedilecekVeriVar]);
 
   useEffect(() => {
     setFormAdim(activeStep <= 1 ? 1 : 2);
@@ -377,11 +497,13 @@ function MainApp() {
     try {
       const recordId = sonTaslakId || (await backendApi.latestPosterDraft())?.id;
       if (!recordId) {
+        clearLocalVeliWizardDraft();
         toast.info("Silinecek taslak bulunamadı.");
         return;
       }
       await backendApi.deleteRecord(recordId);
       setSonTaslakId(null);
+      clearLocalVeliWizardDraft();
       toast.success("Taslak silindi.");
     } catch (err) {
       taslakHatasi(err);
@@ -471,12 +593,23 @@ function MainApp() {
 
   const cikisYap = useCallback(async () => {
     await api.cikisYap();
+    clearLocalVeliWizardDraft();
     setKullanici(null);
     setForm(baslangicForm);
     setMetinDuzenlendi(false);
     setAktifSekme("form");
     setHomeModu("kategoriler");
   }, []);
+
+  const anaSayfayaDon = useCallback(() => {
+    if (
+      formdaKaydedilecekVeriVar &&
+      !window.confirm("Afiş bilgileriniz bu cihazda taslak olarak saklandı. Yine de ana sayfaya dönmek istiyor musunuz?")
+    ) {
+      return;
+    }
+    goToAppHome();
+  }, [formdaKaydedilecekVeriVar]);
 
   // ?force-logout=1 parametresi: çıkış sonrası kesin login ekranı göster.
   // Backend session hâlâ aktif olsa bile (çerez temizlenememiş) login ekranı açılır.
@@ -797,7 +930,7 @@ function MainApp() {
           <div className="tedris-app-header__start">
             <button
               type="button"
-              onClick={goToAppHome}
+              onClick={anaSayfayaDon}
               className="tedris-app-header__back flex shrink-0 items-center gap-1 rounded-xl border border-white/25 bg-white/10 px-2.5 py-2 text-[11px] font-bold text-white/95 transition hover:bg-white/20 md:gap-1.5 md:px-3 md:text-xs"
               title="Nehari Çalışma Paneli'ne dön"
             >
