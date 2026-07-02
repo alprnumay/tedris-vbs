@@ -2081,10 +2081,20 @@ export const api = {
       }
       return { user: normalizeAuthUser(user) };
     }
+    if (user.isActive === false) {
+      await backendApi.logout().catch(() => null);
+      clearAuthState();
+      return { user: null };
+    }
     if (kullaniciAdminMi(user)) {
       return { user: normalizeAuthUser(user) };
     }
     const appUser = await findAppUserForAuthUserReadOnly(user, { loginLookup: true }).catch(() => null);
+    if (!appUser || !appUser.authUserId || String(appUser.authUserId) !== String(user.id) || !appUserAktifMi(appUser)) {
+      await backendApi.logout().catch(() => null);
+      clearAuthState();
+      return { user: null };
+    }
     return { user: normalizeAuthUser(mergeKullaniciWithAppUser(user, appUser)) };
   },
 
