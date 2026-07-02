@@ -1,4 +1,3 @@
-import type { ComponentType } from "react";
 import { Router, Route, Switch } from "wouter";
 import HomePage from "@/modules/davet/home/HomePage";
 import InvitePage from "@/modules/davet/invite/InvitePage";
@@ -47,34 +46,28 @@ function CalismaOnayRoute() {
   );
 }
 
-function OkulTakipAuthRoute({ component: Component }: { component: ComponentType }) {
-  return (
-    <RequireDavetAuth>
-      <Component />
-    </RequireDavetAuth>
-  );
-}
-
 export function DavetRouter() {
   return (
-    <Router base="/davet">
-      <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/veli" component={InvitePage} />
-        <Route path="/yatili-program" component={BoardingProgramPage} />
-        <Route path={OKUL_TAKIP_HOME} component={() => <OkulTakipAuthRoute component={OkulTakipHubPage} />} />
-        <Route path={OKUL_TAKIP_GUNLUK} component={() => <OkulTakipAuthRoute component={DailyTrackingPage} />} />
-        <Route path={OKUL_TAKIP_RAPORLAR} component={() => <OkulTakipAuthRoute component={ReportsPage} />} />
-        <Route path={`${OKUL_TAKIP_KARNELER}/:studentId`} component={() => <OkulTakipAuthRoute component={KarneDetailPage} />} />
-        <Route path={OKUL_TAKIP_KARNELER} component={() => <OkulTakipAuthRoute component={KarnelerPage} />} />
-        <Route path={OKUL_TAKIP_RISKLI} component={() => <OkulTakipAuthRoute component={RiskStudentsPage} />} />
-        <Route path={OKUL_TAKIP_OGRENCILER} component={() => <OkulTakipAuthRoute component={StudentListPage} />} />
-        <Route path={NOTIFICATION_SETTINGS} component={NotificationSettingsPage} />
-        <Route path="/calisma-paylas" component={ShareShowcasePage} />
-        <Route path="/yayindaki-calismalar" component={PublishedShowcasePage} />
-        <Route path="/calisma-onay" component={CalismaOnayRoute} />
-        <Route component={DavetNotFound} />
-      </Switch>
-    </Router>
+    <RequireDavetAuth>
+      <Router base="/davet">
+        <Switch>
+          <Route path="/" component={HomePage} />
+          <Route path="/veli" component={InvitePage} />
+          <Route path="/yatili-program" component={BoardingProgramPage} />
+          <Route path={OKUL_TAKIP_HOME} component={OkulTakipHubPage} />
+          <Route path={OKUL_TAKIP_GUNLUK} component={DailyTrackingPage} />
+          <Route path={OKUL_TAKIP_RAPORLAR} component={ReportsPage} />
+          <Route path={`${OKUL_TAKIP_KARNELER}/:studentId`} component={KarneDetailPage} />
+          <Route path={OKUL_TAKIP_KARNELER} component={KarnelerPage} />
+          <Route path={OKUL_TAKIP_RISKLI} component={RiskStudentsPage} />
+          <Route path={OKUL_TAKIP_OGRENCILER} component={StudentListPage} />
+          <Route path={NOTIFICATION_SETTINGS} component={NotificationSettingsPage} />
+          <Route path="/calisma-paylas" component={ShareShowcasePage} />
+          <Route path="/yayindaki-calismalar" component={PublishedShowcasePage} />
+          <Route path="/calisma-onay" component={CalismaOnayRoute} />
+          <Route component={DavetNotFound} />
+        </Switch>
+      </Router>
+    </RequireDavetAuth>
   );
 }

@@ -7,6 +7,7 @@ const PUSH_DEVICE_KEY = "nehariPushDeviceId";
 const API_BASE = resolveApiBaseUrl();
 const PROJECT_API_KEY = import.meta.env.VITE_PROJECT_API_KEY || "";
 const REQUEST_TIMEOUT_MS = 15_000;
+export const AUTH_REQUIRED_EVENT = "tedris-auth-required";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -61,6 +62,13 @@ export function clearBackendToken() {
     localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+function notifyAuthRequired() {
+  clearBackendToken();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
   }
 }
 
@@ -142,6 +150,9 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown, opts
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      notifyAuthRequired();
+    }
     const err = data as { message?: unknown; error?: unknown };
     const message = typeof err.message === "string"
       ? err.message
