@@ -70,6 +70,11 @@ export interface SablonMeta {
   /** Kullanıcıya hangi durumda seçileceği */
   kullanim?: string;
   etiketler?: string[];
+  requiredFields?: Array<"kurumAdi" | "isim" | "tarih" | "baslik" | "faaliyet" | "posterMetni" | "ekNot" | "gorseller">;
+  supportedImageCount?: number;
+  usesQr?: boolean;
+  isExperimental?: boolean;
+  isVisible?: boolean;
 }
 
 const PRO_SABLONLAR: SablonMeta[] = [
@@ -105,6 +110,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Kolaj Bülten — Çoklu fotoğraflı günlük bilgilendirme; etiketli kolaj + metin.",
     etiketler: ["Çoklu Foto", "Bülten", "Fotoğraflı"],
+    requiredFields: ["baslik", "posterMetni", "faaliyet", "gorseller"],
+    supportedImageCount: 5,
+    usesQr: false,
+    isExperimental: false,
+    isVisible: true,
   },
   {
     id: "dergi-sayfasi",
@@ -115,6 +125,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Gazete/dergi düzeni; iki sütun metin ve yan görsel sütunu.",
     etiketler: ["Bülten", "Kurumsal"],
+    requiredFields: ["baslik", "posterMetni", "gorseller"],
+    supportedImageCount: 3,
+    usesQr: false,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "gunluk-akis",
@@ -125,6 +140,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Günlük Akış — Ders ve etkinlikleri sırayla timeline ile gösterir.",
     etiketler: ["Akış", "Etüt / Ders"],
+    requiredFields: ["baslik", "faaliyet", "posterMetni"],
+    supportedImageCount: 2,
+    usesQr: false,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "foto-albumu",
@@ -135,6 +155,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "4 fotoğraflı albüm; gezi, piknik ve etkinlik paylaşımları için.",
     etiketler: ["Çoklu Foto", "Etkinlik / Sosyal", "Fotoğraflı"],
+    requiredFields: ["baslik", "posterMetni", "gorseller"],
+    supportedImageCount: 4,
+    usesQr: false,
+    isExperimental: false,
+    isVisible: true,
   },
   {
     id: "tek-guclu-afis",
@@ -145,6 +170,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Tek hero görsel + güçlü başlık bandı; sosyal medya afişi hissi.",
     etiketler: ["Fotoğraflı", "Modern", "Etkinlik / Sosyal"],
+    requiredFields: ["baslik", "posterMetni", "gorseller"],
+    supportedImageCount: 1,
+    usesQr: false,
+    isExperimental: false,
+    isVisible: true,
   },
   {
     id: "sinif-rapor-karti",
@@ -155,6 +185,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Sınıf Rapor Kartı — Kazanım, ev tekrarı ve hoca notunu kartlarla sunar.",
     etiketler: ["Kurumsal", "Etüt / Ders"],
+    requiredFields: ["baslik", "faaliyet", "posterMetni"],
+    supportedImageCount: 2,
+    usesQr: false,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "duyuru-panosu",
@@ -165,6 +200,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Panoya asılı not/kart parçaları; başlık, faaliyet ve hatırlatma ayrı.",
     etiketler: ["Etkinlik / Sosyal", "Modern"],
+    requiredFields: ["baslik", "faaliyet", "posterMetni", "gorseller"],
+    supportedImageCount: 4,
+    usesQr: false,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "mini-brosur",
@@ -175,6 +215,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Katlanmış broşür düzeni; WhatsApp paylaşımına uygun kompakt yapı.",
     etiketler: ["Broşür", "Kurumsal"],
+    requiredFields: ["baslik", "posterMetni", "gorseller"],
+    supportedImageCount: 2,
+    usesQr: true,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "yan-serit-kurumsal",
@@ -185,6 +230,11 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Sol dikey kurum şeridi + asimetrik içerik; resmi bilgilendirme.",
     etiketler: ["Kurumsal", "Modern"],
+    requiredFields: ["kurumAdi", "baslik", "posterMetni", "gorseller"],
+    supportedImageCount: 3,
+    usesQr: false,
+    isExperimental: true,
+    isVisible: false,
   },
   {
     id: "coklu-faaliyet-raporu",
@@ -195,10 +245,19 @@ const YENI_LAYOUT_SABLONLAR: SablonMeta[] = [
     yeni: true,
     kullanim: "Birden fazla faaliyeti satır satır; yaz kursu ve günlük program için.",
     etiketler: ["Çoklu Foto", "Bülten", "Etüt / Ders"],
+    requiredFields: ["baslik", "faaliyet", "posterMetni"],
+    supportedImageCount: 5,
+    usesQr: false,
+    isExperimental: false,
+    isVisible: true,
   },
 ];
 
-export const SABLON_LISTESI: SablonMeta[] = [
+const FORM_HAS_QR_FIELD = false;
+const isTemplateUsable = (s: SablonMeta) =>
+  s.isVisible !== false && !s.isExperimental && !(s.usesQr && !FORM_HAS_QR_FIELD);
+
+const TEMEL_SABLONLAR: SablonMeta[] = [
   {
     id: "akademik",
     ad: "Kurumsal Mavi",
@@ -295,5 +354,6 @@ export const SABLON_LISTESI: SablonMeta[] = [
   ...YENI_LAYOUT_SABLONLAR,
 ];
 
+export const SABLON_LISTESI: SablonMeta[] = TEMEL_SABLONLAR.filter(isTemplateUsable);
 export const YENI_LAYOUT_SABLON_IDS = YENI_LAYOUT_SABLONLAR.map((s) => s.id);
 export const PRO_SABLON_IDS = PRO_SABLONLAR.map((s) => s.id);

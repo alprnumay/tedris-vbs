@@ -63,7 +63,7 @@ export default function SablonMiniBrosur({ form, tarih }: TemplateProps) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#0f172a", borderRadius: 12, padding: "10px 12px", flexShrink: 0 }}>
           <div style={{ width: 52, height: 52, background: "#fff", borderRadius: 8, display: "grid", placeItems: "center", fontSize: 8, fontWeight: 800, color: "#0f172a", textAlign: "center", lineHeight: 1.2 }}>
-            QR / İLETİŞİM
+            İLETİŞİM
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "#fff" }}>{form.isim || "Sorumlu"}</div>
