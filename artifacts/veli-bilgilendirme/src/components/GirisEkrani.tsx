@@ -97,13 +97,15 @@ export default function GirisEkrani({ onGiris }: Props) {
             src={APP_LOGO_SRC}
             alt={APP_LOGO_ALT}
             style={{
-              width: 96,
-              height: 96,
+              width: 132,
+              height: 132,
               objectFit: "contain",
-              margin: "0 auto 16px",
+              margin: "0 auto 18px",
               display: "block",
-              borderRadius: 20,
-              boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
+              borderRadius: 26,
+              background: "#fff",
+              padding: 6,
+              boxShadow: "0 10px 28px rgba(15, 23, 42, 0.12)",
             }}
           />
           <h1 style={{
