@@ -61,4 +61,14 @@ export type SablonTuru =
   | "foto-kolaj-premium"
   | "kurumsal-lacivert"
   | "soft-paper"
-  | "imza-tasarim";
+  | "imza-tasarim"
+  | "kolaj-bulten"
+  | "dergi-sayfasi"
+  | "gunluk-akis"
+  | "foto-albumu"
+  | "tek-guclu-afis"
+  | "sinif-rapor-karti"
+  | "duyuru-panosu"
+  | "mini-brosur"
+  | "yan-serit-kurumsal"
+  | "coklu-faaliyet-raporu";

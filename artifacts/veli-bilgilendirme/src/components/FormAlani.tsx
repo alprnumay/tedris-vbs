@@ -474,7 +474,7 @@ export default function FormAlani({
 
   const maxGorsel = SABLON_GORSEL_LIMITLERI[seciliSablon] ?? 4;
   const seciliSablonMeta = SABLON_LISTESI.find((s) => s.id === seciliSablon);
-  const sablonFiltreleri = ["Tümü", "Kurumsal", "Modern", "Minimal", "Sıcak / Samimi", "Fotoğraflı", "Fotoğrafsız", "Etüt / Ders", "Etkinlik / Sosyal", "Premium"];
+  const sablonFiltreleri = ["Tümü", "Kurumsal", "Modern", "Minimal", "Sıcak / Samimi", "Fotoğraflı", "Fotoğrafsız", "Etüt / Ders", "Etkinlik / Sosyal", "Premium", "Bülten", "Akış", "Broşür", "Çoklu Foto"];
   const filtreliSablonlar = SABLON_LISTESI.filter((s) => {
     if (sablonFiltre === "Tümü") return true;
     const etiketler = [s.etiket, ...(s.etiketler ?? []), s.kullanim ?? ""].join(" ").toLocaleLowerCase("tr-TR");
