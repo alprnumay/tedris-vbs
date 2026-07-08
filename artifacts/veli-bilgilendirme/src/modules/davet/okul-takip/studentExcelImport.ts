@@ -1,6 +1,8 @@
 import * as XLSX from "xlsx";
 import type { Student, ViewerInstitutionOption } from "@/modules/davet/okul-takip/types";
 
+export type LeftSignalSource = "status" | "leftDate" | "leftType" | "leftReason";
+
 export type ImportRowStatus =
   | "addable"
   | "existing"
@@ -23,6 +25,8 @@ export type StudentImportRow = {
   nationalId: string;
   status: ImportFinalStatus;
   message: string;
+  leftSignals: LeftSignalSource[];
+  leftIgnored?: boolean;
   targetInstitutionId: string | null;
   targetInstitutionName: string;
   targetMintikaName: string;
@@ -46,10 +50,21 @@ export type StudentImportPreview = {
   summary: StudentImportSummary;
 };
 
+export type StudentImportOptions = {
+  importLeftStudentsAsActive: boolean;
+};
+
 type CellRow = unknown[];
 
 const MAX_XLSX_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_IMPORT_ROWS = 1000;
+
+const LEFT_SIGNAL_LABELS: Record<LeftSignalSource, string> = {
+  status: "Durumu alanı",
+  leftDate: "Ayrılma Tarihi",
+  leftType: "Ayrılma Şekli",
+  leftReason: "Ayrılma Sebebi",
+};
 
 const COL = {
   studentProfile: 0,
@@ -132,6 +147,22 @@ function normalizePhone(value: string): string {
   return "";
 }
 
+export function detectLeftSignals(rawImportData: Record<string, string>): LeftSignalSource[] {
+  const signals: LeftSignalSource[] = [];
+  const status = normalizeImportText(rawImportData.durumu);
+  if (status === "ayrildi" || status.includes("ayrildi")) {
+    signals.push("status");
+  }
+  if (rawImportData.ayrilmaTarihi.trim()) signals.push("leftDate");
+  if (rawImportData.ayrilmaSekli.trim()) signals.push("leftType");
+  if (rawImportData.ayrilmaSebepleri.trim()) signals.push("leftReason");
+  return signals;
+}
+
+export function formatLeftSignalSources(signals: LeftSignalSource[]): string {
+  return signals.map((signal) => LEFT_SIGNAL_LABELS[signal]).join(", ");
+}
+
 function statusLabel(status: ImportFinalStatus): string {
   switch (status) {
     case "addable":
@@ -150,8 +181,25 @@ function statusLabel(status: ImportFinalStatus): string {
       return "Hata - Format okunamadı";
     case "error":
     default:
-      return "Hata - Format okunamadı";
+      return "Hata - Ad soyad boş";
   }
+}
+
+export function buildImportRowMessage(
+  status: ImportFinalStatus,
+  leftSignals: LeftSignalSource[],
+  leftIgnored = false,
+): string {
+  if (status === "left") {
+    return `Atlandı - Ayrıldı (${formatLeftSignalSources(leftSignals)})`;
+  }
+  if (status === "addable" && leftSignals.length > 0) {
+    return "Eklenecek - Ayrıldı bilgisi yok sayılacak";
+  }
+  if (status === "added" && leftIgnored) {
+    return "Eklendi - Ayrıldı bilgisi yok sayıldı";
+  }
+  return statusLabel(status);
 }
 
 function institutionMatches(excelName: string, option: ViewerInstitutionOption): boolean {
@@ -293,13 +341,98 @@ function rawDataFromRow(row: CellRow): Record<string, string> {
   };
 }
 
+type ParsedImportRow = Omit<StudentImportRow, "status" | "message" | "leftIgnored">;
+
+function evaluateImportRow(
+  parsed: ParsedImportRow,
+  seenKeys: Set<string>,
+  options: StudentImportOptions,
+): StudentImportRow {
+  const leftSignals = parsed.leftSignals.length > 0
+    ? parsed.leftSignals
+    : detectLeftSignals(parsed.rawImportData);
+
+  if (!parsed.name.trim()) {
+    return {
+      ...parsed,
+      leftSignals,
+      status: "error",
+      message: buildImportRowMessage("error", leftSignals),
+    };
+  }
+
+  if (leftSignals.length > 0 && !options.importLeftStudentsAsActive) {
+    return {
+      ...parsed,
+      leftSignals,
+      status: "left",
+      message: buildImportRowMessage("left", leftSignals),
+    };
+  }
+
+  const duplicateKeys = duplicateKeysFor(parsed);
+  if (duplicateKeys.some((key) => seenKeys.has(key))) {
+    return {
+      ...parsed,
+      leftSignals,
+      status: "existing",
+      message: buildImportRowMessage("existing", leftSignals),
+    };
+  }
+
+  duplicateKeys.forEach((key) => seenKeys.add(key));
+  return {
+    ...parsed,
+    leftSignals,
+    status: "addable",
+    message: buildImportRowMessage("addable", leftSignals),
+  };
+}
+
+function parseExcelRows(
+  excelRow: CellRow,
+  rowNumber: number,
+  institutions: ViewerInstitutionOption[],
+  selectedInstitutionId?: string | null,
+): ParsedImportRow {
+  const rawImportData = rawDataFromRow(excelRow);
+  const preferredName = rawImportData.kullanilanAdiSoyadi;
+  const name = (preferredName || `${rawImportData.adi} ${rawImportData.soyadi}`).replace(/\s+/g, " ").trim();
+  const target = resolveTargetInstitution(
+    rawImportData.kurum,
+    rawImportData.mintika,
+    institutions,
+    selectedInstitutionId,
+  );
+
+  return {
+    rowNumber,
+    name,
+    grade: extractGrade(rawImportData.okulSeviyesi),
+    group: "",
+    institutionName: rawImportData.kurum,
+    mintikaName: rawImportData.mintika,
+    parentPhone: normalizePhone(rawImportData.veliIletisimBilgileri) || normalizePhone(rawImportData.telefonNumarasi),
+    studentCode: rawImportData.talebeKodu,
+    nationalId: normalizeIdentity(rawImportData.kimlikNo),
+    leftSignals: detectLeftSignals(rawImportData),
+    targetInstitutionId: target.option?.id ?? null,
+    targetInstitutionName: target.option?.institutionName ?? "",
+    targetMintikaName: target.option?.mintikaName ?? "",
+    rawImportData,
+  };
+}
+
 export async function buildStudentImportPreview(params: {
   file: File;
   existingStudents: Student[];
   institutions: ViewerInstitutionOption[];
   selectedInstitutionId?: string | null;
+  options?: StudentImportOptions;
 }): Promise<StudentImportPreview> {
   const { file, existingStudents, institutions, selectedInstitutionId } = params;
+  const options = params.options ?? { importLeftStudentsAsActive: false };
+
   if (!file.name.toLocaleLowerCase("tr-TR").endsWith(".xlsx")) {
     throw new Error("Sadece .xlsx formatında Excel dosyası yükleyin.");
   }
@@ -325,65 +458,96 @@ export async function buildStudentImportPreview(params: {
   }
 
   const dataRows = sheetRows.slice(1, MAX_IMPORT_ROWS + 1);
+  const parsedRows = dataRows.map((excelRow, idx) =>
+    parseExcelRows(excelRow, idx + 2, institutions, selectedInstitutionId),
+  );
+
   const seenKeys = existingDuplicateKeys(existingStudents);
   const rows: StudentImportRow[] = [];
 
-  dataRows.forEach((excelRow, idx) => {
-    const rowNumber = idx + 2;
-    const rawImportData = rawDataFromRow(excelRow);
-    const preferredName = rawImportData.kullanilanAdiSoyadi;
-    const name = (preferredName || `${rawImportData.adi} ${rawImportData.soyadi}`).replace(/\s+/g, " ").trim();
-    const grade = extractGrade(rawImportData.okulSeviyesi);
-    const parentPhone = normalizePhone(rawImportData.veliIletisimBilgileri) || normalizePhone(rawImportData.telefonNumarasi);
-    const excelInstitution = rawImportData.kurum;
-    const excelMintika = rawImportData.mintika;
-    const left = normalizeImportText(rawImportData.durumu) === "ayrildi" || Boolean(rawImportData.ayrilmaTarihi.trim());
-    const target = resolveTargetInstitution(excelInstitution, excelMintika, institutions, selectedInstitutionId);
-    const baseRow: StudentImportRow = {
-      rowNumber,
-      name,
-      grade,
-      group: "",
-      institutionName: excelInstitution,
-      mintikaName: excelMintika,
-      parentPhone,
-      studentCode: rawImportData.talebeKodu,
-      nationalId: normalizeIdentity(rawImportData.kimlikNo),
-      status: "addable",
-      message: "Eklenecek",
-      targetInstitutionId: target.option?.id ?? null,
-      targetInstitutionName: target.option?.institutionName ?? "",
-      targetMintikaName: target.option?.mintikaName ?? "",
-      rawImportData,
+  for (const parsed of parsedRows) {
+    const target = resolveTargetInstitution(
+      parsed.institutionName,
+      parsed.mintikaName,
+      institutions,
+      selectedInstitutionId,
+    );
+
+    if (!parsed.name.trim()) {
+      rows.push({
+        ...parsed,
+        status: "error",
+        message: buildImportRowMessage("error", parsed.leftSignals),
+      });
+      continue;
+    }
+
+    if (target.status) {
+      rows.push({
+        ...parsed,
+        status: target.status,
+        message: buildImportRowMessage(target.status, parsed.leftSignals),
+      });
+      continue;
+    }
+
+    if (!target.option) {
+      rows.push({
+        ...parsed,
+        status: "institution_mismatch",
+        message: buildImportRowMessage("institution_mismatch", parsed.leftSignals),
+      });
+      continue;
+    }
+
+    const working: ParsedImportRow = {
+      ...parsed,
+      targetInstitutionId: target.option.id,
+      targetInstitutionName: target.option.institutionName,
+      targetMintikaName: target.option.mintikaName,
     };
 
-    if (!name) {
-      rows.push({ ...baseRow, status: "error", message: "Hata - Ad soyad boş" });
-      return;
-    }
-    if (left) {
-      rows.push({ ...baseRow, status: "left", message: statusLabel("left") });
-      return;
-    }
-    if (target.status) {
-      rows.push({ ...baseRow, status: target.status, message: statusLabel(target.status) });
-      return;
-    }
-    if (!target.option) {
-      rows.push({ ...baseRow, status: "institution_mismatch", message: statusLabel("institution_mismatch") });
-      return;
-    }
-
-    const duplicateKeys = duplicateKeysFor(baseRow);
-    if (duplicateKeys.some((key) => seenKeys.has(key))) {
-      rows.push({ ...baseRow, status: "existing", message: statusLabel("existing") });
-      return;
-    }
-    duplicateKeys.forEach((key) => seenKeys.add(key));
-    rows.push(baseRow);
-  });
+    rows.push(evaluateImportRow(working, seenKeys, options));
+  }
 
   return { rows, summary: buildSummary(rows) };
+}
+
+export function reapplyStudentImportOptions(
+  rows: StudentImportRow[],
+  existingStudents: Student[],
+  options: StudentImportOptions,
+): StudentImportPreview {
+  const seenKeys = existingDuplicateKeys(existingStudents);
+  const nextRows: StudentImportRow[] = [];
+
+  for (const row of rows) {
+    if (row.status === "added" || row.status === "failed") {
+      nextRows.push(row);
+      continue;
+    }
+
+    const parsed: ParsedImportRow = {
+      rowNumber: row.rowNumber,
+      name: row.name,
+      grade: row.grade,
+      group: row.group,
+      institutionName: row.institutionName,
+      mintikaName: row.mintikaName,
+      parentPhone: row.parentPhone,
+      studentCode: row.studentCode,
+      nationalId: row.nationalId,
+      leftSignals: detectLeftSignals(row.rawImportData),
+      targetInstitutionId: row.targetInstitutionId,
+      targetInstitutionName: row.targetInstitutionName,
+      targetMintikaName: row.targetMintikaName,
+      rawImportData: row.rawImportData,
+    };
+
+    nextRows.push(evaluateImportRow(parsed, seenKeys, options));
+  }
+
+  return { rows: nextRows, summary: buildSummary(nextRows) };
 }
 
 export function recalculateStudentImportSummary(rows: StudentImportRow[]): StudentImportSummary {

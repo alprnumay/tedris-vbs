@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -39,7 +40,10 @@ import {
 } from "@/modules/davet/okul-takip/store";
 import {
   buildStudentImportPreview,
+  buildImportRowMessage,
+  formatLeftSignalSources,
   importStatusLabel,
+  reapplyStudentImportOptions,
   recalculateStudentImportSummary,
   type StudentImportRow,
   type StudentImportSummary,
@@ -90,6 +94,7 @@ export default function StudentListPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [importSaving, setImportSaving] = useState(false);
   const [importCompleted, setImportCompleted] = useState(false);
+  const [importLeftAsActive, setImportLeftAsActive] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,6 +229,7 @@ export default function StudentListPage() {
     setImportLoading(false);
     setImportSaving(false);
     setImportCompleted(false);
+    setImportLeftAsActive(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -247,6 +253,7 @@ export default function StudentListPage() {
         existingStudents: students,
         institutions,
         selectedInstitutionId: selectedInstitutionId || selectedInstitution?.id || null,
+        options: { importLeftStudentsAsActive: importLeftAsActive },
       });
       setImportRows(preview.rows);
       setImportSummary(preview.summary);
@@ -260,6 +267,16 @@ export default function StudentListPage() {
       setImportLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleLeftImportOptionChange = (checked: boolean) => {
+    setImportLeftAsActive(checked);
+    if (importRows.length === 0 || importCompleted) return;
+    const preview = reapplyStudentImportOptions(importRows, students, {
+      importLeftStudentsAsActive: checked,
+    });
+    setImportRows(preview.rows);
+    setImportSummary(preview.summary);
   };
 
   const confirmImport = async () => {
@@ -294,7 +311,13 @@ export default function StudentListPage() {
         };
         await upsertStudent(student, row.targetInstitutionId);
         if (idx >= 0) {
-          nextRows[idx] = { ...row, status: "added", message: importStatusLabel("added") };
+          const leftIgnored = importLeftAsActive && row.leftSignals.length > 0;
+          nextRows[idx] = {
+            ...row,
+            status: "added",
+            leftIgnored,
+            message: buildImportRowMessage("added", row.leftSignals, leftIgnored),
+          };
           setImportRows([...nextRows]);
           setImportSummary(recalculateStudentImportSummary(nextRows));
         }
@@ -578,6 +601,17 @@ export default function StudentListPage() {
 
                 <ImportSummaryGrid summary={importSummary} />
 
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <Checkbox
+                    checked={importLeftAsActive}
+                    onCheckedChange={(checked) => handleLeftImportOptionChange(checked === true)}
+                    disabled={importLoading || importSaving || importCompleted}
+                  />
+                  <span className="text-sm leading-5 text-slate-700">
+                    Ayrıldı görünen öğrencileri de aktif olarak içe aktar
+                  </span>
+                </label>
+
                 <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -587,6 +621,7 @@ export default function StudentListPage() {
                         <th className="px-3 py-2">Sınıf</th>
                         <th className="px-3 py-2">Kurum / Mıntıka</th>
                         <th className="px-3 py-2">Veli telefonu</th>
+                        <th className="px-3 py-2">Ayrıldı kaynağı</th>
                         <th className="px-3 py-2">Durum</th>
                       </tr>
                     </thead>
@@ -601,6 +636,9 @@ export default function StudentListPage() {
                             {row.mintikaName || row.targetMintikaName ? ` · ${row.mintikaName || row.targetMintikaName}` : ""}
                           </td>
                           <td className="px-3 py-2 text-slate-600">{row.parentPhone || "—"}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {row.leftSignals.length > 0 ? formatLeftSignalSources(row.leftSignals) : "—"}
+                          </td>
                           <td className="px-3 py-2">
                             <span className={statusBadgeClass(row.status)}>{row.message}</span>
                           </td>
