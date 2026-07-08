@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
@@ -33,9 +33,17 @@ import {
 } from "@/modules/davet/okul-takip/okulTakipApi";
 import {
   deleteStudent,
+  reloadOkulTakipStore,
   upsertStudent,
   useOkulTakipStore,
 } from "@/modules/davet/okul-takip/store";
+import {
+  buildStudentImportPreview,
+  importStatusLabel,
+  recalculateStudentImportSummary,
+  type StudentImportRow,
+  type StudentImportSummary,
+} from "@/modules/davet/okul-takip/studentExcelImport";
 
 type StudentForm = Omit<Student, "id">;
 
@@ -51,6 +59,18 @@ const emptyForm: StudentForm = {
   isActive: true,
 };
 
+const emptyImportSummary: StudentImportSummary = {
+  totalRows: 0,
+  addable: 0,
+  existing: 0,
+  left: 0,
+  institutionMismatch: 0,
+  mintikaMismatch: 0,
+  error: 0,
+  added: 0,
+  failed: 0,
+};
+
 export default function StudentListPage() {
   const { students, loading, ready, apiIssue } = useOkulTakipStore();
   const [modalOpen, setModalOpen] = useState(false);
@@ -62,6 +82,14 @@ export default function StudentListPage() {
   const [institutionMessage, setInstitutionMessage] = useState<string | null>(null);
   const [institutionsLoading, setInstitutionsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importRows, setImportRows] = useState<StudentImportRow[]>([]);
+  const [importSummary, setImportSummary] = useState<StudentImportSummary>(emptyImportSummary);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importSaving, setImportSaving] = useState(false);
+  const [importCompleted, setImportCompleted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +183,10 @@ export default function StudentListPage() {
         institutionName: selectedInstitution?.institutionName ?? form.institutionName ?? form.institution,
         institutionId,
         mintikaName: selectedInstitution?.mintikaName ?? form.mintikaName ?? "",
+        studentCode: editing?.studentCode,
+        nationalId: editing?.nationalId,
+        rawImportData: editing?.rawImportData ?? null,
+        importedAt: editing?.importedAt ?? null,
       };
       await upsertStudent(student, institutionId);
       setModalOpen(false);
@@ -185,6 +217,107 @@ export default function StudentListPage() {
     }
   };
 
+  const resetImport = () => {
+    setImportFileName("");
+    setImportRows([]);
+    setImportSummary(emptyImportSummary);
+    setImportLoading(false);
+    setImportSaving(false);
+    setImportCompleted(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const openImport = () => {
+    if (needsInstitutionMapping || institutions.length === 0) {
+      toast.error("Bu kullanıcı için yurt/kurum eşleştirmesi yapılmamış. Lütfen yönetici ile görüşün.");
+      return;
+    }
+    resetImport();
+    setImportOpen(true);
+  };
+
+  const handleImportFile = async (file?: File) => {
+    if (!file) return;
+    setImportLoading(true);
+    setImportCompleted(false);
+    setImportFileName(file.name);
+    try {
+      const preview = await buildStudentImportPreview({
+        file,
+        existingStudents: students,
+        institutions,
+        selectedInstitutionId: selectedInstitutionId || selectedInstitution?.id || null,
+      });
+      setImportRows(preview.rows);
+      setImportSummary(preview.summary);
+      toast.success("Dosya kontrol edildi.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Excel dosyası okunamadı. Lütfen doğru formatta .xlsx dosyası yükleyin.";
+      toast.error(message);
+      setImportRows([]);
+      setImportSummary(emptyImportSummary);
+    } finally {
+      setImportLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    const addableRows = importRows.filter((row) => row.status === "addable");
+    if (addableRows.length === 0) {
+      toast.info("İçe aktarılacak yeni öğrenci yok.");
+      return;
+    }
+
+    setImportSaving(true);
+    const importedAt = new Date().toISOString();
+    const nextRows = [...importRows];
+
+    for (const row of addableRows) {
+      const idx = nextRows.findIndex((item) => item.rowNumber === row.rowNumber);
+      try {
+        const student: Student = {
+          id: "",
+          name: row.name,
+          grade: row.grade,
+          group: row.group,
+          institution: row.targetInstitutionName,
+          institutionName: row.targetInstitutionName,
+          institutionId: row.targetInstitutionId,
+          mintikaName: row.targetMintikaName,
+          parentPhone: row.parentPhone,
+          isActive: true,
+          studentCode: row.studentCode,
+          nationalId: row.nationalId,
+          rawImportData: row.rawImportData,
+          importedAt,
+        };
+        await upsertStudent(student, row.targetInstitutionId);
+        if (idx >= 0) {
+          nextRows[idx] = { ...row, status: "added", message: importStatusLabel("added") };
+          setImportRows([...nextRows]);
+          setImportSummary(recalculateStudentImportSummary(nextRows));
+        }
+      } catch (err) {
+        if (idx >= 0) {
+          nextRows[idx] = {
+            ...row,
+            status: "failed",
+            message: importStatusLabel("failed"),
+          };
+          setImportRows([...nextRows]);
+          setImportSummary(recalculateStudentImportSummary(nextRows));
+        }
+      }
+    }
+
+    await reloadOkulTakipStore();
+    setImportCompleted(true);
+    setImportSaving(false);
+    const summary = recalculateStudentImportSummary(nextRows);
+    toast.success(`${summary.added} öğrenci içe aktarıldı.`);
+  };
+
   const activeStudents = students.filter((s) => s.isActive);
   const archivedStudents = students.filter((s) => !s.isActive);
   const unmappedCount = students.filter((s) => s.needsInstitutionMapping).length;
@@ -210,10 +343,20 @@ export default function StudentListPage() {
             <h1 className="text-xl font-bold text-slate-900">Öğrencilerim</h1>
             <p className="text-sm text-slate-600">Kendi öğrenci listenizi yönetin</p>
           </div>
-          <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700" disabled={institutionsLoading}>
-            <Plus size={16} className="mr-2" />
-            Öğrenci ekle
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={openImport}
+              disabled={institutionsLoading || needsInstitutionMapping || institutions.length === 0}
+            >
+              <Upload size={16} className="mr-2" />
+              Excel’den Talebe Yükle
+            </Button>
+            <Button onClick={openAdd} className="bg-violet-600 hover:bg-violet-700" disabled={institutionsLoading}>
+              <Plus size={16} className="mr-2" />
+              Öğrenci ekle
+            </Button>
+          </div>
         </div>
 
         {apiIssue ? (
@@ -382,8 +525,145 @@ export default function StudentListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={importOpen}
+        onOpenChange={(open) => {
+          setImportOpen(open);
+          if (!open && !importSaving) resetImport();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Excel’den Talebe Yükle</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-y-auto pr-1">
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">Excel dosyanızı seçin</p>
+                  <p className="text-xs text-slate-500">
+                    Sadece .xlsx kabul edilir. Dosya kontrol edilir, onay vermeden kayıt yapılmaz.
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx"
+                  className="hidden"
+                  onChange={(e) => void handleImportFile(e.target.files?.[0])}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importLoading || importSaving}
+                >
+                  {importLoading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Upload size={16} className="mr-2" />}
+                  Dosya seç
+                </Button>
+              </div>
+              {importFileName ? <p className="mt-3 text-xs text-slate-600">Seçilen dosya: {importFileName}</p> : null}
+            </div>
+
+            {importRows.length > 0 ? (
+              <>
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <p className="font-semibold text-emerald-950">Dosya kontrol edildi</p>
+                  <p className="mt-1 text-sm text-emerald-900">
+                    {importSummary.addable} yeni öğrenci eklenecek, {importSummary.existing} öğrenci zaten kayıtlı.
+                  </p>
+                </div>
+
+                <ImportSummaryGrid summary={importSummary} />
+
+                <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Satır</th>
+                        <th className="px-3 py-2">Ad Soyad</th>
+                        <th className="px-3 py-2">Sınıf</th>
+                        <th className="px-3 py-2">Kurum / Mıntıka</th>
+                        <th className="px-3 py-2">Veli telefonu</th>
+                        <th className="px-3 py-2">Durum</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {importRows.map((row) => (
+                        <tr key={row.rowNumber}>
+                          <td className="px-3 py-2 text-slate-500">{row.rowNumber}</td>
+                          <td className="px-3 py-2 font-medium text-slate-900">{row.name || "—"}</td>
+                          <td className="px-3 py-2 text-slate-600">{row.grade || "—"}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {row.institutionName || row.targetInstitutionName || "—"}
+                            {row.mintikaName || row.targetMintikaName ? ` · ${row.mintikaName || row.targetMintikaName}` : ""}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">{row.parentPhone || "—"}</td>
+                          <td className="px-3 py-2">
+                            <span className={statusBadgeClass(row.status)}>{row.message}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importSaving}>
+              {importCompleted ? "Kapat" : "İptal"}
+            </Button>
+            <Button
+              onClick={() => void confirmImport()}
+              disabled={importSaving || importLoading || importSummary.addable === 0 || importCompleted}
+              className="bg-violet-600 hover:bg-violet-700"
+            >
+              {importSaving ? <Loader2 size={16} className="mr-2 animate-spin" /> : null}
+              Onayla ve İçe Aktar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DavetLayout>
   );
+}
+
+function ImportSummaryGrid({ summary }: { summary: StudentImportSummary }) {
+  const items = [
+    ["Toplam satır", summary.totalRows],
+    ["Eklenecek", summary.addable],
+    ["Eklendi", summary.added],
+    ["Zaten kayıtlı", summary.existing],
+    ["Ayrıldı diye atlanan", summary.left],
+    ["Kurum uyuşmayan", summary.institutionMismatch],
+    ["Mıntıka uyuşmayan", summary.mintikaMismatch],
+    ["Hatalı", summary.error + summary.failed],
+  ] as const;
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-4">
+      {items.map(([label, value]) => (
+        <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 text-xl font-black text-slate-900">{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function statusBadgeClass(status: StudentImportRow["status"]): string {
+  const base = "rounded-full px-2 py-0.5 text-xs font-semibold";
+  if (status === "addable") return `${base} bg-blue-100 text-blue-800`;
+  if (status === "added") return `${base} bg-emerald-100 text-emerald-800`;
+  if (status === "existing") return `${base} bg-slate-100 text-slate-700`;
+  if (status === "left") return `${base} bg-amber-100 text-amber-800`;
+  if (status === "institution_mismatch" || status === "mintika_mismatch") return `${base} bg-orange-100 text-orange-800`;
+  return `${base} bg-red-100 text-red-800`;
 }
 
 function StudentCard({

@@ -25,6 +25,10 @@ export type Student = {
   group: string;
   parentPhone: string;
   isActive: boolean;
+  studentCode?: string;
+  nationalId?: string;
+  rawImportData?: Record<string, unknown> | null;
+  importedAt?: string | null;
   /** Sunucu tarafında compat_records.user_id + data.ownerUserId ile tutulur */
   ownerUserId?: string;
 };

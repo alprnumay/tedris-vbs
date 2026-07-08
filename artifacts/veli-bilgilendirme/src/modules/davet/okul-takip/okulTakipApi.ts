@@ -95,6 +95,10 @@ type ApiStudent = {
   group: string;
   parentPhone: string;
   isActive: boolean;
+  studentCode?: string;
+  nationalId?: string;
+  rawImportData?: Record<string, unknown> | null;
+  importedAt?: string | null;
 };
 
 type ApiDailyRecord = {
@@ -124,6 +128,10 @@ function mapStudent(api: ApiStudent): Student {
     group: api.group,
     parentPhone: api.parentPhone,
     isActive: api.isActive !== false,
+    studentCode: api.studentCode ?? "",
+    nationalId: api.nationalId ?? "",
+    rawImportData: api.rawImportData ?? null,
+    importedAt: api.importedAt ?? null,
   };
 }
 
@@ -151,6 +159,10 @@ function studentPayload(student: Student, institutionId?: string | null) {
     group: student.group.trim(),
     parentPhone: student.parentPhone.trim(),
     isActive: student.isActive,
+    studentCode: student.studentCode?.trim() || undefined,
+    nationalId: student.nationalId?.trim() || undefined,
+    rawImportData: student.rawImportData ?? undefined,
+    importedAt: student.importedAt ?? undefined,
   };
 }
 

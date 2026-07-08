@@ -72,6 +72,10 @@ function studentInput(body: Record<string, unknown>) {
     group: body.group ?? body.groupName,
     parentPhone: body.parentPhone ?? "",
     isActive: body.isActive ?? body.active ?? true,
+    studentCode: body.studentCode ?? "",
+    nationalId: body.nationalId ?? "",
+    rawImportData: body.rawImportData ?? null,
+    importedAt: body.importedAt ?? null,
   };
 }
 
@@ -102,6 +106,13 @@ function recordToStudent(record: CompatRecord) {
     group: String(data.group ?? ""),
     parentPhone: String(data.parentPhone ?? ""),
     isActive: data.isActive !== false,
+    studentCode: String(data.studentCode ?? ""),
+    nationalId: String(data.nationalId ?? ""),
+    rawImportData:
+      data.rawImportData && typeof data.rawImportData === "object"
+        ? data.rawImportData
+        : null,
+    importedAt: data.importedAt != null ? String(data.importedAt) : null,
     ownerUserId: record.userId != null ? String(record.userId) : data.ownerUserId ?? null,
     createdAt: record.createdAt ?? record.created_at,
     updatedAt: record.updatedAt ?? record.updated_at,

@@ -176,6 +176,13 @@ function normalizeOkulStudentData(data: Record<string, unknown>): Record<string,
     isActive: data.isActive !== false && data.active !== false,
     mintikaName: str(data.mintikaName),
     needsInstitutionMapping: data.needsInstitutionMapping === true,
+    studentCode: str(data.studentCode),
+    nationalId: str(data.nationalId),
+    rawImportData:
+      data.rawImportData && typeof data.rawImportData === "object"
+        ? data.rawImportData
+        : null,
+    importedAt: str(data.importedAt),
   };
 }
 
