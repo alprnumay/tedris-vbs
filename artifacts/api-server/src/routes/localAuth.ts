@@ -1,8 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import bcrypt from "bcryptjs";
 import { db, localUsersTable, savedProfilesTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
-import { logActivity } from "../lib/activityLog";
 import { isAdminRole } from "../lib/roleUtils";
 import { findLocalUserForLogin, findLocalUserById, type LoginUserRow } from "../lib/localUserLookup";
 import {
@@ -13,6 +11,18 @@ import {
   SESSION_TTL,
 } from "../lib/auth";
 import { sessionCookieOptions } from "../lib/sessionCookie";
+import { hashPassword, verifyPassword, getPasswordHashRounds } from "../lib/passwordHash";
+import {
+  buildAuthLoginTimingPayload,
+  logAuthLoginTiming,
+  type AuthLoginTimingMetrics,
+} from "../lib/authLoginTiming";
+import { schedulePostLoginSideEffects } from "../lib/loginSideEffects";
+import {
+  AuthRequestTimer,
+  loadTestTimingRequested,
+  logAuthTiming,
+} from "../lib/authRequestTiming";
 
 const router: IRouter = Router();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
@@ -44,98 +54,182 @@ function setSessionCookie(res: Response, sid: string) {
   res.cookie(SESSION_COOKIE, sid, sessionCookieOptions(SESSION_TTL));
 }
 
+function attachTimingBody(
+  req: Request,
+  body: Record<string, unknown>,
+  timing: AuthLoginTimingMetrics | ReturnType<AuthRequestTimer["finish"]>,
+) {
+  if (loadTestTimingRequested(req)) {
+    return { ...body, _timing: timing };
+  }
+  return body;
+}
+
 router.post("/auth/register", async (req: Request, res: Response) => {
-  const { email, password, name } = req.body;
+  const timer = new AuthRequestTimer();
+  let status = 400;
 
-  if (!email || !password || !name) {
-    res.status(400).json({ error: "Email, şifre ve ad soyad zorunludur." });
-    return;
+  try {
+    timer.mark("requestStartedMs");
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+      status = 400;
+      res.status(400).json({ error: "Email, şifre ve ad soyad zorunludur." });
+      return;
+    }
+
+    if (password.length < 6) {
+      status = 400;
+      res.status(400).json({ error: "Şifre en az 6 karakter olmalıdır." });
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase();
+
+    const existing = await db
+      .select()
+      .from(localUsersTable)
+      .where(eq(localUsersTable.email, normalizedEmail));
+    timer.mark("dbUserLookupMs");
+
+    if (existing.length > 0) {
+      status = 409;
+      const payload = attachTimingBody(req, { error: "Bu e-posta adresi zaten kayıtlı." }, timer.finish("auth/register", status, { email: normalizedEmail }));
+      logAuthTiming(payload._timing as ReturnType<AuthRequestTimer["finish"]>);
+      res.status(409).json(payload);
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    timer.mark("passwordHashMs");
+
+    const [user] = await db
+      .insert(localUsersTable)
+      .values({
+        email: normalizedEmail,
+        passwordHash,
+        name,
+      })
+      .returning();
+    timer.mark("dbInsertMs");
+
+    const isAdmin =
+      normalizedEmail === ADMIN_EMAIL || isAdminRole(user.role, user.isAdmin);
+
+    const sessionUser = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isAdmin,
+    };
+
+    const sid = await createSession({ localUser: sessionUser });
+    timer.mark("sessionCreateMs");
+    setSessionCookie(res, sid);
+
+    status = 200;
+    const timing = timer.finish("auth/register", status, { email: normalizedEmail });
+    logAuthTiming(timing);
+    res.json(attachTimingBody(req, { user: sessionUser, sessionToken: sid }, timing));
+  } catch (err) {
+    status = 500;
+    logAuthTiming(timer.finish("auth/register", status));
+    console.error("[auth/register]", err);
+    res.status(500).json({ error: "Kayıt işlemi tamamlanamadı." });
   }
-
-  if (password.length < 6) {
-    res.status(400).json({ error: "Şifre en az 6 karakter olmalıdır." });
-    return;
-  }
-
-  const normalizedEmail = email.toLowerCase();
-
-  const existing = await db
-    .select()
-    .from(localUsersTable)
-    .where(eq(localUsersTable.email, normalizedEmail));
-
-  if (existing.length > 0) {
-    res.status(409).json({ error: "Bu e-posta adresi zaten kayıtlı." });
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-
-  const [user] = await db
-    .insert(localUsersTable)
-    .values({
-      email: normalizedEmail,
-      passwordHash,
-      name,
-    })
-    .returning();
-
-  const isAdmin =
-    normalizedEmail === ADMIN_EMAIL || isAdminRole(user.role, user.isAdmin);
-
-  const sessionUser = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    isAdmin,
-  };
-
-  const sid = await createSession({ localUser: sessionUser });
-  setSessionCookie(res, sid);
-
-  res.json({ user: sessionUser, sessionToken: sid });
 });
 
 router.post("/auth/login", async (req: Request, res: Response) => {
+  const loginStarted = performance.now();
+  let dbLookupMs = 0;
+  let passwordCompareMs = 0;
+  let profileLoadMs = 0;
+  let tokenMs = 0;
+  let status = 500;
+  let hashRoundsInDb = 0;
+
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
+      status = 400;
       res.status(400).json({ error: "Email ve şifre zorunludur." });
       return;
     }
 
     const normalizedEmail = email.toLowerCase();
 
+    const lookupStart = performance.now();
     const user = await findLocalUserForLogin(normalizedEmail);
+    dbLookupMs = Math.round(performance.now() - lookupStart);
 
     if (!user) {
-      res.status(401).json({ error: "E-posta veya şifre hatalı." });
+      status = 401;
+      const timing = buildAuthLoginTimingPayload({
+        dbLookupMs,
+        passwordCompareMs: 0,
+        profileLoadMs: 0,
+        tokenMs: 0,
+        responseMs: 0,
+        totalMs: Math.round(performance.now() - loginStarted),
+        status,
+        email: normalizedEmail,
+      });
+      logAuthLoginTiming(timing);
+      res.status(401).json(attachTimingBody(req, { error: "E-posta veya şifre hatalı." }, timing));
       return;
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash);
+    hashRoundsInDb = getPasswordHashRounds(user.passwordHash);
+
+    const compareStart = performance.now();
+    const isValid = await verifyPassword(password, user.passwordHash);
+    passwordCompareMs = Math.round(performance.now() - compareStart);
+
     if (!isValid) {
-      res.status(401).json({ error: "E-posta veya şifre hatalı." });
+      status = 401;
+      const timing = buildAuthLoginTimingPayload({
+        dbLookupMs,
+        passwordCompareMs,
+        profileLoadMs: 0,
+        tokenMs: 0,
+        responseMs: 0,
+        totalMs: Math.round(performance.now() - loginStarted),
+        status,
+        email: normalizedEmail,
+        hashRoundsInDb,
+      });
+      logAuthLoginTiming(timing);
+      res.status(401).json(attachTimingBody(req, { error: "E-posta veya şifre hatalı." }, timing));
       return;
     }
 
     if (user.deletedAt || user.isActive === false) {
-      res.status(403).json({ error: "Hesabınız pasif durumda. Yöneticinizle iletişime geçin." });
+      status = 403;
+      const timing = buildAuthLoginTimingPayload({
+        dbLookupMs,
+        passwordCompareMs,
+        profileLoadMs: 0,
+        tokenMs: 0,
+        responseMs: 0,
+        totalMs: Math.round(performance.now() - loginStarted),
+        status,
+        email: normalizedEmail,
+        hashRoundsInDb,
+      });
+      logAuthLoginTiming(timing);
+      res.status(403).json(
+        attachTimingBody(req, { error: "Hesabınız pasif durumda. Yöneticinizle iletişime geçin." }, timing),
+      );
       return;
     }
 
-    try {
-      await db.execute(sql`
-        UPDATE local_users SET last_login_at = now() WHERE id = ${user.id}
-      `);
-      await logActivity(user, "login");
-    } catch (err) {
-      console.error("[auth/login] lastLoginAt veya activity log güncellenemedi:", err);
-    }
-
+    const profileStart = performance.now();
     const publicUser = mapLocalUserPublicProfile(user);
+    profileLoadMs = Math.round(performance.now() - profileStart);
 
+    const tokenStart = performance.now();
     const sid = await createSession({
       localUser: {
         id: publicUser.id,
@@ -144,11 +238,42 @@ router.post("/auth/login", async (req: Request, res: Response) => {
         isAdmin: publicUser.isAdmin,
       },
     });
+    tokenMs = Math.round(performance.now() - tokenStart);
     setSessionCookie(res, sid);
 
-    res.json({ user: publicUser, sessionToken: sid });
+    status = 200;
+    const responseStart = performance.now();
+    const totalMs = Math.round(performance.now() - loginStarted);
+    const timing = buildAuthLoginTimingPayload({
+      dbLookupMs,
+      passwordCompareMs,
+      profileLoadMs,
+      tokenMs,
+      responseMs: Math.round(performance.now() - responseStart),
+      totalMs,
+      status,
+      email: normalizedEmail,
+      hashRoundsInDb,
+    });
+    logAuthLoginTiming(timing);
+
+    res.json(attachTimingBody(req, { user: publicUser, sessionToken: sid }, timing));
+    schedulePostLoginSideEffects(user, password);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    status = 500;
+    logAuthLoginTiming(
+      buildAuthLoginTimingPayload({
+        dbLookupMs,
+        passwordCompareMs,
+        profileLoadMs,
+        tokenMs,
+        responseMs: 0,
+        totalMs: Math.round(performance.now() - loginStarted),
+        status,
+        hashRoundsInDb,
+      }),
+    );
     console.error("[auth/login]", detail, err);
     const schemaHint =
       /column|relation|does not exist|undefined column/i.test(detail)
@@ -167,12 +292,18 @@ router.post("/auth/logout", async (req: Request, res: Response) => {
 });
 
 router.get("/auth/me", async (req: Request, res: Response) => {
+  const timer = new AuthRequestTimer();
+  timer.mark("requestStartedMs");
+
   if (req.localUser?.id) {
     try {
       const user = await findLocalUserById(req.localUser.id);
+      timer.mark("dbUserLookupMs");
 
       if (user && !user.deletedAt && user.isActive !== false) {
-        res.json({ user: mapLocalUserPublicProfile(user) });
+        const timing = timer.finish("auth/me", 200, { email: user.email });
+        logAuthTiming(timing);
+        res.json(attachTimingBody(req, { user: mapLocalUserPublicProfile(user) }, timing));
         return;
       }
     } catch (err) {
@@ -181,6 +312,7 @@ router.get("/auth/me", async (req: Request, res: Response) => {
   }
 
   if (req.isAuthenticated() && req.user) {
+    timer.mark("oidcSessionMs");
     const u = req.user as {
       id: string;
       firstName?: string | null;
@@ -192,18 +324,28 @@ router.get("/auth/me", async (req: Request, res: Response) => {
     const name =
       [u.firstName, u.lastName].filter(Boolean).join(" ") || "Kullanıcı";
 
-    res.json({
-      user: {
-        id: u.id,
-        email,
-        name,
-        isAdmin: email === ADMIN_EMAIL,
-      },
-    });
+    const timing = timer.finish("auth/me", 200, { email });
+    logAuthTiming(timing);
+    res.json(
+      attachTimingBody(
+        req,
+        {
+          user: {
+            id: u.id,
+            email,
+            name,
+            isAdmin: email === ADMIN_EMAIL,
+          },
+        },
+        timing,
+      ),
+    );
     return;
   }
 
-  res.json({ user: null });
+  const timing = timer.finish("auth/me", 200);
+  logAuthTiming(timing);
+  res.json(attachTimingBody(req, { user: null }, timing));
 });
 
 router.get("/profiles", async (req: Request, res: Response) => {

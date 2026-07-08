@@ -108,6 +108,10 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
     `);
 
     await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_local_users_email ON local_users (email)
+    `);
+
+    await db.execute(sql`
       ALTER TABLE local_users ADD COLUMN IF NOT EXISTS institution_id varchar
     `);
 

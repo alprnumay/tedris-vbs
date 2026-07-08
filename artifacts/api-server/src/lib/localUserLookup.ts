@@ -121,7 +121,8 @@ export async function findLocalUserForLogin(email: string): Promise<LoginUserRow
     const [user] = await db
       .select()
       .from(localUsersTable)
-      .where(eq(localUsersTable.email, normalizedEmail));
+      .where(eq(localUsersTable.email, normalizedEmail))
+      .limit(1);
     return user ? mapDrizzleUser(user) : null;
   } catch (drizzleErr) {
     console.warn("[localUserLookup] drizzle login failed, using raw SQL", drizzleErr);
@@ -135,7 +136,8 @@ export async function findLocalUserById(id: string): Promise<LoginUserRow | null
     const [user] = await db
       .select()
       .from(localUsersTable)
-      .where(eq(localUsersTable.id, id));
+      .where(eq(localUsersTable.id, id))
+      .limit(1);
     return user ? mapDrizzleUser(user) : null;
   } catch (drizzleErr) {
     console.warn("[localUserLookup] drizzle by-id failed, using raw SQL", drizzleErr);
