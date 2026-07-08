@@ -104,6 +104,26 @@ async function renderCanvas(
   return canvas;
 }
 
+export async function renderElementAsPngBlob(
+  element: HTMLElement | null,
+  spec: PosterAspectSpec,
+  options?: { scale?: number; backgroundColor?: string },
+): Promise<Blob> {
+  if (!element) throw new Error("PREVIEW_MISSING");
+
+  const clone = prepareExportNode(element, spec);
+  try {
+    const canvas = await renderCanvas(clone, spec, options);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob || blob.size < 100) {
+      throw new Error("EMPTY_EXPORT");
+    }
+    return blob;
+  } finally {
+    removeExportNode(clone);
+  }
+}
+
 function triggerDownload(href: string, fileName: string) {
   const link = document.createElement("a");
   link.download = fileName;
@@ -121,14 +141,14 @@ export async function exportElementAsPng(
   options?: { scale?: number; backgroundColor?: string },
 ): Promise<void> {
   if (!element) throw new Error("PREVIEW_MISSING");
+  const blob = await renderElementAsPngBlob(element, spec, options);
+  const dataUrl = URL.createObjectURL(blob);
 
-  const canvas = await renderCanvas(element, spec, options);
-  const dataUrl = canvas.toDataURL("image/png");
-  if (!dataUrl || dataUrl.length < 100) {
-    throw new Error("EMPTY_EXPORT");
+  try {
+    triggerDownload(dataUrl, fileName.endsWith(".png") ? fileName : `${fileName}.png`);
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(dataUrl), 1000);
   }
-
-  triggerDownload(dataUrl, fileName.endsWith(".png") ? fileName : `${fileName}.png`);
 }
 
 export async function exportElementAsPdf(
@@ -140,7 +160,13 @@ export async function exportElementAsPdf(
 ): Promise<void> {
   if (!element) throw new Error("PREVIEW_MISSING");
 
-  const canvas = await renderCanvas(element, spec, options);
+  const clone = prepareExportNode(element, spec);
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await renderCanvas(clone, spec, options);
+  } finally {
+    removeExportNode(clone);
+  }
   const imgData = canvas.toDataURL("image/png");
   if (!imgData || imgData.length < 100) {
     throw new Error("EMPTY_EXPORT");

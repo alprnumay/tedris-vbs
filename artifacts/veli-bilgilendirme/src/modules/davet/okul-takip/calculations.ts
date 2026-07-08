@@ -276,6 +276,33 @@ function firstName(fullName: string): string {
   return fullName.split(" ")[0] ?? fullName;
 }
 
+export function buildTeacherCommentSuggestion(
+  student: Student,
+  stats: WeeklyStats,
+  teacherNote = "",
+): string {
+  const fn = firstName(student.name);
+  const alan =
+    stats.homeworkRate >= stats.attendanceRate
+      ? "okul ödevi takibi"
+      : "programa katılım";
+
+  if (teacherNote.trim()) {
+    return `${fn}, bu hafta yapılan takiplerde notlara konu olan çalışmalarda gayret göstermiştir. ${teacherNote.trim()} Evde kısa tekrarlarla bu kazanımların kalıcı hale gelmesi tavsiye edilir.`;
+  }
+
+  if (stats.generalStatus === "excellent") {
+    return `${fn}, bu dönem derslere ve takip programına güzel bir gayretle katılım sağlamıştır. Özellikle ${alan} çalışmalarında istikrarlı bir gelişim görülmektedir. Bu düzenin kısa tekrarlarla korunması tavsiye edilir.`;
+  }
+  if (stats.generalStatus === "good") {
+    return `${fn}, genel olarak olumlu bir hafta geçirmiştir. ${alan} alanındaki gayreti desteklenmeli, küçük hatırlatmalarla düzeninin devamı sağlanmalıdır.`;
+  }
+  if (stats.generalStatus === "needs_followup") {
+    return `${fn}, bu hafta bazı alanlarda desteğe ihtiyaç duymuştur. Özellikle ${alan} konusunda evde kısa ve düzenli tekrar yapılması faydalı olacaktır.`;
+  }
+  return `${fn}, daha düzenli ilerleyebilmek için yakın takip ve veli desteğine ihtiyaç duymaktadır. Kısa tekrarlar, günlük kontrol ve devamlılıkla daha güzel neticeler alınması temenni edilir.`;
+}
+
 export function buildKarneAnalysis(
   student: Student,
   stats: WeeklyStats,
@@ -315,7 +342,7 @@ Okul ödevi düzeni: %${stats.homeworkRate}
     strength: strengthText(stats.attendanceRate, stats.homeworkRate),
     developmentArea: developmentText(stats.attendanceRate, stats.homeworkRate),
     parentSuggestion: parentSuggestion(status),
-    teacherNote: teacherNote || "—",
+    teacherNote: teacherNote || buildTeacherCommentSuggestion(student, stats),
     whatsAppMessage,
   };
 }

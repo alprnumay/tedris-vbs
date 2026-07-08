@@ -1,15 +1,19 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { toast } from "sonner";
-import { Copy, Download, Image, Printer } from "lucide-react";
+import { Copy, Image, Loader2, MessageCircle, Printer } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { getKarneData, KarnePoster } from "@/modules/davet/okul-takip/components/KarnePoster";
-import { buildKarneAnalysis } from "@/modules/davet/okul-takip/calculations";
+import {
+  buildKarneAnalysis,
+  buildTeacherCommentSuggestion,
+} from "@/modules/davet/okul-takip/calculations";
+import { downloadKarnePng, shareKarnePng } from "@/modules/davet/okul-takip/karneExport";
 import { OKUL_TAKIP_KARNELER } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
-import { exportElementAsPdf, exportElementAsPng } from "@/modules/davet/utils/exportUtils";
 
 function getWeekFromSearch(): string {
   if (typeof window === "undefined") return todayIso();
@@ -24,6 +28,9 @@ export default function KarneDetailPage() {
   const { students, dailyRecords } = useOkulTakipStore();
   const student = students.find((s) => s.id === studentId);
   const karneRef = useRef<HTMLDivElement>(null);
+  const [teacherCommentDraft, setTeacherCommentDraft] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   if (!student) {
     return (
@@ -35,20 +42,54 @@ export default function KarneDetailPage() {
   }
 
   const { start, end, stats } = getKarneData(student, dailyRecords, weekRef);
-  const analysis = buildKarneAnalysis(student, stats);
+  const weekNote = dailyRecords
+    .filter((r) => r.studentId === student.id && r.note)
+    .map((r) => r.note)
+    .join(" ");
+  const aiSuggestedComment = buildTeacherCommentSuggestion(student, stats, weekNote);
+  const teacherComment = teacherCommentDraft.trim() || aiSuggestedComment;
+  const analysis = buildKarneAnalysis(student, stats, teacherComment);
 
-  const exportKarne = async (format: "png" | "pdf") => {
-    const spec = { width: 640, height: 900, orientation: "portrait" as const };
-    const name = `karne-${student.name.replace(/\s+/g, "-").toLowerCase()}`;
+  const exportKarne = async () => {
+    if (!student.name.trim()) {
+      toast.error("Öğrenci adı olmadan karne indirilemez.");
+      return;
+    }
+    setDownloading(true);
     try {
-      if (format === "png") {
-        await exportElementAsPng(karneRef.current, `${name}.png`, spec);
+      await downloadKarnePng(karneRef.current, student.name);
+      toast.success("Karne PNG olarak indirildi.");
+    } catch (err) {
+      console.error("[karne/download]", err);
+      toast.error("Karne indirilemedi. Lütfen tekrar deneyin.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const shareKarne = async () => {
+    if (!student.name.trim()) {
+      toast.error("Öğrenci adı olmadan karne paylaşılamaz.");
+      return;
+    }
+    if (!student.parentPhone?.trim()) {
+      toast.warning("Bu öğrenci için veli telefon numarası bulunamadı.");
+      return;
+    }
+    setSharing(true);
+    try {
+      const result = await shareKarnePng(karneRef.current, student.name, analysis.whatsAppMessage);
+      if (result === "shared") {
+        toast.success("Karne WhatsApp paylaşımı için hazırlandı.");
       } else {
-        await exportElementAsPdf(karneRef.current, `${name}.pdf`, "portrait", spec);
+        toast.info("Karne indirildi. WhatsApp üzerinden veliye gönderebilirsiniz.");
+        window.open(`https://wa.me/${student.parentPhone.replace(/\D/g, "")}`, "_blank", "noopener,noreferrer");
       }
-      toast.success(`${format.toUpperCase()} indirildi.`);
-    } catch {
-      toast.error("Dışa aktarma başarısız.");
+    } catch (err) {
+      console.error("[karne/share]", err);
+      toast.error("Karne indirilemedi. Lütfen tekrar deneyin.");
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -58,13 +99,13 @@ export default function KarneDetailPage() {
         <BackButton label="Karneler" href={OKUL_TAKIP_KARNELER} />
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => exportKarne("pdf")}>
-            <Download size={16} className="mr-2" />
-            PDF indir
+          <Button variant="outline" onClick={() => void exportKarne()} disabled={downloading}>
+            {downloading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Image size={16} className="mr-2" />}
+            {downloading ? "Hazırlanıyor..." : "Karne indir"}
           </Button>
-          <Button variant="outline" onClick={() => exportKarne("png")}>
-            <Image size={16} className="mr-2" />
-            PNG indir
+          <Button variant="outline" onClick={() => void shareKarne()} disabled={sharing || downloading}>
+            {sharing ? <Loader2 size={16} className="mr-2 animate-spin" /> : <MessageCircle size={16} className="mr-2" />}
+            WhatsApp gönder
           </Button>
           <Button
             variant="outline"
@@ -82,6 +123,31 @@ export default function KarneDetailPage() {
           </Button>
         </div>
 
+        <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-slate-900">Hoca Görüşü</p>
+              <p className="text-xs text-slate-500">
+                Öneri metni otomatik gelir; değiştirirseniz indirme ve WhatsApp'ta manuel metin kullanılır.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setTeacherCommentDraft(aiSuggestedComment)}
+            >
+              Öneriyi kullan
+            </Button>
+          </div>
+          <Textarea
+            value={teacherCommentDraft}
+            onChange={(e) => setTeacherCommentDraft(e.target.value)}
+            placeholder={aiSuggestedComment}
+            rows={4}
+          />
+        </div>
+
         <KarnePoster
           ref={karneRef}
           student={student}
@@ -89,6 +155,7 @@ export default function KarneDetailPage() {
           weekStart={start}
           weekEnd={end}
           records={dailyRecords}
+          teacherComment={teacherComment}
         />
       </div>
     </DavetLayout>

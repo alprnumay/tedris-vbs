@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { Copy, Eye, MessageCircle } from "lucide-react";
+import { Eye, Loader2, MessageCircle } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   buildKarneAnalysis,
+  buildTeacherCommentSuggestion,
   computeWeeklyStats,
   getWeekRange,
 } from "@/modules/davet/okul-takip/calculations";
+import { getKarneData, KarnePoster } from "@/modules/davet/okul-takip/components/KarnePoster";
+import { shareKarnePng } from "@/modules/davet/okul-takip/karneExport";
 import { GENERAL_STATUS_COLORS, GENERAL_STATUS_LABELS, OKUL_TAKIP_HOME_BACK_LABEL } from "@/modules/davet/okul-takip/constants";
 import { getGrades, getGroups, getInstitutions } from "@/modules/davet/okul-takip/mockData";
-import type { GeneralStatus } from "@/modules/davet/okul-takip/types";
+import type { GeneralStatus, Student, WeeklyStats } from "@/modules/davet/okul-takip/types";
 import {
   OKUL_TAKIP_HOME,
   OKUL_TAKIP_KARNELER,
@@ -38,6 +41,16 @@ export default function KarnelerPage() {
   const [weekRef, setWeekRef] = useState(todayIso());
   const [statusFilter, setStatusFilter] = useState<GeneralStatus | "all">("all");
   const [onlyRisk, setOnlyRisk] = useState(false);
+  const [sharingId, setSharingId] = useState<string | null>(null);
+  const [pendingShare, setPendingShare] = useState<{
+    student: Student;
+    stats: WeeklyStats;
+    start: string;
+    end: string;
+    teacherComment: string;
+    message: string;
+  } | null>(null);
+  const sharePosterRef = useRef<HTMLDivElement>(null);
 
   const institutions = useMemo(() => getInstitutions(students), [students]);
   const grades = useMemo(() => getGrades(students), [students]);
@@ -63,13 +76,68 @@ export default function KarnelerPage() {
       .sort((a, b) => a.student.name.localeCompare(b.student.name, "tr"));
   }, [students, dailyRecords, dates, institution, grade, group, search, statusFilter, onlyRisk]);
 
-  const copyWhatsApp = async (studentId: string) => {
+  const sendWhatsAppKarne = (studentId: string) => {
     const item = cards.find((c) => c.student.id === studentId);
     if (!item) return;
-    const analysis = buildKarneAnalysis(item.student, item.stats);
-    await navigator.clipboard.writeText(analysis.whatsAppMessage);
-    toast.success("WhatsApp metni kopyalandı.");
+    if (!item.student.parentPhone?.trim()) {
+      toast.warning("Bu öğrenci için veli telefon numarası bulunamadı.");
+      return;
+    }
+    const { start, end } = getKarneData(item.student, dailyRecords, weekRef);
+    const weekNote = dailyRecords
+      .filter((r) => r.studentId === item.student.id && dates.includes(r.date) && r.note)
+      .map((r) => r.note)
+      .join(" ");
+    const teacherComment = buildTeacherCommentSuggestion(item.student, item.stats, weekNote);
+    const analysis = buildKarneAnalysis(item.student, item.stats, teacherComment);
+    setSharingId(studentId);
+    setPendingShare({
+      student: item.student,
+      stats: item.stats,
+      start,
+      end,
+      teacherComment,
+      message: analysis.whatsAppMessage,
+    });
   };
+
+  useEffect(() => {
+    if (!pendingShare) return;
+    let cancelled = false;
+    const run = async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      if (cancelled) return;
+      try {
+        const result = await shareKarnePng(
+          sharePosterRef.current,
+          pendingShare.student.name,
+          pendingShare.message,
+        );
+        if (result === "shared") {
+          toast.success("Karne WhatsApp paylaşımı için hazırlandı.");
+        } else {
+          toast.info("Karne indirildi. WhatsApp üzerinden veliye gönderebilirsiniz.");
+          window.open(
+            `https://wa.me/${pendingShare.student.parentPhone.replace(/\D/g, "")}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
+        }
+      } catch (err) {
+        console.error("[karne/list-share]", err);
+        toast.error("Karne indirilemedi. Lütfen tekrar deneyin.");
+      } finally {
+        if (!cancelled) {
+          setPendingShare(null);
+          setSharingId(null);
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingShare]);
 
   return (
     <DavetLayout>
@@ -183,15 +251,38 @@ export default function KarnelerPage() {
                       Karneyi aç
                     </Button>
                   </Link>
-                  <Button size="sm" variant="outline" onClick={() => copyWhatsApp(student.id)}>
-                    <MessageCircle size={14} className="mr-1" />
-                    WhatsApp
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => sendWhatsAppKarne(student.id)}
+                    disabled={sharingId === student.id}
+                  >
+                    {sharingId === student.id ? (
+                      <Loader2 size={14} className="mr-1 animate-spin" />
+                    ) : (
+                      <MessageCircle size={14} className="mr-1" />
+                    )}
+                    Karneyi WhatsApp
                   </Button>
                 </div>
               </div>
             );
           })}
         </div>
+
+        {pendingShare ? (
+          <div className="fixed -left-[9999px] top-0 opacity-0 pointer-events-none" aria-hidden="true">
+            <KarnePoster
+              ref={sharePosterRef}
+              student={pendingShare.student}
+              stats={pendingShare.stats}
+              weekStart={pendingShare.start}
+              weekEnd={pendingShare.end}
+              records={dailyRecords}
+              teacherComment={pendingShare.teacherComment}
+            />
+          </div>
+        ) : null}
       </div>
     </DavetLayout>
   );
