@@ -10,6 +10,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -18,7 +19,7 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
   if (gorseller.length === 1) {
     return (
       <div style={{ borderRadius: 10, overflow: "hidden", border: "1px solid #d97706" }}>
-        <img src={gorseller[0]} alt="Görsel" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+        <img src={gorseller[0]} alt="Görsel" style={templatePhotoStyle({ height: 180 })} />
       </div>
     );
   }
@@ -26,12 +27,12 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
     return (
       <div style={{ display: "flex", gap: 8 }}>
         <div style={{ flex: 2, borderRadius: 10, overflow: "hidden", border: "1px solid #d97706" }}>
-          <img src={gorseller[0]} alt="Görsel 1" style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+          <img src={gorseller[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 150 })} />
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
           {gorseller.slice(1, 3).map((g, i) => (
             <div key={i} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid #d97706", flex: 1 }}>
-              <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 71, objectFit: "cover", display: "block" }} />
+              <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 71 })} />
             </div>
           ))}
         </div>
@@ -42,7 +43,7 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.slice(0, 4).map((g, i) => (
         <div key={i} style={{ borderRadius: 10, overflow: "hidden", border: "1px solid #d97706" }}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+          <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 150 })} />
         </div>
       ))}
     </div>
@@ -69,16 +70,16 @@ export default function SablonBulten({ form, tarih }: Props) {
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.7)", fontFamily: "'Inter', Arial, sans-serif", marginBottom: 4 }}>
               Veli Bilgilendirme Bülteni
             </div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#fef3c7", margin: 0, lineHeight: 1.3 }}>{baslik}</h1>
+            <TemplateTitle text={baslik} baseSize={20} style={{ fontWeight: 700, color: "#fef3c7", margin: 0 }}>{baslik}</TemplateTitle>
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", fontFamily: "'Inter', Arial, sans-serif", whiteSpace: "nowrap", marginLeft: 12, paddingTop: 20 }}>{tarih}</div>
         </div>
         {form.kurumAdi && (
-          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.85)", fontFamily: "'Inter', Arial, sans-serif" }}>{form.kurumAdi}</div>
+          <TemplateSubtitle text={form.kurumAdi} baseSize={13} style={{ marginTop: 6, fontWeight: 600, color: "rgba(255,255,255,0.85)", fontFamily: "'Inter', Arial, sans-serif" }}>{form.kurumAdi}</TemplateSubtitle>
         )}
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 24px", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 24px", ...calculateCardSpacing({ itemCount: satirlar.length + form.gorseller.length, textLength: aciklama.length }) }}>
         {form.gorseller.length > 0 && <GorselAlan gorseller={form.gorseller} />}
 
         {satirlar.length > 0 && (
@@ -98,7 +99,7 @@ export default function SablonBulten({ form, tarih }: Props) {
 
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <div style={{ width: 4, borderRadius: 4, background: "#d97706", flexShrink: 0, marginRight: 14 }} />
-          <p style={{ fontSize: 14, lineHeight: 1.8, color: "#451a03", margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={7} style={{ color: "#451a03", margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
 
         <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 12, borderTop: "1px dashed rgba(217,119,6,0.5)" }}>

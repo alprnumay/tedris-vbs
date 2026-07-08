@@ -11,6 +11,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -34,13 +35,13 @@ export default function SablonKartliBilgi({ form, tarih }: Props) {
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)" }}>{tarih}</div>
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
+        <TemplateTitle text={baslik} baseSize={20} style={{ fontWeight: 800, color: "#ffffff", margin: "0 0 4px" }}>{baslik}</TemplateTitle>
         {form.kurumAdi && (
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{form.kurumAdi}</div>
+          <TemplateSubtitle text={form.kurumAdi} baseSize={13} style={{ color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{form.kurumAdi}</TemplateSubtitle>
         )}
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 16px", gap: 12 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 16px", ...calculateCardSpacing({ itemCount: aktif.length + form.gorseller.length, textLength: aciklama.length, baseGap: 12 }) }}>
         {aktif.map((f, i) => (
           <div key={i} style={{
             background: "#ffffff", borderRadius: 14, padding: "14px 16px",
@@ -76,25 +77,25 @@ export default function SablonKartliBilgi({ form, tarih }: Props) {
           const kutu: React.CSSProperties = { borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", flexShrink: 0 };
           if (g.length === 1) return (
             <div style={kutu}>
-              <img src={g[0]} alt="Görsel" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+              <img src={g[0]} alt="Görsel" style={templatePhotoStyle({ height: 200 })} />
             </div>
           );
           if (g.length === 2) return (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0 }}>
-              {g.map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }} /></div>)}
+              {g.map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 140 })} /></div>)}
             </div>
           );
           if (g.length === 3) return (
             <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 8, flexShrink: 0 }}>
-              <div style={kutu}><img src={g[0]} alt="Görsel 1" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} /></div>
+              <div style={kutu}><img src={g[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 180 })} /></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {g.slice(1).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 86, objectFit: "cover", display: "block" }} /></div>)}
+                {g.slice(1).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 86 })} /></div>)}
               </div>
             </div>
           );
           return (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, flexShrink: 0 }}>
-              {g.slice(0, 4).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }} /></div>)}
+              {g.slice(0, 4).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 140 })} /></div>)}
             </div>
           );
         })()}
@@ -104,7 +105,7 @@ export default function SablonKartliBilgi({ form, tarih }: Props) {
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: renk, marginBottom: 8, flexShrink: 0 }}>
               Faaliyet Özeti
             </div>
-            <p style={{ fontSize: 13, lineHeight: 1.75, color: "#334155", margin: 0, overflow: "hidden", flex: 1 }}>{aciklama}</p>
+            <TemplateDescription text={aciklama} fontSize={13} maxLines={8} style={{ color: "#334155", margin: 0, flex: 1 }}>{aciklama}</TemplateDescription>
           </div>
         </div>
       </div>

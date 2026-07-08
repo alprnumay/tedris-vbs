@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { FormData } from "../../types";
 import { baslikolustur } from "../../lib/dil";
+import { TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -39,7 +40,7 @@ function HeroGorseller({ gorseller }: { gorseller: string[] }) {
 
   if (gorseller.length === 1) {
     return (
-      <img src={gorseller[0]} alt="Kapak" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      <img src={gorseller[0]} alt="Kapak" style={templatePhotoStyle({ height: "100%" })} />
     );
   }
 
@@ -48,7 +49,7 @@ function HeroGorseller({ gorseller }: { gorseller: string[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", width: "100%", height: "100%", gap: 3 }}>
         {gorseller.map((g, i) => (
           <div key={i} style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
-            <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: "100%" })} />
           </div>
         ))}
       </div>
@@ -60,7 +61,7 @@ function HeroGorseller({ gorseller }: { gorseller: string[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", width: "100%", height: "100%", gap: 3 }}>
         {gorseller.slice(0, 4).map((g, i) => (
           <div key={i} style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
-            <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: "100%" })} />
           </div>
         ))}
       </div>
@@ -70,12 +71,12 @@ function HeroGorseller({ gorseller }: { gorseller: string[] }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1.45fr 1fr", width: "100%", height: "100%", gap: 3 }}>
       <div style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
-        <img src={gorseller[0]} alt="Görsel 1" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img src={gorseller[0]} alt="Görsel 1" style={templatePhotoStyle({ height: "100%" })} />
       </div>
       <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 3, minHeight: 0 }}>
         {gorseller.slice(1, 3).map((g, i) => (
           <div key={i} style={{ overflow: "hidden", minHeight: 0, minWidth: 0 }}>
-            <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: "100%" })} />
           </div>
         ))}
       </div>
@@ -104,9 +105,9 @@ export default function SablonFotografOdakli({ form, tarih }: Props) {
           <span style={{ fontSize: 11, color: "#64748b", flexShrink: 0, whiteSpace: "nowrap" }}>{tarih}</span>
         </div>
 
-        <h1 style={{ fontSize: 21, fontWeight: 800, color: "#f8fafc", margin: "12px 0 6px", lineHeight: 1.25, flexShrink: 0, overflow: "hidden" }}>
+        <TemplateTitle text={baslik} baseSize={21} style={{ fontWeight: 800, color: "#f8fafc", margin: "12px 0 6px", flexShrink: 0 }}>
           {baslik}
-        </h1>
+        </TemplateTitle>
 
         {aktif.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, flexShrink: 0 }}>
@@ -120,11 +121,11 @@ export default function SablonFotografOdakli({ form, tarih }: Props) {
 
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", paddingBottom: 8 }}>
           {form.kurumAdi && (
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0ea5e9", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <TemplateSubtitle text={form.kurumAdi} baseSize={11} style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0ea5e9", marginBottom: 6 }}>
               {form.kurumAdi}
-            </div>
+            </TemplateSubtitle>
           )}
-          <p style={{ fontSize: 13, lineHeight: 1.75, color: "#cbd5e1", margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={13} maxLines={7} style={{ color: "#cbd5e1", margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
 

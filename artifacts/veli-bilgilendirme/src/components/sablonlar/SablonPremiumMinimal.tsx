@@ -10,6 +10,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -24,25 +25,25 @@ export default function SablonPremiumMinimal({ form, tarih }: Props) {
 
       {form.gorseller.length > 0 && (
         <div style={{ flex: "1 1 38%", minHeight: 160, maxHeight: 300, overflow: "hidden", flexShrink: 0 }}>
-          <img src={form.gorseller[0]} alt="Kapak" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <img src={form.gorseller[0]} alt="Kapak" style={templatePhotoStyle({ height: "100%" })} />
         </div>
       )}
 
       <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: form.gorseller.length > 0 ? "20px 32px 12px" : "28px 32px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           {form.kurumAdi && (
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94a3b8" }}>
+            <TemplateSubtitle text={form.kurumAdi} baseSize={11} style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#94a3b8" }}>
               {form.kurumAdi}
-            </span>
+            </TemplateSubtitle>
           )}
           <span style={{ fontSize: 11, color: "#cbd5e1", marginLeft: "auto" }}>{tarih}</span>
         </div>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0, lineHeight: 1.25, letterSpacing: "-0.02em" }}>
+        <TemplateTitle text={baslik} baseSize={24} style={{ fontWeight: 800, color: "#0f172a", margin: 0, letterSpacing: "-0.02em" }}>
           {baslik}
-        </h1>
+        </TemplateTitle>
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "0 32px", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "0 32px", ...calculateCardSpacing({ itemCount: aktif.length + form.gorseller.length, textLength: aciklama.length }) }}>
         <div style={{ height: 1, background: "#f1f5f9", flexShrink: 0 }} />
 
         {aktif.length > 0 && (
@@ -63,14 +64,14 @@ export default function SablonPremiumMinimal({ form, tarih }: Props) {
         )}
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start", overflow: "hidden" }}>
-          <p style={{ fontSize: 14, lineHeight: 1.85, color: "#475569", margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={8} style={{ color: "#475569", margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
 
         {form.gorseller.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexShrink: 0, paddingBottom: 8 }}>
             {form.gorseller.slice(1, 4).map((g, i) => (
               <div key={i} style={{ flex: 1, borderRadius: 10, overflow: "hidden", minHeight: 0 }}>
-                <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 100, objectFit: "cover", display: "block" }} />
+                <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 100 })} />
               </div>
             ))}
           </div>

@@ -4,13 +4,13 @@ import { baslikolustur } from "../../lib/dil";
 import {
   POSTER_BODY_CLS,
   POSTER_FOOTER_CLS,
-  POSTER_HEADER_CLS,
   POSTER_SHELL_CLS,
   posterBodyStyle,
   posterFooterStyle,
-  posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
+import { PosterTemplateHeader } from "../veli/PosterTemplateHeader";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -31,14 +31,14 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
   if (gorseller.length === 0) return null;
   if (gorseller.length === 1) return (
     <div style={bos}>
-      <img src={gorseller[0]} alt="Görsel" style={{ ...img, height: 200 }} />
+      <img src={gorseller[0]} alt="Görsel" style={{ ...img, ...templatePhotoStyle({ height: 200 }) }} />
     </div>
   );
   if (gorseller.length === 2) return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.map((g, i) => (
         <div key={i} style={bos}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ ...img, height: 160 }} />
+          <img src={g} alt={`Görsel ${i + 1}`} style={{ ...img, ...templatePhotoStyle({ height: 160 }) }} />
         </div>
       ))}
     </div>
@@ -46,12 +46,12 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
   if (gorseller.length === 3) return (
     <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 8 }}>
       <div style={bos}>
-        <img src={gorseller[0]} alt="Görsel 1" style={{ ...img, height: 180 }} />
+        <img src={gorseller[0]} alt="Görsel 1" style={{ ...img, ...templatePhotoStyle({ height: 180 }) }} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {gorseller.slice(1).map((g, i) => (
           <div key={i} style={bos}>
-            <img src={g} alt={`Görsel ${i + 2}`} style={{ ...img, height: 86 }} />
+            <img src={g} alt={`Görsel ${i + 2}`} style={{ ...img, ...templatePhotoStyle({ height: 86 }) }} />
           </div>
         ))}
       </div>
@@ -61,7 +61,7 @@ function GorselAlan({ gorseller }: { gorseller: string[] }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.slice(0, 4).map((g, i) => (
         <div key={i} style={bos}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ ...img, height: 160 }} />
+          <img src={g} alt={`Görsel ${i + 1}`} style={{ ...img, ...templatePhotoStyle({ height: 160 }) }} />
         </div>
       ))}
     </div>
@@ -75,18 +75,18 @@ export default function SablonAkademik({ form, tarih }: Props) {
 
   return (
     <div className={POSTER_SHELL_CLS} style={{ ...posterShellStyle, borderRadius: 16, background: "linear-gradient(160deg, #1e3a5f 0%, #2d5a9e 60%, #1a4a7a 100%)", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
-      <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: "22px 26px 18px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+      <PosterTemplateHeader style={{ padding: "22px 26px 18px", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.9)" }}>
             Öğrenci Bilgi Formu
           </div>
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)" }}>{tarih}</div>
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: "#ffffff", margin: "10px 0 0", lineHeight: 1.28, letterSpacing: "-0.02em" }}>{baslik}</h1>
-        {form.kurumAdi && <p style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.78)", margin: "6px 0 0", letterSpacing: "0.02em" }}>{form.kurumAdi}</p>}
-      </div>
+        <TemplateTitle text={baslik} baseSize={22} style={{ fontWeight: 800, color: "#ffffff", margin: "10px 0 0", letterSpacing: "-0.02em" }}>{baslik}</TemplateTitle>
+        {form.kurumAdi && <TemplateSubtitle text={form.kurumAdi} baseSize={13} style={{ fontWeight: 600, color: "rgba(255,255,255,0.78)", margin: "6px 0 0", letterSpacing: "0.02em" }}>{form.kurumAdi}</TemplateSubtitle>}
+      </PosterTemplateHeader>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "22px 26px 24px", gap: 18 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "22px 26px 24px", ...calculateCardSpacing({ itemCount: aktifFaaliyetler.length + form.gorseller.length, textLength: aciklama.length, baseGap: 18 }) }}>
         {form.gorseller.length > 0 && <GorselAlan gorseller={form.gorseller} />}
 
         {aktifFaaliyetler.length > 0 && (
@@ -102,7 +102,7 @@ export default function SablonAkademik({ form, tarih }: Props) {
 
         <div style={{ borderRadius: 12, padding: 16, background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "rgba(255,255,255,0.6)", marginBottom: 8, flexShrink: 0 }}>Faaliyet Özeti</div>
-          <p style={{ fontSize: 14.5, lineHeight: 1.75, color: "rgba(255,255,255,0.94)", margin: 0, fontWeight: 450, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14.5} maxLines={8} style={{ color: "rgba(255,255,255,0.94)", margin: 0, fontWeight: 450 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
 

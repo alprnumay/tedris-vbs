@@ -11,6 +11,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -26,33 +27,33 @@ export default function SablonKurumsalResmi({ form, tarih }: Props) {
           Resmî Veli Bilgilendirme Formu
         </div>
         {form.kurumAdi && (
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 4, letterSpacing: "0.02em" }}>
+          <TemplateSubtitle text={form.kurumAdi} baseSize={18} style={{ fontWeight: 700, color: "#0f172a", marginBottom: 4, letterSpacing: "0.02em" }}>
             {form.kurumAdi.toUpperCase()}
-          </div>
+          </TemplateSubtitle>
         )}
         <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Inter', Arial, sans-serif" }}>{tarih}</div>
       </div>
 
       <div style={{ padding: "16px 32px 12px", borderBottom: "1px solid #e2e8f0", textAlign: "center", flexShrink: 0 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1e293b", margin: 0, lineHeight: 1.35, letterSpacing: "0.01em" }}>{baslik}</h1>
+        <TemplateTitle text={baslik} baseSize={20} style={{ fontWeight: 700, color: "#1e293b", margin: 0, letterSpacing: "0.01em" }}>{baslik}</TemplateTitle>
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 32px 0", gap: 16 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 32px 0", ...calculateCardSpacing({ itemCount: aktif.length + form.gorseller.length, textLength: aciklama.length, baseGap: 16 }) }}>
         {form.gorseller.length > 0 && (() => {
           const g = form.gorseller;
           const kutu: React.CSSProperties = { border: "1px solid #cbd5e1", borderRadius: 4, overflow: "hidden", flexShrink: 0 };
           const renderG = (imgs: string[], h: number) => imgs.map((img, i) => (
-            <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: h, objectFit: "cover", display: "block" }} /></div>
+            <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: h })} /></div>
           ));
           return (
             <>
-              {g.length === 1 && <div style={kutu}><img src={g[0]} alt="Görsel" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} /></div>}
+              {g.length === 1 && <div style={kutu}><img src={g[0]} alt="Görsel" style={templatePhotoStyle({ height: 200 })} /></div>}
               {g.length === 2 && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{renderG(g, 130)}</div>}
               {g.length === 3 && (
                 <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 8 }}>
-                  <div style={kutu}><img src={g[0]} alt="Görsel 1" style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} /></div>
+                  <div style={kutu}><img src={g[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 160 })} /></div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {g.slice(1).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 76, objectFit: "cover", display: "block" }} /></div>)}
+                    {g.slice(1).map((img, i) => <div key={i} style={kutu}><img src={img} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 76 })} /></div>)}
                   </div>
                 </div>
               )}
@@ -91,7 +92,7 @@ export default function SablonKurumsalResmi({ form, tarih }: Props) {
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#64748b", fontFamily: "'Inter', Arial, sans-serif", marginBottom: 8, flexShrink: 0 }}>
             Genel Değerlendirme
           </div>
-          <p style={{ fontSize: 14, lineHeight: 1.9, color: "#0f172a", margin: 0, textAlign: "justify", overflow: "hidden", flex: 1 }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={7} style={{ color: "#0f172a", margin: 0, textAlign: "justify", flex: 1 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -25,39 +26,39 @@ export default function SablonHikaye({ form, tarih }: Props) {
       <div className={POSTER_HEADER_CLS} style={{ ...posterHeaderStyle, padding: "24px 32px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           {form.kurumAdi && (
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#8a6a3a", fontFamily: "'Inter', Arial, sans-serif" }}>
+            <TemplateSubtitle text={form.kurumAdi} baseSize={12} style={{ fontWeight: 600, color: "#8a6a3a", fontFamily: "'Inter', Arial, sans-serif" }}>
               {form.kurumAdi}
-            </div>
+            </TemplateSubtitle>
           )}
           <div style={{ fontSize: 12, color: "#a08060", fontFamily: "'Inter', Arial, sans-serif", marginLeft: "auto" }}>{tarih}</div>
         </div>
         <div style={{ fontSize: 15, color: "#6b4c2a", fontStyle: "italic", marginBottom: 8, fontFamily: "'Georgia', serif" }}>
           Değerli Velimiz,
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#3d2b1a", margin: "0 0 4px", lineHeight: 1.3 }}>
+        <TemplateTitle text={baslik} baseSize={22} style={{ fontWeight: 700, color: "#3d2b1a", margin: "0 0 4px" }}>
           {baslik}
-        </h1>
+        </TemplateTitle>
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "0 32px", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "0 32px", ...calculateCardSpacing({ itemCount: aktif.length + form.gorseller.length, textLength: aciklama.length }) }}>
         <div style={{ height: 1, background: "#e8d5b0", flexShrink: 0 }} />
 
         {form.gorseller.length > 0 && (
           <div style={{ paddingTop: 14, flexShrink: 0 }}>
             {form.gorseller.length === 1 ? (
               <div style={{ borderRadius: 12, overflow: "hidden", border: "3px solid #e8d5b0", boxShadow: "3px 3px 0 #d4b896" }}>
-                <img src={form.gorseller[0]} alt="Görsel" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+                <img src={form.gorseller[0]} alt="Görsel" style={templatePhotoStyle({ height: 200 })} />
               </div>
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
                 <div style={{ flex: 2, borderRadius: 12, overflow: "hidden", border: "3px solid #e8d5b0", boxShadow: "3px 3px 0 #d4b896" }}>
-                  <img src={form.gorseller[0]} alt="Görsel 1" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                  <img src={form.gorseller[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 180 })} />
                 </div>
                 {form.gorseller.length > 1 && (
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
                     {form.gorseller.slice(1, 3).map((g, i) => (
                       <div key={i} style={{ borderRadius: 8, overflow: "hidden", border: "2px solid #e8d5b0", flex: 1 }}>
-                        <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 86, objectFit: "cover", display: "block" }} />
+                        <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 86 })} />
                       </div>
                     ))}
                   </div>
@@ -96,7 +97,7 @@ export default function SablonHikaye({ form, tarih }: Props) {
         )}
 
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <p style={{ fontSize: 14, lineHeight: 2, color: "#3d2b1a", margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={7} style={{ color: "#3d2b1a", margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
 

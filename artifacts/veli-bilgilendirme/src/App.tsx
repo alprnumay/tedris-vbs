@@ -1,7 +1,12 @@
 ﻿import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Toaster, toast } from "sonner";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
+import {
+  exportPosterAsPng,
+  exportPosterAsPdf,
+  renderPosterAsFile,
+  PosterExportError,
+} from "@/lib/export/posterExportEngine";
+import { logPosterHeaderExportMetrics } from "@/lib/sablonlar/posterHeaderMetrics";
 import { FormData, SablonTuru } from "./types";
 import { aciklamaolustur } from "./lib/dil";
 import { api, kullaniciAdminMi, kullaniciRaporGorebilirMi, type KullaniciBilgisi } from "./lib/api";
@@ -27,6 +32,16 @@ import { KolayAfisModulu } from "./components/kolay-afis/KolayAfisModulu";
 import { DavetProviders } from "./modules/davet/DavetProviders";
 import { DavetRouter } from "./modules/davet/DavetRouter";
 import { goToAppHome } from "./modules/davet/layout/navRoutes";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./components/ui/alert-dialog";
 
 function isDavetPathname(): boolean {
   return typeof window !== "undefined" && window.location.pathname.startsWith("/davet");
@@ -40,6 +55,7 @@ const KurumsalKimlikModulu = lazy(() =>
 
 const POSTER_W = VELI_POSTER_W;
 const POSTER_H = VELI_POSTER_H;
+const SHARE_TIMEOUT_MS = 20_000;
 
 const baslangicForm: FormData = {
   kurumAdi: "",
@@ -59,12 +75,15 @@ const baslangicForm: FormData = {
 };
 
 const VELI_WIZARD_DRAFT_KEY = "veli_wizard_draft";
-const VELI_WIZARD_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
+/** Eski localStorage taslağı — artık kullanılmıyor, açılışta temizlenir */
+const VELI_WIZARD_DRAFT_LEGACY_KEY = "veli_wizard_draft";
+/** Oturum içi taslak — sekme kapanınca silinir; activeStep saklanmaz */
+const VELI_WIZARD_SESSION_DRAFT_KEY = "veli_wizard_session_draft";
+const VELI_WIZARD_SESSION_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 12;
 
-interface LocalVeliWizardDraft {
+interface SessionVeliWizardDraft {
   form: FormData;
   seciliSablon: SablonTuru;
-  activeStep: number;
   metinDuzenlendi: boolean;
   savedAt: string;
 }
@@ -112,21 +131,28 @@ function formdaKullaniciVerisiVar(form: FormData, activeStep: number, seciliSabl
   );
 }
 
-function readLocalVeliWizardDraft(): LocalVeliWizardDraft | null {
+function purgeLegacyVeliWizardDraft() {
   try {
-    const raw = localStorage.getItem(VELI_WIZARD_DRAFT_KEY);
+    localStorage.removeItem(VELI_WIZARD_DRAFT_LEGACY_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readSessionVeliWizardDraft(): SessionVeliWizardDraft | null {
+  try {
+    const raw = sessionStorage.getItem(VELI_WIZARD_SESSION_DRAFT_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LocalVeliWizardDraft>;
+    const parsed = JSON.parse(raw) as Partial<SessionVeliWizardDraft>;
     const form = normalizeLocalFormDraft(parsed.form);
     if (!form || !sablonTuruMu(parsed.seciliSablon)) return null;
-    if (parsed.savedAt && Date.now() - Date.parse(parsed.savedAt) > VELI_WIZARD_DRAFT_MAX_AGE_MS) {
-      localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+    if (parsed.savedAt && Date.now() - Date.parse(parsed.savedAt) > VELI_WIZARD_SESSION_DRAFT_MAX_AGE_MS) {
+      sessionStorage.removeItem(VELI_WIZARD_SESSION_DRAFT_KEY);
       return null;
     }
     return {
       form,
       seciliSablon: parsed.seciliSablon,
-      activeStep: Math.min(Math.max(Number(parsed.activeStep) || 0, 0), VELI_WIZARD_LAST_STEP),
       metinDuzenlendi: Boolean(parsed.metinDuzenlendi),
       savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString(),
     };
@@ -135,9 +161,9 @@ function readLocalVeliWizardDraft(): LocalVeliWizardDraft | null {
   }
 }
 
-function clearLocalVeliWizardDraft() {
+function clearSessionVeliWizardDraft() {
   try {
-    localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+    sessionStorage.removeItem(VELI_WIZARD_SESSION_DRAFT_KEY);
   } catch {
     /* ignore */
   }
@@ -148,38 +174,6 @@ function isPosterDraftData(data: unknown): data is PosterDraftData {
   return Boolean(d && typeof d === "object" && d.form && typeof d.seciliSablon === "string");
 }
 
-async function waitForImages(node: HTMLElement): Promise<void> {
-  const images = Array.from(node.querySelectorAll("img"));
-  await Promise.all(
-    images.map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          if (img.complete && img.naturalWidth > 0) {
-            resolve();
-            return;
-          }
-
-          let timeoutId = 0;
-          const done = () => {
-            window.clearTimeout(timeoutId);
-            img.removeEventListener("load", done);
-            img.removeEventListener("error", done);
-            resolve();
-          };
-
-          img.addEventListener("load", done, { once: true });
-          img.addEventListener("error", done, { once: true });
-          timeoutId = window.setTimeout(done, 3000);
-
-          if (typeof img.decode === "function") {
-            img.decode().then(done).catch(() => {
-              if (img.complete) done();
-            });
-          }
-        }),
-    ),
-  );
-}
 
 function MainApp() {
   const [kullanici, setKullanici] = useState<KullaniciBilgisi | null | undefined>(undefined);
@@ -190,6 +184,7 @@ function MainApp() {
   const [aktifSekme, setAktifSekme] = useState<"form" | "onizleme" | "yonetim">("form");
   const [indiriliyor, setIndiriliyor] = useState(false);
   const [pdfYukleniyor, setPdfYukleniyor] = useState(false);
+  const [whatsappPaylasiliyor, setWhatsappPaylasiliyor] = useState(false);
   const [metinDuzenlendi, setMetinDuzenlendi] = useState(false);
   const [destekAcik, setDestekAcik] = useState(false);
   const [formAdim, setFormAdim] = useState<1 | 2>(1);
@@ -199,6 +194,7 @@ function MainApp() {
   const [taslakMenuAcik, setTaslakMenuAcik] = useState(false);
   const [taslakIslem, setTaslakIslem] = useState<"kaydet" | "yukle" | "sil" | null>(null);
   const [sonTaslakId, setSonTaslakId] = useState<string | number | null>(null);
+  const [cikisModalAcik, setCikisModalAcik] = useState(false);
 
   const downloadRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -208,9 +204,14 @@ function MainApp() {
   const [desktopZoom, setDesktopZoom] = useState(0.72);
   const [captureSnapshot, setCaptureSnapshot] = useState<{ form: FormData; sablon: SablonTuru } | null>(null);
   const captureResolveFn = useRef<(() => void) | null>(null);
+  const whatsappShareInProgress = useRef(false);
   const veliModulLoglandi = useRef(false);
-  const localTaslakKontrolEdildi = useRef(false);
-  const localTaslakYuklemeKaydiAtla = useRef(false);
+  const sessionTaslakKontrolEdildi = useRef(false);
+  const sessionTaslakYuklemeKaydiAtla = useRef(false);
+  const cikisModalAcikRef = useRef(false);
+  const historyTrappedRef = useRef(false);
+  const pendingCikisRef = useRef<(() => void) | null>(null);
+  const intentionalCikisRef = useRef(false);
 
   const logoGelistirmeAcik =
     import.meta.env.DEV ||
@@ -238,6 +239,10 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    purgeLegacyVeliWizardDraft();
+  }, []);
+
+  useEffect(() => {
     if (homeModu === "veli" && kullanici?.id && !veliModulLoglandi.current) {
       veliModulLoglandi.current = true;
       void api.activityLog("open_veli_module").catch(() => {});
@@ -245,49 +250,119 @@ function MainApp() {
   }, [homeModu, kullanici?.id]);
 
   useEffect(() => {
-    if (homeModu !== "veli" || localTaslakKontrolEdildi.current) return;
-    localTaslakKontrolEdildi.current = true;
-    const draft = readLocalVeliWizardDraft();
-    if (!draft || !formdaKullaniciVerisiVar(draft.form, draft.activeStep, draft.seciliSablon, draft.metinDuzenlendi)) return;
-    localTaslakYuklemeKaydiAtla.current = true;
+    if (homeModu !== "veli" || sessionTaslakKontrolEdildi.current) return;
+    sessionTaslakKontrolEdildi.current = true;
+    const draft = readSessionVeliWizardDraft();
+    if (!draft || !formdaKullaniciVerisiVar(draft.form, 0, draft.seciliSablon, draft.metinDuzenlendi)) return;
+    sessionTaslakYuklemeKaydiAtla.current = true;
     setForm(draft.form);
     setSeciliSablon(draft.seciliSablon);
-    setActiveStep(draft.activeStep);
+    setActiveStep(0);
     setMetinDuzenlendi(draft.metinDuzenlendi);
-    toast.info("Kaldığınız afiş taslağı geri yüklendi.");
+    setAktifSekme("form");
+    setMobilOnizlemeAcik(false);
   }, [homeModu]);
 
   useEffect(() => {
     if (homeModu !== "veli") return;
-    if (localTaslakYuklemeKaydiAtla.current) {
-      localTaslakYuklemeKaydiAtla.current = false;
+    if (sessionTaslakYuklemeKaydiAtla.current) {
+      sessionTaslakYuklemeKaydiAtla.current = false;
       return;
     }
     try {
       if (formdaKullaniciVerisiVar(form, activeStep, seciliSablon, metinDuzenlendi)) {
-        localStorage.setItem(
-          VELI_WIZARD_DRAFT_KEY,
-          JSON.stringify({ form, seciliSablon, activeStep, metinDuzenlendi, savedAt: new Date().toISOString() }),
+        sessionStorage.setItem(
+          VELI_WIZARD_SESSION_DRAFT_KEY,
+          JSON.stringify({ form, seciliSablon, metinDuzenlendi, savedAt: new Date().toISOString() }),
         );
       } else {
-        localStorage.removeItem(VELI_WIZARD_DRAFT_KEY);
+        clearSessionVeliWizardDraft();
       }
     } catch {
-      /* localStorage kapalı */
+      /* sessionStorage kapalı */
     }
   }, [form, seciliSablon, activeStep, metinDuzenlendi, homeModu]);
 
   const formdaKaydedilecekVeriVar = homeModu === "veli" && formdaKullaniciVerisiVar(form, activeStep, seciliSablon, metinDuzenlendi);
 
+  const formuSifirla = useCallback(() => {
+    clearSessionVeliWizardDraft();
+    setForm(baslangicForm);
+    setSeciliSablon("akademik");
+    setActiveStep(0);
+    setMetinDuzenlendi(false);
+    setAktifSekme("form");
+    setMobilOnizlemeAcik(false);
+    setStepUyari(null);
+    historyTrappedRef.current = false;
+  }, []);
+
+  const cikisModalKapat = useCallback(() => {
+    cikisModalAcikRef.current = false;
+    setCikisModalAcik(false);
+    pendingCikisRef.current = null;
+  }, []);
+
+  const formdaKal = useCallback(() => {
+    cikisModalKapat();
+    if (homeModu === "veli" && formdaKaydedilecekVeriVar && !historyTrappedRef.current) {
+      history.pushState({ veliFormGuard: true }, "", window.location.href);
+      historyTrappedRef.current = true;
+    }
+  }, [cikisModalKapat, formdaKaydedilecekVeriVar, homeModu]);
+
+  const kaydetmedenCik = useCallback(() => {
+    intentionalCikisRef.current = true;
+    const action = pendingCikisRef.current ?? goToAppHome;
+    cikisModalKapat();
+    formuSifirla();
+    action();
+  }, [cikisModalKapat, formuSifirla]);
+
+  const cikisIste = useCallback(
+    (action: () => void) => {
+      if (!formdaKaydedilecekVeriVar) {
+        action();
+        return;
+      }
+      if (cikisModalAcikRef.current) return;
+      pendingCikisRef.current = action;
+      cikisModalAcikRef.current = true;
+      setCikisModalAcik(true);
+    },
+    [formdaKaydedilecekVeriVar],
+  );
+
   useEffect(() => {
-    if (!formdaKaydedilecekVeriVar) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
+    if (homeModu !== "veli" || !formdaKaydedilecekVeriVar) {
+      historyTrappedRef.current = false;
+      return;
+    }
+    if (!historyTrappedRef.current) {
+      history.pushState({ veliFormGuard: true }, "", window.location.href);
+      historyTrappedRef.current = true;
+    }
+  }, [homeModu, formdaKaydedilecekVeriVar]);
+
+  useEffect(() => {
+    if (homeModu !== "veli") return;
+
+    const onPopState = () => {
+      if (!formdaKaydedilecekVeriVar) return;
+      history.pushState({ veliFormGuard: true }, "", window.location.href);
+      historyTrappedRef.current = true;
+      if (cikisModalAcikRef.current) return;
+      pendingCikisRef.current = () => {
+        formuSifirla();
+        goToAppHome();
+      };
+      cikisModalAcikRef.current = true;
+      setCikisModalAcik(true);
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [formdaKaydedilecekVeriVar]);
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [homeModu, formdaKaydedilecekVeriVar, formuSifirla]);
 
   useEffect(() => {
     setFormAdim(activeStep <= 1 ? 1 : 2);
@@ -394,36 +469,27 @@ function MainApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.faaliyetSayisi, form.ekNot, form.metinUzunlugu, metinDuzenlendi, JSON.stringify(form.faaliyetler)]);
 
-  const posterPngYakala = async (): Promise<string | null> => {
+  /**
+   * Export DOM'unu React ile render edip hazır hale getirir, ardından verilen
+   * fn'i artboard referansıyla çağırır. Bittikten sonra snapshot DOM'u temizlenir.
+   */
+  const withExportNode = async <T,>(fn: (node: HTMLElement) => Promise<T>): Promise<T> => {
     await new Promise<void>((resolve) => {
       captureResolveFn.current = resolve;
       setCaptureSnapshot({ form, sablon: seciliSablon });
     });
 
-    const posterNode = downloadRef.current;
-    if (!posterNode) {
+    const node = downloadRef.current;
+    if (!node) {
       setCaptureSnapshot(null);
-      return null;
+      throw new PosterExportError("Export artboard düğümü bağlanamadı", "NO_NODE");
     }
 
     try {
-      await waitForImages(posterNode);
-      const canvas = await html2canvas(posterNode, {
-        scale: 2.5,
-        width: POSTER_W,
-        height: POSTER_H,
-        windowWidth: POSTER_W,
-        windowHeight: POSTER_H,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      });
+      logPosterHeaderExportMetrics(node, "pre-capture");
+      return await fn(node);
+    } finally {
       setCaptureSnapshot(null);
-      return canvas.toDataURL("image/png");
-    } catch {
-      setCaptureSnapshot(null);
-      return null;
     }
   };
 
@@ -497,13 +563,13 @@ function MainApp() {
     try {
       const recordId = sonTaslakId || (await backendApi.latestPosterDraft())?.id;
       if (!recordId) {
-        clearLocalVeliWizardDraft();
+        clearSessionVeliWizardDraft();
         toast.info("Silinecek taslak bulunamadı.");
         return;
       }
       await backendApi.deleteRecord(recordId);
       setSonTaslakId(null);
-      clearLocalVeliWizardDraft();
+      clearSessionVeliWizardDraft();
       toast.success("Taslak silindi.");
     } catch (err) {
       taslakHatasi(err);
@@ -515,20 +581,21 @@ function MainApp() {
   const afisiIndir = async () => {
     setIndiriliyor(true);
     try {
-      const dataUrl = await posterPngYakala();
-      if (!dataUrl) return;
+      await withExportNode((node) =>
+        exportPosterAsPng(
+          node,
+          `nehari-veli-bilgilendirme-${seciliSablon}.png`,
+          { width: POSTER_W, height: POSTER_H },
+        ),
+      );
       aktiviteKaydet("export_png");
       backendEvent("poster_downloaded", { format: "png" });
-
-      if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-        window.open(dataUrl, "_blank");
+    } catch (err) {
+      console.error("[VeliBilgilendirme] PNG indirme hatası:", err);
+      if (err instanceof PosterExportError && err.code === "EMPTY_CANVAS") {
+        toast.error("Afiş oluşturulamadı — şablon render edilemedi. Lütfen tekrar deneyin.");
       } else {
-        const link = document.createElement("a");
-        link.download = `nehari-veli-bilgilendirme-${seciliSablon}.png`;
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        toast.error("Afiş PNG olarak kaydedilemedi. Lütfen tekrar deneyin.");
       }
     } finally {
       setIndiriliyor(false);
@@ -538,28 +605,52 @@ function MainApp() {
   const pdfIndir = async () => {
     setPdfYukleniyor(true);
     try {
-      const dataUrl = await posterPngYakala();
-      if (!dataUrl) return;
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const pdfH = pdf.internal.pageSize.getHeight();
-      const margin = 15;
-      const imgW = pdfW - margin * 2;
-      const imgH = (imgW * POSTER_H) / POSTER_W;
-      const finalH = Math.min(imgH, pdfH - margin * 2);
-      const y = (pdfH - finalH) / 2;
-
-      pdf.addImage(dataUrl, "PNG", margin, y, imgW, finalH);
-      pdf.save(`nehari-veli-bilgilendirme-${seciliSablon}.pdf`);
+      await withExportNode((node) =>
+        exportPosterAsPdf(
+          node,
+          `nehari-veli-bilgilendirme-${seciliSablon}.pdf`,
+          { width: POSTER_W, height: POSTER_H },
+        ),
+      );
       aktiviteKaydet("export_pdf");
       backendEvent("poster_downloaded", { format: "pdf" });
+    } catch (err) {
+      console.error("[VeliBilgilendirme] PDF indirme hatası:", err);
+      if (err instanceof PosterExportError && err.code === "EMPTY_CANVAS") {
+        toast.error("PDF oluşturulamadı — şablon render edilemedi. Lütfen tekrar deneyin.");
+      } else {
+        toast.error("Afiş PDF olarak kaydedilemedi. Lütfen tekrar deneyin.");
+      }
     } finally {
       setPdfYukleniyor(false);
     }
   };
 
+  const dosyaIndir = (file: File) => {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const nativeShareWithTimeout = (shareData: ShareData) =>
+    Promise.race([
+      navigator.share(shareData),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error("SHARE_TIMEOUT")), SHARE_TIMEOUT_MS);
+      }),
+    ]);
+
   const whatsappPaylas = async () => {
+    if (whatsappShareInProgress.current) {
+      toast.info("WhatsApp paylaşımı hazırlanıyor. Lütfen paylaşım penceresini tamamlayın.");
+      return;
+    }
+
     const metin = [
       form.kurumAdi && `📚 ${form.kurumAdi}`,
       form.posterMetni,
@@ -568,48 +659,74 @@ function MainApp() {
       .filter(Boolean)
       .join("\n\n");
 
-    if (navigator.canShare) {
-      try {
-        const dataUrl = await posterPngYakala();
-        if (dataUrl) {
-          const blob = await (await fetch(dataUrl)).blob();
-          const file = new File([blob], "afis.png", { type: "image/png" });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: "Nehari Veli Bilgilendirme - Veli Bilgilendirme Afişi",
-              text: metin,
-            });
-            aktiviteKaydet("share_whatsapp");
-            return;
-          }
-        }
-      } catch {}
-    }
+    whatsappShareInProgress.current = true;
+    setWhatsappPaylasiliyor(true);
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(metin)}`, "_blank");
-    aktiviteKaydet("share_whatsapp");
+    try {
+      const file = await withExportNode((node) =>
+        renderPosterAsFile(
+          node,
+          `nehari-veli-bilgilendirme-${seciliSablon}.png`,
+          { width: POSTER_W, height: POSTER_H },
+        ),
+      );
+
+      if (!navigator.share || !navigator.canShare) {
+        dosyaIndir(file);
+        toast.error("Bu tarayıcı WhatsApp'a görselli paylaşımı desteklemiyor. PNG indirildi; WhatsApp'a dosya olarak ekleyebilirsiniz.");
+        return;
+      }
+
+      if (!navigator.canShare({ files: [file] })) {
+        dosyaIndir(file);
+        toast.error("Bu cihaz WhatsApp'a PNG dosyası paylaşmayı desteklemiyor. PNG indirildi; WhatsApp'a dosya olarak ekleyebilirsiniz.");
+        return;
+      }
+
+      await nativeShareWithTimeout({
+        files: [file],
+        title: "Nehari Veli Bilgilendirme - Veli Bilgilendirme Afişi",
+        text: metin,
+      });
+
+      aktiviteKaydet("share_whatsapp");
+      toast.success("Görselli WhatsApp paylaşımı hazırlandı.");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+
+      if (err instanceof DOMException && err.name === "InvalidStateError") {
+        toast.info("Önce açık olan paylaşım penceresini kapatın veya tamamlayın.");
+        return;
+      }
+
+      if (err instanceof Error && err.message === "SHARE_TIMEOUT") {
+        console.warn("[VeliBilgilendirme] WhatsApp dosyalı paylaşım zaman aşımına uğradı.");
+        toast.info("Paylaşım penceresi açılmadıysa tekrar deneyin. Gerekirse PNG indirip WhatsApp'a ekleyebilirsiniz.");
+        return;
+      }
+
+      console.error("[VeliBilgilendirme] WhatsApp dosyalı paylaşım hatası:", err);
+      toast.error("Görselli WhatsApp paylaşımı başlatılamadı. PNG indirip WhatsApp'a ekleyebilirsiniz.");
+    } finally {
+      whatsappShareInProgress.current = false;
+      setWhatsappPaylasiliyor(false);
+    }
   };
 
   const cikisYap = useCallback(async () => {
     await api.cikisYap();
-    clearLocalVeliWizardDraft();
+    clearSessionVeliWizardDraft();
     setKullanici(null);
     setForm(baslangicForm);
     setMetinDuzenlendi(false);
     setAktifSekme("form");
+    setActiveStep(0);
     setHomeModu("kategoriler");
   }, []);
 
   const anaSayfayaDon = useCallback(() => {
-    if (
-      formdaKaydedilecekVeriVar &&
-      !window.confirm("Afiş bilgileriniz bu cihazda taslak olarak saklandı. Yine de ana sayfaya dönmek istiyor musunuz?")
-    ) {
-      return;
-    }
-    goToAppHome();
-  }, [formdaKaydedilecekVeriVar]);
+    cikisIste(goToAppHome);
+  }, [cikisIste]);
 
   // ?force-logout=1 parametresi: çıkış sonrası kesin login ekranı göster.
   // Backend session hâlâ aktif olsa bile (çerez temizlenememiş) login ekranı açılır.
@@ -881,12 +998,27 @@ function MainApp() {
 
       <button
         onClick={whatsappPaylas}
-        style={paylasBtnStil("linear-gradient(135deg, #15803d 0%, #22c55e 100%)")}
+        disabled={whatsappPaylasiliyor}
+        style={paylasBtnStil("linear-gradient(135deg, #15803d 0%, #22c55e 100%)", whatsappPaylasiliyor)}
       >
-        <svg width={16} height={16} fill="currentColor" viewBox="0 0 24 24">
-          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-        </svg>
-        WA
+        {whatsappPaylasiliyor ? (
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              border: "2px solid rgba(255,255,255,0.3)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+              display: "inline-block",
+            }}
+          />
+        ) : (
+          <svg width={16} height={16} fill="currentColor" viewBox="0 0 24 24">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+          </svg>
+        )}
+        {whatsappPaylasiliyor ? "Hazır..." : "WA"}
       </button>
     </div>
   );
@@ -1235,7 +1367,7 @@ function MainApp() {
                 <div className="veli-wizard-bottom-bar__exports">
                   <button type="button" onClick={afisiIndir} disabled={indiriliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--primary veli-wizard-bottom-bar__btn--compact">PNG</button>
                   <button type="button" onClick={pdfIndir} disabled={pdfYukleniyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--danger veli-wizard-bottom-bar__btn--compact">PDF</button>
-                  <button type="button" onClick={whatsappPaylas} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">WA</button>
+                  <button type="button" onClick={whatsappPaylas} disabled={whatsappPaylasiliyor} className="veli-wizard-bottom-bar__btn veli-wizard-bottom-bar__btn--success veli-wizard-bottom-bar__btn--compact">{whatsappPaylasiliyor ? "..." : "WA"}</button>
                 </div>
               )
             }
@@ -1244,7 +1376,20 @@ function MainApp() {
       </div>
 
       {captureSnapshot && (
-        <div style={{ position: "absolute", top: -9999, left: 0, width: POSTER_W, height: POSTER_H, overflow: "hidden", pointerEvents: "none" }}>
+        <div
+          data-poster-export-capture
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: POSTER_W,
+            height: POSTER_H,
+            overflow: "hidden",
+            opacity: 0,
+            pointerEvents: "none",
+            zIndex: -1,
+          }}
+        >
           <VeliOnizlemeIcerik
             form={captureSnapshot.form}
             sablon={captureSnapshot.sablon}
@@ -1266,6 +1411,37 @@ function MainApp() {
       )}
 
       {destekAcik && <DestekModal onKapat={() => setDestekAcik(false)} kullanici={kullanici} />}
+
+      <AlertDialog
+        open={cikisModalAcik}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (intentionalCikisRef.current) {
+              intentionalCikisRef.current = false;
+            } else {
+              formdaKal();
+            }
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-[min(24rem,calc(100vw-2rem))]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Formdan çıkılıyor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hazırladığınız bilgiler silinebilir. Çıkmak istiyor musunuz?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel onClick={formdaKal}>Formda Kal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={kaydetmedenCik}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Kaydetmeden Çık
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

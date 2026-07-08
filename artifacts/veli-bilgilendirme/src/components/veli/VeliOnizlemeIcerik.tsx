@@ -12,6 +12,7 @@ import SablonKurumsalResmi from "@/components/sablonlar/SablonKurumsalResmi";
 import SablonHikaye from "@/components/sablonlar/SablonHikaye";
 import SablonFotografOdakli from "@/components/sablonlar/SablonFotografOdakli";
 import SablonPro from "@/components/sablonlar/SablonPro";
+import { TemplateQualityGate } from "@/lib/sablonlar/templateLayoutEngine";
 
 const TEMALI: SablonTuru[] = ["lacivert", "mor", "kirmizi", "turuncu", "pembe", "teal", "altin"];
 
@@ -53,7 +54,7 @@ export function VeliOnizlemeIcerik({
 
   return (
     <VeliPosterArtboard artboardRef={artboardRef}>
-      {sablonIcerik(f, sablon, tarih)}
+      <TemplateQualityGate>{sablonIcerik(f, sablon, tarih)}</TemplateQualityGate>
     </VeliPosterArtboard>
   );
 }

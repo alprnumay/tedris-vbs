@@ -22,6 +22,12 @@ export const posterShellStyle: CSSProperties = {
 
 export const posterHeaderStyle: CSSProperties = {
   flexShrink: 0,
+  overflow: "visible",
+  minHeight: "auto",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "stretch",
+  justifyContent: "flex-start",
 };
 
 export const posterBodyStyle: CSSProperties = {

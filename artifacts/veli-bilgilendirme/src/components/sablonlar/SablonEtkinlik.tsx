@@ -10,6 +10,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Props { form: FormData; tarih: string; }
 
@@ -18,7 +19,7 @@ function GorselGrid({ gorseller }: { gorseller: string[] }) {
   if (gorseller.length === 1) {
     return (
       <div style={{ borderRadius: 12, overflow: "hidden" }}>
-        <img src={gorseller[0]} alt="Görsel" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+        <img src={gorseller[0]} alt="Görsel" style={templatePhotoStyle({ height: 200 })} />
       </div>
     );
   }
@@ -26,7 +27,7 @@ function GorselGrid({ gorseller }: { gorseller: string[] }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.map((g, i) => (
         <div key={i} style={{ borderRadius: 12, overflow: "hidden" }}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+          <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 160 })} />
         </div>
       ))}
     </div>
@@ -34,12 +35,12 @@ function GorselGrid({ gorseller }: { gorseller: string[] }) {
   if (gorseller.length === 3) return (
     <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 8 }}>
       <div style={{ borderRadius: 12, overflow: "hidden" }}>
-        <img src={gorseller[0]} alt="Görsel 1" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+        <img src={gorseller[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 180 })} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {gorseller.slice(1).map((g, i) => (
           <div key={i} style={{ borderRadius: 12, overflow: "hidden" }}>
-            <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 86, objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 86 })} />
           </div>
         ))}
       </div>
@@ -49,7 +50,7 @@ function GorselGrid({ gorseller }: { gorseller: string[] }) {
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.slice(0, 4).map((g, i) => (
         <div key={i} style={{ borderRadius: 12, overflow: "hidden" }}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+          <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 160 })} />
         </div>
       ))}
     </div>
@@ -71,11 +72,11 @@ export default function SablonEtkinlik({ form, tarih }: Props) {
           </div>
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{tarih}</div>
         </div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", margin: 0, lineHeight: 1.3 }}>{baslik}</h1>
-        {form.kurumAdi && <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.8)", margin: "4px 0 0" }}>{form.kurumAdi}</p>}
+        <TemplateTitle text={baslik} baseSize={20} style={{ fontWeight: 800, color: "#ffffff", margin: 0 }}>{baslik}</TemplateTitle>
+        {form.kurumAdi && <TemplateSubtitle text={form.kurumAdi} baseSize={14} style={{ fontWeight: 600, color: "rgba(255,255,255,0.8)", margin: "4px 0 0" }}>{form.kurumAdi}</TemplateSubtitle>}
       </div>
 
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, background: "#ffffff" }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, background: "#ffffff", ...calculateCardSpacing({ itemCount: aktifFaaliyetler.length + form.gorseller.length, textLength: aciklama.length }) }}>
         {form.gorseller.length > 0 ? (
           <div style={{ padding: "16px 16px 0" }}>
             <GorselGrid gorseller={form.gorseller} />
@@ -103,7 +104,7 @@ export default function SablonEtkinlik({ form, tarih }: Props) {
 
         <div style={{ padding: 16, flex: 1, minHeight: 0 }}>
           <div style={{ borderRadius: 12, padding: 16, background: "#f0fdf4", border: "1px solid #86efac" }}>
-            <p style={{ fontSize: 14, lineHeight: 1.75, color: "#14532d", margin: 0 }}>{aciklama}</p>
+            <TemplateDescription text={aciklama} fontSize={14} maxLines={8} style={{ color: "#14532d", margin: 0 }}>{aciklama}</TemplateDescription>
           </div>
         </div>
       </div>

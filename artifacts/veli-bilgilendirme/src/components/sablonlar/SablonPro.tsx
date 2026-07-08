@@ -1,7 +1,9 @@
-﻿import type { CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { FormData, SablonTuru } from "../../types";
 import { baslikolustur } from "../../lib/dil";
 import { POSTER_SHELL_CLS, posterShellStyle } from "../../lib/sablonlar/posterShell";
+import { calculateDescriptionClamp, calculateSubtitleSize, calculateTitleSize, templatePhotoStyle } from "../../lib/sablonlar/templateLayoutEngine";
+import { PosterTemplateHeader } from "../veli/PosterTemplateHeader";
 
 type Variant =
   | "card"
@@ -58,7 +60,7 @@ function activeItems(form: FormData) {
 }
 
 function Photo({ src, h = 130, radius = 18 }: { src: string; h?: number; radius?: number }) {
-  return <img src={src} alt="Görsel" style={{ width: "100%", height: h, objectFit: "cover", display: "block", borderRadius: radius }} />;
+  return <img src={src} alt="Görsel" style={{ ...templatePhotoStyle({ height: h }), borderRadius: radius }} />;
 }
 
 function PhotoBlock({ photos, variant, accent }: { photos: string[]; variant: Variant; accent: string }) {
@@ -113,6 +115,8 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
   const dark = ["hero", "navy"].includes(cfg.variant);
   const base: CSSProperties = { ...posterShellStyle, borderRadius: 18, background: cfg.bg, color: cfg.ink, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" };
   const shellCls = POSTER_SHELL_CLS;
+  const titleStyle = (baseSize: number): CSSProperties => calculateTitleSize(baslik, { base: baseSize });
+  const descriptionStyle = (fontSize: number, maxLines = 7): CSSProperties => calculateDescriptionClamp(metin, { fontSize, maxLines });
   const header = (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
       <span style={{ borderRadius: 999, padding: "5px 10px", background: dark ? "rgba(255,255,255,.13)" : `${cfg.accent}18`, color: dark ? "#fff" : cfg.accent, fontSize: 10, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase" }}>VELİ BİLGİLENDİRME</span>
@@ -131,7 +135,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
       <div className={shellCls} style={{ ...base, background: "#0f172a", color: "#fff" }}>
         <div style={{ flex: "0 0 44%", minHeight: 260, maxHeight: 320, position: "relative", overflow: "hidden", flexShrink: 0 }}>
           {photos.length > 0 ? (
-            <img src={photos[0]} alt="Kapak" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img src={photos[0]} alt="Kapak" style={templatePhotoStyle({ height: "100%" })} />
           ) : (
             <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${cfg.accent}33 0%, #0f172a 100%)`, display: "grid", placeItems: "center", color: "rgba(255,255,255,.55)", fontSize: 13, fontWeight: 700 }}>
               Hero görseli
@@ -141,9 +145,9 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
         </div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: "16px 22px 0", overflow: "hidden" }}>
           {header}
-          <h1 style={{ fontSize: 24, lineHeight: 1.15, margin: "12px 0 6px", fontWeight: 950, overflow: "hidden" }}>{baslik}</h1>
+          <h1 data-template-title style={{ ...titleStyle(24), margin: "12px 0 6px", fontWeight: 950 }}>{baslik}</h1>
           {form.kurumAdi && <div style={{ fontSize: 11, color: cfg.accent, fontWeight: 800, marginBottom: 8, flexShrink: 0 }}>{form.kurumAdi}</div>}
-          <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, flex: 1, minHeight: 0, overflow: "hidden", color: "rgba(255,255,255,.82)" }}>{metin}</p>
+          <p data-template-description style={{ ...descriptionStyle(13, 6), margin: 0, flex: 1, minHeight: 0, color: "rgba(255,255,255,.82)" }}>{metin}</p>
           {activeItems(form).length > 0 && (
             <div style={{ marginTop: 12, flexShrink: 0 }}>
               <InfoCards form={form} accent={cfg.accent} light />
@@ -160,7 +164,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", overflow: "hidden" }}>
           {photos.length > 0 ? (
             <div style={{ flex: 1, minHeight: 0, borderRadius: 18, overflow: "hidden" }}>
-              <img src={photos[0]} alt="Görsel" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <img src={photos[0]} alt="Görsel" style={templatePhotoStyle({ height: "100%" })} />
             </div>
           ) : (
             <div style={{ flex: 1, minHeight: 0, borderRadius: 18, background: `linear-gradient(160deg, ${cfg.accent}22, ${cfg.bg})`, border: `1px dashed ${cfg.accent}55`, display: "grid", placeItems: "center", color: cfg.accent, fontSize: 12, fontWeight: 800, padding: 16, textAlign: "center" }}>
@@ -170,7 +174,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
         </div>
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", gap: 12, overflow: "hidden" }}>
           {header}
-          <h1 style={{ fontSize: 22, lineHeight: 1.18, margin: 0, fontWeight: 950, flexShrink: 0, overflow: "hidden" }}>{baslik}</h1>
+          <h1 data-template-title style={{ ...titleStyle(22), margin: 0, fontWeight: 950, flexShrink: 0 }}>{baslik}</h1>
           {form.kurumAdi && <div style={{ fontSize: 11, color: cfg.accent, fontWeight: 800, flexShrink: 0 }}>{form.kurumAdi}</div>}
           {activeItems(form).length > 0 && (
             <div style={{ flexShrink: 0 }}>
@@ -178,22 +182,22 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0, borderRadius: 16, background: cfg.soft, padding: 14, overflow: "hidden" }}>
-            <p style={{ fontSize: 13, lineHeight: 1.65, margin: 0, overflow: "hidden" }}>{metin}</p>
+            <p data-template-description style={{ ...descriptionStyle(13, 6), margin: 0 }}>{metin}</p>
           </div>
           <div style={{ marginTop: "auto", flexShrink: 0 }}>{footer}</div>
         </div>
       </div>
     );
   }
-  if (cfg.variant === "bento") return <div className={shellCls} style={{ ...base, padding: 22 }}><div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 12, flex: 1, minHeight: 0, overflow: "hidden", alignContent: "start" }}>{<div style={{ borderRadius: 22, background: "#fff", padding: 18 }}>{header}<h1 style={{ fontSize: 25, lineHeight: 1.16, margin: "18px 0 0", fontWeight: 950 }}>{baslik}</h1></div>}<div style={{ borderRadius: 22, background: cfg.accent, color: "#fff", padding: 18, fontWeight: 900 }}>{form.kurumAdi || "Kurum Bilgisi"}</div><div style={{ gridColumn: "span 2" }}><PhotoBlock photos={photos} variant="collage" accent={cfg.accent} /></div><div style={{ gridColumn: "span 2" }}><InfoCards form={form} accent={cfg.accent} /></div><div style={{ gridColumn: "span 2", borderRadius: 20, background: "#fff", padding: 16 }}><p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.65 }}>{metin}</p></div></div><div style={{ flexShrink: 0, marginTop: "auto" }}>{footer}</div></div>;
-  if (cfg.variant === "timeline") return <div className={shellCls} style={{ ...base, padding: 24 }}><div style={{ borderLeft: `4px solid ${cfg.accent}`, paddingLeft: 18, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>{header}<h1 style={{ fontSize: 26, lineHeight: 1.18, margin: "20px 0", fontWeight: 950 }}>{baslik}</h1>{activeItems(form).map((f, i) => <div key={i} style={{ position: "relative", marginBottom: 14, padding: "12px 14px", borderRadius: 16, background: "#fff" }}><span style={{ position: "absolute", left: -30, top: 14, width: 14, height: 14, borderRadius: 999, background: cfg.accent }} /><b>{f.tur || `Adım ${i + 1}`}</b><div style={{ fontSize: 12, color: "#64748b" }}>{[f.alan, f.ozelNot].filter(Boolean).join(" · ")}</div></div>)}<p style={{ fontSize: 13.5, lineHeight: 1.7, flex: 1, minHeight: 0, overflow: "hidden" }}>{metin}</p>{footer}</div></div>;
-  if (cfg.variant === "navy") return <div className={shellCls} style={{ ...base, padding: 24, background: "linear-gradient(145deg,#020617,#172554)", color: "#fff" }}>{header}<h1 style={{ fontSize: 28, lineHeight: 1.12, margin: "22px 0 14px", fontWeight: 950 }}>{baslik}</h1><PhotoBlock photos={photos} variant="collage" accent={cfg.accent} /><div style={{ marginTop: 16 }}><InfoCards form={form} accent={cfg.accent} light /></div><p style={{ fontSize: 13.5, lineHeight: 1.7, color: "rgba(255,255,255,.78)", flex: 1, minHeight: 0, overflow: "hidden" }}>{metin}</p><div style={{ marginTop: "auto", flexShrink: 0 }}>{footer}</div></div>;
+  if (cfg.variant === "bento") return <div className={shellCls} style={{ ...base, padding: 22 }}><div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: 12, flex: 1, minHeight: 0, overflow: "hidden", alignContent: "start" }}>{<div style={{ borderRadius: 22, background: "#fff", padding: 18 }}>{header}<h1 data-template-title style={{ ...titleStyle(25), margin: "18px 0 0", fontWeight: 950 }}>{baslik}</h1></div>}<div style={{ borderRadius: 22, background: cfg.accent, color: "#fff", padding: 18, fontWeight: 900 }}>{form.kurumAdi || "Kurum Bilgisi"}</div><div style={{ gridColumn: "span 2" }}><PhotoBlock photos={photos} variant="collage" accent={cfg.accent} /></div><div style={{ gridColumn: "span 2" }}><InfoCards form={form} accent={cfg.accent} /></div><div style={{ gridColumn: "span 2", borderRadius: 20, background: "#fff", padding: 16 }}><p data-template-description style={{ ...descriptionStyle(13.5, 5), margin: 0 }}>{metin}</p></div></div><div style={{ flexShrink: 0, marginTop: "auto" }}>{footer}</div></div>;
+  if (cfg.variant === "timeline") return <div className={shellCls} style={{ ...base, padding: 24 }}><div style={{ borderLeft: `4px solid ${cfg.accent}`, paddingLeft: 18, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>{header}<h1 data-template-title style={{ ...titleStyle(26), margin: "20px 0", fontWeight: 950 }}>{baslik}</h1>{activeItems(form).map((f, i) => <div key={i} style={{ position: "relative", marginBottom: 14, padding: "12px 14px", borderRadius: 16, background: "#fff" }}><span style={{ position: "absolute", left: -30, top: 14, width: 14, height: 14, borderRadius: 999, background: cfg.accent }} /><b>{f.tur || `Adım ${i + 1}`}</b><div style={{ fontSize: 12, color: "#64748b" }}>{[f.alan, f.ozelNot].filter(Boolean).join(" · ")}</div></div>)}<p data-template-description style={{ ...descriptionStyle(13.5, 6), flex: 1, minHeight: 0 }}>{metin}</p>{footer}</div></div>;
+  if (cfg.variant === "navy") return <div className={shellCls} style={{ ...base, padding: 24, background: "linear-gradient(145deg,#020617,#172554)", color: "#fff" }}>{header}<h1 data-template-title style={{ ...titleStyle(28), margin: "22px 0 14px", fontWeight: 950 }}>{baslik}</h1><PhotoBlock photos={photos} variant="collage" accent={cfg.accent} /><div style={{ marginTop: 16 }}><InfoCards form={form} accent={cfg.accent} light /></div><p data-template-description style={{ ...descriptionStyle(13.5, 6), color: "rgba(255,255,255,.78)", flex: 1, minHeight: 0 }}>{metin}</p><div style={{ marginTop: "auto", flexShrink: 0 }}>{footer}</div></div>;
   if (cfg.variant === "magazine") {
     return (
       <div className={shellCls} style={{ ...base, padding: "20px 22px 18px" }}>
         <div style={{ flexShrink: 0, borderBottom: `3px solid ${cfg.accent}`, paddingBottom: 14 }}>
           {header}
-          <h1 style={{ fontSize: 28, lineHeight: 1.12, margin: "16px 0 8px", fontWeight: 950, letterSpacing: "-.03em", overflow: "hidden" }}>{baslik}</h1>
+          <h1 data-template-title style={{ ...titleStyle(28), margin: "16px 0 8px", fontWeight: 950, letterSpacing: "-.03em" }}>{baslik}</h1>
           {form.kurumAdi && (
             <div style={{ color: cfg.accent, fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".06em" }}>{form.kurumAdi}</div>
           )}
@@ -201,7 +205,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 12, paddingTop: 14, overflow: "hidden" }}>
           {photos.length > 0 && (
             <div style={{ flexShrink: 0, borderRadius: 12, overflow: "hidden", height: 170 }}>
-              <img src={photos[0]} alt="Görsel" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <img src={photos[0]} alt="Görsel" style={templatePhotoStyle({ height: "100%" })} />
             </div>
           )}
           {activeItems(form).length > 0 && (
@@ -211,7 +215,7 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
           )}
           <div style={{ flex: 1, minHeight: 0, borderRadius: 16, background: cfg.soft, padding: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: 10, fontWeight: 900, color: cfg.accent, textTransform: "uppercase", letterSpacing: ".1em", marginBottom: 8, flexShrink: 0 }}>Faaliyet Özeti</div>
-            <p style={{ fontSize: 13.5, lineHeight: 1.7, margin: 0, overflow: "hidden", flex: 1 }}>{metin}</p>
+            <p data-template-description style={{ ...descriptionStyle(13.5, 6), margin: 0, flex: 1 }}>{metin}</p>
           </div>
         </div>
         <div style={{ marginTop: "auto", flexShrink: 0, paddingTop: 12 }}>{footer}</div>
@@ -222,16 +226,40 @@ export default function SablonPro({ form, tarih, sablonId }: { form: FormData; t
   const boxed = cfg.variant === "frame" ? { border: `6px double ${cfg.accent}`, background: cfg.bg } : {};
   return (
     <div className={shellCls} style={{ ...base, ...boxed, padding: 22 }}>
-      {header}
-      <div style={{ display: cfg.variant === "magazine" ? "grid" : "block", gridTemplateColumns: "1fr .9fr", gap: 18 }}>
+      <PosterTemplateHeader style={{ padding: 0, marginBottom: 4 }}>
+        {header}
+        <h1
+          data-template-title
+          style={{
+            ...titleStyle(cfg.variant === "announce" ? 34 : 25),
+            margin: "14px 0 8px",
+            fontWeight: 800,
+            letterSpacing: "-.035em",
+          }}
+        >
+          {baslik}
+        </h1>
+        {form.kurumAdi && (
+          <div
+            data-template-subtitle
+            style={{
+              ...calculateSubtitleSize(form.kurumAdi, { base: 12 }),
+              color: cfg.accent,
+              fontWeight: 800,
+              marginBottom: 12,
+            }}
+          >
+            {form.kurumAdi}
+          </div>
+        )}
+      </PosterTemplateHeader>
+      <div style={{ display: "block", gridTemplateColumns: "1fr .9fr", gap: 18 }}>
         <div>
-          <h1 style={{ fontSize: cfg.variant === "announce" ? 34 : 25, lineHeight: 1.14, margin: "18px 0 10px", fontWeight: 950, letterSpacing: "-.035em" }}>{baslik}</h1>
-          {form.kurumAdi && <div style={{ color: cfg.accent, fontSize: 12, fontWeight: 900, marginBottom: 12 }}>{form.kurumAdi}</div>}
-          {["minimal", "note", "paper", "signature"].includes(cfg.variant) && <p style={{ fontSize: 15, lineHeight: 1.75, margin: "14px 0", background: cfg.soft, padding: 16, borderRadius: 18 }}>{metin}</p>}
+          {["minimal", "note", "paper", "signature"].includes(cfg.variant) && <p data-template-description style={{ ...descriptionStyle(15, 7), margin: "14px 0", background: cfg.soft, padding: 16, borderRadius: 18 }}>{metin}</p>}
         </div>
         {cfg.variant !== "minimal" && <PhotoBlock photos={photos} variant={cfg.variant} accent={cfg.accent} />}
       </div>
-      {!["minimal", "note", "paper", "signature"].includes(cfg.variant) && <p style={{ fontSize: 13.5, lineHeight: 1.7, margin: "16px 0", background: cfg.soft, padding: 15, borderRadius: 18 }}>{metin}</p>}
+      {!["minimal", "note", "paper", "signature"].includes(cfg.variant) && <p data-template-description style={{ ...descriptionStyle(13.5, 6), margin: "16px 0", background: cfg.soft, padding: 15, borderRadius: 18 }}>{metin}</p>}
       {cfg.variant === "grid" ? <InfoCards form={form} accent={cfg.accent} /> : <div style={{ marginTop: 12 }}><InfoCards form={form} accent={cfg.accent} /></div>}
       <div style={{ marginTop: "auto", flexShrink: 0 }}>{footer}</div>
     </div>

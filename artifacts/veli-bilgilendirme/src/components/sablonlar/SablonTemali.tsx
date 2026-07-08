@@ -10,6 +10,7 @@ import {
   posterHeaderStyle,
   posterShellStyle,
 } from "../../lib/sablonlar/posterShell";
+import { calculateCardSpacing, TemplateDescription, templatePhotoStyle, TemplateSubtitle, TemplateTitle } from "../../lib/sablonlar/templateLayoutEngine";
 
 interface Tema {
   baslik: string;
@@ -148,7 +149,7 @@ function GorselGrid({ gorseller, borderColor }: { gorseller: string[]; borderCol
   if (gorseller.length === 1) {
     return (
       <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${borderColor}` }}>
-        <img src={gorseller[0]} alt="Görsel" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+        <img src={gorseller[0]} alt="Görsel" style={templatePhotoStyle({ height: 200 })} />
       </div>
     );
   }
@@ -157,7 +158,7 @@ function GorselGrid({ gorseller, borderColor }: { gorseller: string[]; borderCol
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {gorseller.map((g, i) => (
           <div key={i} style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${borderColor}` }}>
-            <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 150 })} />
           </div>
         ))}
       </div>
@@ -167,12 +168,12 @@ function GorselGrid({ gorseller, borderColor }: { gorseller: string[]; borderCol
     return (
       <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 8 }}>
         <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${borderColor}` }}>
-          <img src={gorseller[0]} alt="Görsel 1" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+          <img src={gorseller[0]} alt="Görsel 1" style={templatePhotoStyle({ height: 180 })} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {gorseller.slice(1).map((g, i) => (
             <div key={i} style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${borderColor}`, flex: 1 }}>
-              <img src={g} alt={`Görsel ${i + 2}`} style={{ width: "100%", height: 84, objectFit: "cover", display: "block" }} />
+              <img src={g} alt={`Görsel ${i + 2}`} style={templatePhotoStyle({ height: 84 })} />
             </div>
           ))}
         </div>
@@ -183,7 +184,7 @@ function GorselGrid({ gorseller, borderColor }: { gorseller: string[]; borderCol
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
       {gorseller.slice(0, 4).map((g, i) => (
         <div key={i} style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${borderColor}` }}>
-          <img src={g} alt={`Görsel ${i + 1}`} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+            <img src={g} alt={`Görsel ${i + 1}`} style={templatePhotoStyle({ height: 150 })} />
         </div>
       ))}
     </div>
@@ -209,10 +210,10 @@ function LayoutKlasik({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
           </div>
           <div style={{ fontSize: 11, color: t.headerSubColor, whiteSpace: "nowrap", marginLeft: 8 }}>{tarih}</div>
         </div>
-        <h1 style={{ fontSize: 19, fontWeight: 800, color: t.headerTextColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
-        {form.kurumAdi && <div style={{ fontSize: 13, fontWeight: 600, color: t.headerSubColor }}>{form.kurumAdi}</div>}
+        <TemplateTitle text={baslik} baseSize={19} style={{ fontWeight: 800, color: t.headerTextColor, margin: "0 0 4px" }}>{baslik}</TemplateTitle>
+        {form.kurumAdi && <TemplateSubtitle text={form.kurumAdi} baseSize={13} style={{ fontWeight: 600, color: t.headerSubColor }}>{form.kurumAdi}</TemplateSubtitle>}
       </div>
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 20px", gap: 14 }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "16px 20px", ...calculateCardSpacing({ itemCount: aktifFaaliyetler.length + form.gorseller.length, textLength: aciklama.length }) }}>
         {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
         {aktifFaaliyetler.length > 0 && (
           <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${t.borderColor}`, flexShrink: 0 }}>
@@ -225,7 +226,7 @@ function LayoutKlasik({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
           </div>
         )}
         <div style={{ flex: 1, minHeight: 0, borderRadius: 10, padding: 14, background: t.accentLight, borderLeft: `4px solid ${t.accentColor}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={8} style={{ color: t.textColor, margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
       <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px", borderTop: `1px solid ${t.borderColor}`, background: t.bodyBg }}>
@@ -261,8 +262,8 @@ function LayoutSidebar({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", background: t.bodyBg }}>
         <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, flex: 1, padding: "16px 18px", gap: 12 }}>
           <div style={{ borderBottom: `2px solid ${t.borderColor}`, paddingBottom: 10, flexShrink: 0 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 800, color: t.textColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
-            {form.kurumAdi && <p style={{ fontSize: 12, color: t.subTextColor, margin: 0, fontWeight: 600 }}>{form.kurumAdi}</p>}
+            <TemplateTitle text={baslik} baseSize={18} style={{ fontWeight: 800, color: t.textColor, margin: "0 0 4px" }}>{baslik}</TemplateTitle>
+            {form.kurumAdi && <TemplateSubtitle text={form.kurumAdi} baseSize={12} style={{ color: t.subTextColor, margin: 0, fontWeight: 600 }}>{form.kurumAdi}</TemplateSubtitle>}
           </div>
           {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
           {aktifFaaliyetler.length > 0 && (
@@ -276,7 +277,7 @@ function LayoutSidebar({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
             </div>
           )}
           <div style={{ borderRadius: 8, padding: 12, background: t.accentLight, borderLeft: `3px solid ${t.accentColor}`, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <p style={{ fontSize: 13, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
+            <TemplateDescription text={aciklama} fontSize={13} maxLines={8} style={{ color: t.textColor, margin: 0 }}>{aciklama}</TemplateDescription>
           </div>
         </div>
         <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 18px 14px", borderTop: `1px solid ${t.borderColor}` }}>
@@ -306,14 +307,14 @@ function LayoutKarti({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
           </div>
           <span style={{ fontSize: 10, color: t.subTextColor }}>{tarih}</span>
         </div>
-        <h1 style={{ fontSize: 19, fontWeight: 800, color: t.textColor, margin: "0 0 4px", lineHeight: 1.3 }}>{baslik}</h1>
+        <TemplateTitle text={baslik} baseSize={19} style={{ fontWeight: 800, color: t.textColor, margin: "0 0 4px" }}>{baslik}</TemplateTitle>
         {form.kurumAdi && (
           <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, padding: "3px 10px", borderRadius: 20, background: t.accentLight, border: `1px solid ${t.borderColor}` }}>
-            <span style={{ fontSize: 11, color: t.accentColor, fontWeight: 600 }}>{form.kurumAdi}</span>
+            <TemplateSubtitle text={form.kurumAdi} baseSize={11} style={{ color: t.accentColor, fontWeight: 600 }}>{form.kurumAdi}</TemplateSubtitle>
           </div>
         )}
       </div>
-      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "14px 20px", gap: 14, background: t.bodyBg }}>
+      <div className={POSTER_BODY_CLS} style={{ ...posterBodyStyle, padding: "14px 20px", background: t.bodyBg, ...calculateCardSpacing({ itemCount: aktifFaaliyetler.length + form.gorseller.length, textLength: aciklama.length }) }}>
         {form.gorseller.length > 0 && <GorselGrid gorseller={form.gorseller} borderColor={t.borderColor} />}
         {aktifFaaliyetler.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -326,7 +327,7 @@ function LayoutKarti({ t, form, tarih, baslik, aciklama, aktifFaaliyetler }: {
           </div>
         )}
         <div style={{ borderRadius: 10, padding: 14, background: "#fff", border: `1px solid ${t.borderColor}`, borderLeft: `4px solid ${t.accentColor}`, flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <p style={{ fontSize: 14, lineHeight: 1.75, color: t.textColor, margin: 0, overflow: "hidden" }}>{aciklama}</p>
+          <TemplateDescription text={aciklama} fontSize={14} maxLines={8} style={{ color: t.textColor, margin: 0 }}>{aciklama}</TemplateDescription>
         </div>
       </div>
       <div className={POSTER_FOOTER_CLS} style={{ ...posterFooterStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px 16px", borderTop: `2px solid ${t.accentColor}`, background: t.bodyBg }}>
