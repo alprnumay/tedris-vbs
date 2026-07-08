@@ -1,4 +1,5 @@
 import type { SablonTuru } from "@/types";
+import { PORTRAIT_RATIO_THRESHOLD } from "@/lib/images/validatePosterImage";
 
 export type GorselBoyut = { width: number; height: number; dikey: boolean };
 
@@ -6,7 +7,7 @@ export function gorselBoyutOku(src: string): Promise<GorselBoyut> {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
-      const dikey = img.naturalHeight > img.naturalWidth * 1.05;
+      const dikey = img.naturalHeight > img.naturalWidth * PORTRAIT_RATIO_THRESHOLD;
       resolve({ width: img.naturalWidth, height: img.naturalHeight, dikey });
     };
     img.onerror = () => resolve({ width: 1, height: 1, dikey: false });

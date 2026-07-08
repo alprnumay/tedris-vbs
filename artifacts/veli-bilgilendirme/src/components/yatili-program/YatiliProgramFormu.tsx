@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Sparkles, Zap } from "lucide-react";
+import { toast } from "sonner";
 import { normalizeYatiliProgramForm } from "@/lib/yatili-program/yatiliMetinUretici";
 import { otomatikMetinDoldur } from "@/lib/yatili-program/yatiliMetinUretici";
 import {
@@ -10,6 +11,10 @@ import {
 } from "@/types/yatiliProgram";
 import { YatiliBlokPaneli } from "./YatiliBlokPaneli";
 import { YatiliSablonSecici } from "./YatiliSablonSecici";
+import {
+  POSTER_IMAGE_FIELD_HINT,
+  processPosterImageFiles,
+} from "@/lib/images/validatePosterImage";
 
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
@@ -40,15 +45,6 @@ function hizliOrnekDoldur(form: YatiliProgramFormData): YatiliProgramFormData {
   });
 }
 
-function dosyadanGorselOku(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
 export function YatiliProgramFormu({
   form,
   onChange,
@@ -65,6 +61,8 @@ export function YatiliProgramFormu({
   onAdim5?: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [gorselHata, setGorselHata] = useState<string | null>(null);
+  const [gorselUyari, setGorselUyari] = useState<string | null>(null);
 
   const turSec = (id: YatiliProgramFormData["programTuru"]) => {
     const metin = otomatikMetinDoldur({ ...form, programTuru: id });
@@ -240,6 +238,13 @@ export function YatiliProgramFormu({
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
               <span className="mb-2 block text-xs font-bold text-slate-600">Görseller (1–3, isteğe bağlı)</span>
+              <p className="mb-2 text-[11px] leading-relaxed text-slate-500">{POSTER_IMAGE_FIELD_HINT}</p>
+              {gorselHata ? (
+                <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] font-semibold text-red-700">{gorselHata}</p>
+              ) : null}
+              {gorselUyari ? (
+                <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold text-amber-800">{gorselUyari}</p>
+              ) : null}
               <input
                 ref={fileRef}
                 type="file"
@@ -248,13 +253,28 @@ export function YatiliProgramFormu({
                 className="hidden"
                 onChange={async (e) => {
                   const files = e.target.files;
-                  if (!files) return;
+                  if (!files?.length) return;
                   const kalan = 3 - form.gorseller.length;
-                  const yeni: string[] = [];
-                  for (let i = 0; i < Math.min(files.length, kalan); i++) {
-                    yeni.push(await dosyadanGorselOku(files[i]));
+                  if (kalan <= 0) return;
+                  const { dataUrls, errorMessage, warningMessage } = await processPosterImageFiles(
+                    Array.from(files),
+                    kalan,
+                  );
+                  if (errorMessage) {
+                    setGorselHata(errorMessage);
+                    toast.error(errorMessage, { id: "poster-image-portrait" });
+                  } else {
+                    setGorselHata(null);
                   }
-                  onChange({ ...form, gorseller: [...form.gorseller, ...yeni] });
+                  if (warningMessage) {
+                    setGorselUyari(warningMessage);
+                    toast.warning(warningMessage, { id: "poster-image-wide" });
+                  } else if (!errorMessage) {
+                    setGorselUyari(null);
+                  }
+                  if (dataUrls.length > 0) {
+                    onChange({ ...form, gorseller: [...form.gorseller, ...dataUrls] });
+                  }
                   e.target.value = "";
                 }}
               />

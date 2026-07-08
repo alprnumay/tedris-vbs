@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { toast } from "sonner";
 import { FormData, SablonTuru, Faaliyet } from "../types";
 import { api, type KayitliProfil } from "../lib/api";
 import { baslikAlternatifleri } from "../lib/dil";
@@ -12,7 +13,10 @@ import {
   hizliOrnekForm,
 } from "../lib/veli/veliFormYardimMetinleri";
 import { inputStyle, labelStyle, primaryBtn, secondaryBtn } from "../lib/veli/veliMobilStil";
-import { gorselBoyutOku, dikeyGorselSablonOner } from "../lib/veli/gorselOrientasyon";
+import {
+  POSTER_IMAGE_FIELD_HINT,
+  processPosterImageFiles,
+} from "../lib/images/validatePosterImage";
 import { InfoTip } from "./veli/InfoTip";
 import { FormAkordeon } from "./veli/FormAkordeon";
 import { WizardStepper } from "./veli/wizard/WizardStepper";
@@ -44,13 +48,22 @@ interface Props {
   onWizardGeri?: () => void;
 }
 
-function dosyayaBase64Cevir(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function GorselAlanMesajlari({ hata, uyari }: { hata: string | null; uyari: string | null }) {
+  return (
+    <>
+      <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 8px", lineHeight: 1.45 }}>{POSTER_IMAGE_FIELD_HINT}</p>
+      {hata ? (
+        <div style={{ padding: "10px 12px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fecaca", marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "#b91c1c", fontWeight: 600, margin: 0, lineHeight: 1.45 }}>{hata}</p>
+        </div>
+      ) : null}
+      {uyari ? (
+        <div style={{ padding: "10px 12px", borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", marginBottom: 8 }}>
+          <p style={{ fontSize: 11, color: "#92400e", fontWeight: 600, margin: 0, lineHeight: 1.45 }}>{uyari}</p>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function AlanEtiketi({ label, ipucu }: { label: string; ipucu?: string }) {
@@ -365,7 +378,8 @@ export default function FormAlani({
   const [profilYukleniyor, setProfilYukleniyor] = useState(false);
   const [profillerAcik, setProfillerAcik] = useState(false);
   const [baslikAcik, setBaslikAcik] = useState(false);
-  const [dikeyGorselUyarisi, setDikeyGorselUyarisi] = useState<string | null>(null);
+  const [gorselHata, setGorselHata] = useState<string | null>(null);
+  const [gorselUyari, setGorselUyari] = useState<string | null>(null);
   const [acikBolum, setAcikBolum] = useState<string>("kimlik");
   const [sablonFiltre, setSablonFiltre] = useState("Tümü");
   const [sablonGaleriAcik, setSablonGaleriAcik] = useState(false);
@@ -471,28 +485,31 @@ export default function FormAlani({
 
   const gorselEkle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
-    const eklenecek = Math.min(files.length, maxGorsel - form.gorseller.length);
-    if (eklenecek <= 0) return;
-    const yeni: string[] = [];
-    let dikeyBulundu = false;
-    for (let i = 0; i < eklenecek; i++) {
-      const b64 = await dosyayaBase64Cevir(files[i]);
-      yeni.push(b64);
-      const boyut = await gorselBoyutOku(b64);
-      if (boyut.dikey) dikeyBulundu = true;
+    if (!files?.length) return;
+    const kalan = maxGorsel - form.gorseller.length;
+    if (kalan <= 0) return;
+
+    const { dataUrls, errorMessage, warningMessage } = await processPosterImageFiles(Array.from(files), kalan);
+
+    if (errorMessage) {
+      setGorselHata(errorMessage);
+      toast.error(errorMessage, { id: "poster-image-portrait" });
+    } else {
+      setGorselHata(null);
     }
-    setForm({ ...form, gorseller: [...form.gorseller, ...yeni] });
-    onGorselYuklendi?.(yeni.length);
-    if (dikeyBulundu) {
-      const oneri = dikeyGorselSablonOner(seciliSablon);
-      setDikeyGorselUyarisi(
-        oneri
-          ? "Dikey görsel algılandı. Bu şablonda yatay görseller daha iyi görünür. Sizin için uygun düzen önerildi."
-          : "Dikey görsel algılandı. Yatay veya kare fotoğraflar afişte daha dengeli görünür.",
-      );
-      if (oneri) setSeciliSablon(oneri);
+
+    if (warningMessage) {
+      setGorselUyari(warningMessage);
+      toast.warning(warningMessage, { id: "poster-image-wide" });
+    } else if (!errorMessage) {
+      setGorselUyari(null);
     }
+
+    if (dataUrls.length > 0) {
+      setForm({ ...form, gorseller: [...form.gorseller, ...dataUrls] });
+      onGorselYuklendi?.(dataUrls.length);
+    }
+
     e.target.value = "";
   };
 
@@ -709,8 +726,9 @@ export default function FormAlani({
   const wizardGorselStep = (
     <WizardStepCard title="Görsel Ekle" description="Görsel eklemeden de afiş oluşturabilirsiniz. Görsel eklemek afişi daha etkili hale getirir." error={stepUyari}>
       <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        Önerilen: en fazla <strong>{maxGorsel}</strong> görsel · yatay fotoğraflar daha iyi görünür.
+        Önerilen: en fazla <strong>{maxGorsel}</strong> görsel.
       </p>
+      <GorselAlanMesajlari hata={gorselHata} uyari={gorselUyari} />
       {form.gorseller.length < maxGorsel && (
         <label style={{ display: "block", cursor: "pointer" }}>
           <div style={{ border: "2px dashed #cbd5e1", borderRadius: 14, padding: "20px", textAlign: "center", background: "#f8fafc" }}>
@@ -1059,10 +1077,8 @@ export default function FormAlani({
           </span>
         </div>
 
-        <div style={{ marginBottom: 10, padding: "9px 11px", borderRadius: 10, background: "#fffbeb", border: "1px solid #fde68a" }}>
-          <p style={{ fontSize: 11, fontWeight: 750, color: "#92400e", margin: 0, lineHeight: 1.45 }}>
-            En iyi görünüm için yatay fotoğraf yükleyin. Dikey görseller yerleşimde bozulma oluşturabilir.
-          </p>
+        <div style={{ marginBottom: 10 }}>
+          <GorselAlanMesajlari hata={gorselHata} uyari={gorselUyari} />
         </div>
 
         {form.gorseller.length === 0 && (
@@ -1095,15 +1111,10 @@ export default function FormAlani({
                 {maxGorsel - form.gorseller.length} görsel daha ekleyebilirsiniz
                 {form.gorseller.length === 0 && " · İlk fotoğraf kapak görsel olur"}
               </p>
+              <p style={{ fontSize: 10, color: "#94a3b8", marginTop: 4, marginBottom: 0 }}>{POSTER_IMAGE_FIELD_HINT}</p>
             </div>
             <input type="file" accept="image/*" multiple onChange={gorselEkle} style={{ display: "none" }} />
           </label>
-        )}
-
-        {dikeyGorselUyarisi && (
-          <div style={{ padding: "10px 12px", borderRadius: 12, background: "#eff6ff", border: "1px solid #bfdbfe", marginBottom: 8 }}>
-            <p style={{ fontSize: 11, color: "#1e40af", fontWeight: 600, margin: 0, lineHeight: 1.45 }}>{dikeyGorselUyarisi}</p>
-          </div>
         )}
 
         {form.gorseller.length > 0 && (
