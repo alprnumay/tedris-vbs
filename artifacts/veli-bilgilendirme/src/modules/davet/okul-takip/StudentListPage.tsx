@@ -556,12 +556,12 @@ export default function StudentListPage() {
           if (!open && !importSaving) resetImport();
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-4xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[92vh] w-[calc(100%-2rem)] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl top-[4vh] translate-x-[-50%] translate-y-0 sm:top-[50%] sm:translate-y-[-50%]">
+          <DialogHeader className="shrink-0 border-b px-6 py-4 pr-12">
             <DialogTitle>Excel’den Talebe Yükle</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -612,7 +612,7 @@ export default function StudentListPage() {
                   </span>
                 </label>
 
-                <div className="max-h-[320px] overflow-auto rounded-2xl border border-slate-200">
+                <div className="max-h-[min(360px,38vh)] overflow-auto rounded-2xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
@@ -651,7 +651,7 @@ export default function StudentListPage() {
             ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
             <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importSaving}>
               {importCompleted ? "Kapat" : "İptal"}
             </Button>
