@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { copyFileSync } from "node:fs";
 import { rmSync } from "node:fs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
@@ -119,11 +118,6 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
-
-  copyFileSync(
-    path.resolve(artifactDir, "src/lib/bcryptWorker.mjs"),
-    path.resolve(distDir, "bcryptWorker.mjs"),
-  );
 }
 
 buildAll().catch((err) => {

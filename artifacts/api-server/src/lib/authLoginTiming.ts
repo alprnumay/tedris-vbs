@@ -1,5 +1,5 @@
 import { BCRYPT_ROUNDS } from "./bcryptConfig";
-import { getPasswordHashRounds, passwordHashEngine, passwordPoolSize } from "./passwordHash";
+import { getPasswordHashRounds, passwordHashEngine } from "./passwordHash";
 
 export type AuthLoginTimingMetrics = {
   dbLookupMs: number;
@@ -14,7 +14,6 @@ export type AuthLoginTimingMetrics = {
   hashRoundsInDb: number;
   bcryptTargetRounds: number;
   hashEngine: "bcrypt-native" | "bcryptjs";
-  workerPoolSize: number;
   sideEffectsDeferred: boolean;
   status: number;
   email?: string;
@@ -25,11 +24,9 @@ export function logAuthLoginTiming(metrics: AuthLoginTimingMetrics): void {
   console.log(
     `[auth-login-timing] user=${user} status=${metrics.status} totalMs=${metrics.totalMs} ` +
       `dbLookupMs=${metrics.dbLookupMs} passwordCompareMs=${metrics.passwordCompareMs} ` +
-      `profileLoadMs=${metrics.profileLoadMs} institutionLoadMs=${metrics.institutionLoadMs} ` +
-      `reportScopeLoadMs=${metrics.reportScopeLoadMs} tokenMs=${metrics.tokenMs} ` +
-      `activityLogMs=${metrics.activityLogMs} responseMs=${metrics.responseMs} ` +
-      `hashRounds=${metrics.hashRoundsInDb} targetRounds=${metrics.bcryptTargetRounds} ` +
-      `engine=${metrics.hashEngine} workerPool=${metrics.workerPoolSize}`,
+      `profileLoadMs=${metrics.profileLoadMs} tokenMs=${metrics.tokenMs} ` +
+      `responseMs=${metrics.responseMs} hashRounds=${metrics.hashRoundsInDb} ` +
+      `targetRounds=${metrics.bcryptTargetRounds} engine=${metrics.hashEngine}`,
   );
 }
 
@@ -43,14 +40,7 @@ function maskEmail(email: string): string {
 export function buildAuthLoginTimingPayload(
   metrics: Omit<
     AuthLoginTimingMetrics,
-    | "hashRoundsInDb"
-    | "bcryptTargetRounds"
-    | "hashEngine"
-    | "workerPoolSize"
-    | "sideEffectsDeferred"
-    | "institutionLoadMs"
-    | "reportScopeLoadMs"
-    | "activityLogMs"
+    "hashRoundsInDb" | "bcryptTargetRounds" | "hashEngine" | "sideEffectsDeferred" | "institutionLoadMs" | "reportScopeLoadMs" | "activityLogMs"
   > & {
     hashRoundsInDb?: number;
     institutionLoadMs?: number;
@@ -71,7 +61,6 @@ export function buildAuthLoginTimingPayload(
     hashRoundsInDb: metrics.hashRoundsInDb ?? BCRYPT_ROUNDS,
     bcryptTargetRounds: BCRYPT_ROUNDS,
     hashEngine: passwordHashEngine(),
-    workerPoolSize: passwordPoolSize(),
     sideEffectsDeferred: true,
     status: metrics.status,
     email: metrics.email,

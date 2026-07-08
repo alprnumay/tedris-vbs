@@ -1,7 +1,6 @@
 import bcryptjs from "bcryptjs";
 import { createRequire } from "node:module";
 import { BCRYPT_ROUNDS } from "./bcryptConfig";
-import { poolComparePassword, poolHashPassword, passwordPoolSize } from "./passwordHashPool";
 
 type BcryptImpl = {
   hash(password: string, rounds: number): Promise<string>;
@@ -13,7 +12,6 @@ const require = createRequire(import.meta.url);
 
 let impl: BcryptImpl | null = null;
 let implLabel: "bcrypt-native" | "bcryptjs" = "bcryptjs";
-let useWorkerPool = process.env.BCRYPT_USE_WORKER_POOL !== "0";
 
 function resolveImpl(): BcryptImpl {
   if (impl) return impl;
@@ -53,17 +51,11 @@ export function shouldUpgradePasswordHash(hash: string): boolean {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  if (useWorkerPool) {
-    return poolHashPassword(password, BCRYPT_ROUNDS);
-  }
   return resolveImpl().hash(password, BCRYPT_ROUNDS);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  if (useWorkerPool) {
-    return poolComparePassword(password, hash);
-  }
   return resolveImpl().compare(password, hash);
 }
 
-export { BCRYPT_ROUNDS, passwordPoolSize };
+export { BCRYPT_ROUNDS };
