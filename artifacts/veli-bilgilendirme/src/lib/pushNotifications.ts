@@ -3,6 +3,8 @@ import { backendApi } from "./backendApi";
 export type PushSettings = {
   dailyReminderEnabled: boolean;
   dailyReminderTime: string;
+  attendanceReminderEnabled: boolean;
+  homeworkReminderEnabled: boolean;
 };
 
 export type PushPermissionState =
@@ -17,6 +19,8 @@ export const DAILY_REMINDER_SETTINGS_KEY = "nehariDailyReminderSettings";
 const DEFAULT_SETTINGS: PushSettings = {
   dailyReminderEnabled: true,
   dailyReminderTime: "17:00",
+  attendanceReminderEnabled: true,
+  homeworkReminderEnabled: true,
 };
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -44,6 +48,14 @@ export function loadLocalReminderSettings(): PushSettings {
         typeof parsed.dailyReminderTime === "string" && parsed.dailyReminderTime
           ? parsed.dailyReminderTime
           : DEFAULT_SETTINGS.dailyReminderTime,
+      attendanceReminderEnabled:
+        typeof parsed.attendanceReminderEnabled === "boolean"
+          ? parsed.attendanceReminderEnabled
+          : DEFAULT_SETTINGS.attendanceReminderEnabled,
+      homeworkReminderEnabled:
+        typeof parsed.homeworkReminderEnabled === "boolean"
+          ? parsed.homeworkReminderEnabled
+          : DEFAULT_SETTINGS.homeworkReminderEnabled,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -71,12 +83,23 @@ export function getPermissionLabel(state: PushPermissionState): string {
     case "granted":
       return "Bildirim izni verildi";
     case "denied":
-      return "Bildirim engellendi";
+      return "Bildirim izni engellenmiş";
     case "default":
-      return "Bildirim izni verilmedi";
+      return "Bildirim izni henüz verilmedi";
     default:
-      return "Cihaz desteklemiyor";
+      return "Bu cihaz veya tarayıcı web bildirimlerini desteklemiyor olabilir";
   }
+}
+
+export function isAndroidChrome(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent) && /Chrome/i.test(navigator.userAgent);
+}
+
+export function isDesktopChrome(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /Chrome/i.test(ua) && !/Android|Mobile/i.test(ua);
 }
 
 export async function fetchVapidPublicKey(): Promise<string> {
@@ -96,49 +119,131 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   return registration;
 }
 
-export async function enablePushNotifications(
-  settings?: Partial<PushSettings>,
-): Promise<PushSettings> {
-  if (getPushSupportState() === "unsupported") {
-    throw new Error("Bu cihaz web push bildirimlerini desteklemiyor.");
-  }
-
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") {
-    throw new Error("Bildirim izni verilmedi.");
-  }
-
-  const registration = await registerServiceWorker();
+async function subscribeWithVapid(
+  registration: ServiceWorkerRegistration,
+  forceNew = false,
+): Promise<PushSubscription> {
   const publicKey = await fetchVapidPublicKey();
 
-  let subscription = await registration.pushManager.getSubscription();
-  if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    });
+  if (!forceNew) {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) return existing;
+  } else {
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) {
+      await existing.unsubscribe().catch(() => undefined);
+    }
   }
 
+  return registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  });
+}
+
+function subscriptionPayload(subscription: PushSubscription) {
   const json = subscription.toJSON();
+  return {
+    endpoint: json.endpoint!,
+    expirationTime: json.expirationTime ?? null,
+    keys: {
+      p256dh: json.keys!.p256dh!,
+      auth: json.keys!.auth!,
+    },
+  };
+}
+
+export async function syncPushSubscription(
+  settings?: Partial<PushSettings>,
+): Promise<PushSettings | null> {
+  if (getPushSupportState() !== "granted") return null;
+
+  const registration = await registerServiceWorker();
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return null;
+
   const mergedSettings: PushSettings = {
     ...loadLocalReminderSettings(),
     ...settings,
   };
 
   const result = await backendApi.subscribePush({
-    subscription: {
-      endpoint: json.endpoint!,
-      expirationTime: json.expirationTime ?? null,
-      keys: {
-        p256dh: json.keys!.p256dh!,
-        auth: json.keys!.auth!,
-      },
-    },
+    subscription: subscriptionPayload(subscription),
     settings: mergedSettings,
   });
 
   saveLocalReminderSettings(result.settings);
   return result.settings;
+}
+
+export async function enablePushNotifications(
+  settings?: Partial<PushSettings>,
+): Promise<PushSettings> {
+  if (getPushSupportState() === "unsupported") {
+    throw new Error("Bu cihaz veya tarayıcı web bildirimlerini desteklemiyor olabilir.");
+  }
+
+  if (getPushSupportState() === "denied") {
+    throw new Error("Bildirim izni engellenmiş. Lütfen site ayarlarından izin verin.");
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error(
+      permission === "denied"
+        ? "Bildirim izni engellenmiş. Lütfen site ayarlarından izin verin."
+        : "Bildirim izni verilmedi.",
+    );
+  }
+
+  const registration = await registerServiceWorker();
+  const subscription = await subscribeWithVapid(registration);
+  const mergedSettings: PushSettings = {
+    ...loadLocalReminderSettings(),
+    ...settings,
+  };
+
+  const result = await backendApi.subscribePush({
+    subscription: subscriptionPayload(subscription),
+    settings: mergedSettings,
+  });
+
+  saveLocalReminderSettings(result.settings);
+  return result.settings;
+}
+
+export async function resubscribePush(
+  settings?: Partial<PushSettings>,
+): Promise<PushSettings> {
+  if (getPushSupportState() !== "granted") {
+    throw new Error("Bildirim izni verilmedi. Önce bildirimleri açın.");
+  }
+
+  const registration = await registerServiceWorker();
+  const subscription = await subscribeWithVapid(registration, true);
+  const mergedSettings: PushSettings = {
+    ...loadLocalReminderSettings(),
+    ...settings,
+  };
+
+  const result = await backendApi.subscribePush({
+    subscription: subscriptionPayload(subscription),
+    settings: mergedSettings,
+  });
+
+  saveLocalReminderSettings(result.settings);
+  return result.settings;
+}
+
+export async function checkBrowserSubscription(): Promise<boolean> {
+  if (getPushSupportState() !== "granted") return false;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    return Boolean(subscription);
+  } catch {
+    return false;
+  }
 }
 
 export async function unsubscribePush(endpoint?: string): Promise<void> {
@@ -164,4 +269,26 @@ export function isStandalonePwa(): boolean {
     window.matchMedia("(display-mode: standalone)").matches ||
     (navigator as Navigator & { standalone?: boolean }).standalone === true
   );
+}
+
+export function buildPermissionHelpSteps(): string[] {
+  if (isIosDevice()) {
+    return [
+      "Safari'de paylaş simgesine dokunun.",
+      "\"Ana Ekrana Ekle\" seçeneğini seçin.",
+      "Uygulamayı ana ekrandan açıp tekrar bildirimleri açın.",
+    ];
+  }
+  if (isAndroidChrome()) {
+    return [
+      "Adres çubuğundaki kilit / ayar simgesine dokunun.",
+      "Site ayarları bölümüne girin.",
+      "Bildirimler iznini \"İzin ver\" yapın.",
+    ];
+  }
+  return [
+    "Adres çubuğundaki kilit / ayar simgesine tıklayın.",
+    "Site ayarları bölümüne girin.",
+    "Bildirimler iznini \"İzin ver\" yapın.",
+  ];
 }

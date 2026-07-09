@@ -308,11 +308,24 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id varchar NOT NULL REFERENCES local_users(id) ON DELETE CASCADE,
         endpoint text NOT NULL UNIQUE,
+        p256dh text,
+        auth text,
         subscription jsonb NOT NULL,
+        user_agent text,
         is_active boolean NOT NULL DEFAULT true,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
       )
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS p256dh text
+    `);
+    await db.execute(sql`
+      ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS auth text
+    `);
+    await db.execute(sql`
+      ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_agent text
     `);
 
     await db.execute(sql`
@@ -325,8 +338,17 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
         user_id varchar PRIMARY KEY REFERENCES local_users(id) ON DELETE CASCADE,
         daily_reminder_enabled boolean NOT NULL DEFAULT true,
         daily_reminder_time varchar NOT NULL DEFAULT '17:00',
+        attendance_reminder_enabled boolean NOT NULL DEFAULT true,
+        homework_reminder_enabled boolean NOT NULL DEFAULT true,
         updated_at timestamptz NOT NULL DEFAULT now()
       )
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS attendance_reminder_enabled boolean NOT NULL DEFAULT true
+    `);
+    await db.execute(sql`
+      ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS homework_reminder_enabled boolean NOT NULL DEFAULT true
     `);
 
     await db.execute(sql`

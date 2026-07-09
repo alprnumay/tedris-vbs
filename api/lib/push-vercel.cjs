@@ -7,15 +7,31 @@ const webpush = require("web-push");
 
 const REMINDER_TZ = process.env.PUSH_REMINDER_TIMEZONE || "Europe/Istanbul";
 const DAILY_PAYLOAD = {
-  title: "Günlük takip hatırlatması",
-  body: "Bugünkü işler tamamlandı mı? Yoklama, okul ödevi takibi ve veli bilgilendirme durumunu kontrol etmeyi unutmayın.",
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü yoklama ve ödev takibini doldurmayı unutmayınız.",
+  url: "/davet/okul-takip",
+};
+const ATTENDANCE_PAYLOAD = {
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü yoklama bilgilerini kontrol etmeyi unutmayınız.",
+  url: "/davet/okul-takip",
+};
+const HOMEWORK_PAYLOAD = {
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü ödev takiplerini tamamlamayı unutmayınız.",
   url: "/davet/okul-takip",
 };
 const TEST_PAYLOAD = {
-  title: "Test bildirimi",
-  body: "Tedris VBS bildirimleri bu cihazda çalışıyor.",
+  title: "Nehari Platformu Hatırlatma",
+  body: "Test bildirimi — bildirimler bu cihazda çalışıyor.",
   url: "/davet/okul-takip",
 };
+
+const REMINDER_JOBS = [
+  { type: "dailyReminder", field: "daily_reminder_enabled", payload: DAILY_PAYLOAD },
+  { type: "attendanceReminder", field: "attendance_reminder_enabled", payload: ATTENDANCE_PAYLOAD },
+  { type: "homeworkReminder", field: "homework_reminder_enabled", payload: HOMEWORK_PAYLOAD },
+];
 
 let pool;
 let vapidReady = false;
@@ -68,6 +84,11 @@ function bearerToken(req) {
   return String(value).slice(7).trim() || null;
 }
 
+function pushUserAgent(req) {
+  const raw = req.headers["user-agent"];
+  return typeof raw === "string" ? raw.slice(0, 512) : null;
+}
+
 function anonymousDeviceId(req) {
   const raw =
     req.headers["x-push-device-id"] ||
@@ -90,19 +111,33 @@ async function ensurePushSchema(client) {
       id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id varchar NOT NULL,
       endpoint text NOT NULL UNIQUE,
+      p256dh text,
+      auth text,
       subscription jsonb NOT NULL,
+      user_agent text,
       is_active boolean NOT NULL DEFAULT true,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS p256dh text`);
+  await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS auth text`);
+  await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_agent text`);
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_notification_settings (
       user_id varchar PRIMARY KEY,
       daily_reminder_enabled boolean NOT NULL DEFAULT true,
       daily_reminder_time varchar NOT NULL DEFAULT '17:00',
+      attendance_reminder_enabled boolean NOT NULL DEFAULT true,
+      homework_reminder_enabled boolean NOT NULL DEFAULT true,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
+  `);
+  await client.query(`
+    ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS attendance_reminder_enabled boolean NOT NULL DEFAULT true
+  `);
+  await client.query(`
+    ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS homework_reminder_enabled boolean NOT NULL DEFAULT true
   `);
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_notification_log (
@@ -152,6 +187,15 @@ async function withDb(fn) {
   }
 }
 
+function rowToSettings(row) {
+  return {
+    dailyReminderEnabled: Boolean(row.daily_reminder_enabled),
+    dailyReminderTime: normalizeTime(row.daily_reminder_time),
+    attendanceReminderEnabled: Boolean(row.attendance_reminder_enabled ?? true),
+    homeworkReminderEnabled: Boolean(row.homework_reminder_enabled ?? true),
+  };
+}
+
 function parseSettingsBody(body) {
   const nested = body.settings && typeof body.settings === "object" ? body.settings : body;
   return {
@@ -159,6 +203,10 @@ function parseSettingsBody(body) {
       typeof nested.dailyReminderEnabled === "boolean" ? nested.dailyReminderEnabled : undefined,
     dailyReminderTime:
       nested.dailyReminderTime != null ? normalizeTime(nested.dailyReminderTime) : undefined,
+    attendanceReminderEnabled:
+      typeof nested.attendanceReminderEnabled === "boolean" ? nested.attendanceReminderEnabled : undefined,
+    homeworkReminderEnabled:
+      typeof nested.homeworkReminderEnabled === "boolean" ? nested.homeworkReminderEnabled : undefined,
   };
 }
 
@@ -207,6 +255,49 @@ async function sendPush(subscription, payload) {
   await webpush.sendNotification(subscription, JSON.stringify(payload), { TTL: 86400 });
 }
 
+async function upsertSettingsForUser(client, userId, patch) {
+  const cur = await client.query(
+    `SELECT daily_reminder_enabled, daily_reminder_time, attendance_reminder_enabled, homework_reminder_enabled
+     FROM push_notification_settings WHERE user_id = $1`,
+    [userId],
+  );
+  const current = cur.rows[0]
+    ? rowToSettings(cur.rows[0])
+    : {
+        dailyReminderEnabled: true,
+        dailyReminderTime: "17:00",
+        attendanceReminderEnabled: true,
+        homeworkReminderEnabled: true,
+      };
+  const next = {
+    dailyReminderEnabled: patch.dailyReminderEnabled ?? current.dailyReminderEnabled,
+    dailyReminderTime: patch.dailyReminderTime ?? current.dailyReminderTime,
+    attendanceReminderEnabled: patch.attendanceReminderEnabled ?? current.attendanceReminderEnabled,
+    homeworkReminderEnabled: patch.homeworkReminderEnabled ?? current.homeworkReminderEnabled,
+  };
+  await client.query(
+    `INSERT INTO push_notification_settings (
+       user_id, daily_reminder_enabled, daily_reminder_time,
+       attendance_reminder_enabled, homework_reminder_enabled, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, now())
+     ON CONFLICT (user_id) DO UPDATE SET
+       daily_reminder_enabled = EXCLUDED.daily_reminder_enabled,
+       daily_reminder_time = EXCLUDED.daily_reminder_time,
+       attendance_reminder_enabled = EXCLUDED.attendance_reminder_enabled,
+       homework_reminder_enabled = EXCLUDED.homework_reminder_enabled,
+       updated_at = now()`,
+    [
+      userId,
+      next.dailyReminderEnabled,
+      next.dailyReminderTime,
+      next.attendanceReminderEnabled,
+      next.homeworkReminderEnabled,
+    ],
+  );
+  return next;
+}
+
 async function handleVapidPublicKey(_req, res) {
   const publicKey = (process.env.VAPID_PUBLIC_KEY || "").trim();
   if (!publicKey) {
@@ -219,21 +310,24 @@ async function handleVapidPublicKey(_req, res) {
 async function handleGetSettings(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
+    json(res, 401, { ok: false, error: "Oturum gerekli." });
     return;
   }
   const settings = await withDb(async (client) => {
     const r = await client.query(
-      `SELECT daily_reminder_enabled, daily_reminder_time FROM push_notification_settings WHERE user_id = $1`,
+      `SELECT daily_reminder_enabled, daily_reminder_time, attendance_reminder_enabled, homework_reminder_enabled
+       FROM push_notification_settings WHERE user_id = $1`,
       [userId],
     );
     if (!r.rows[0]) {
-      return { dailyReminderEnabled: true, dailyReminderTime: "17:00" };
+      return {
+        dailyReminderEnabled: true,
+        dailyReminderTime: "17:00",
+        attendanceReminderEnabled: true,
+        homeworkReminderEnabled: true,
+      };
     }
-    return {
-      dailyReminderEnabled: Boolean(r.rows[0].daily_reminder_enabled),
-      dailyReminderTime: normalizeTime(r.rows[0].daily_reminder_time),
-    };
+    return rowToSettings(r.rows[0]);
   });
   const subs = await withDb(async (client) => {
     const r = await client.query(
@@ -253,11 +347,11 @@ async function handleGetSettings(req, res) {
 async function handleSubscribe(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
+    json(res, 401, { ok: false, error: "Oturum gerekli." });
     return;
   }
   if (!configureVapid()) {
-    json(res, 503, { ok: false, error: "VAPID_PUBLIC_KEY missing" });
+    json(res, 503, { ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
     return;
   }
   const body = parseBody(req);
@@ -267,34 +361,31 @@ async function handleSubscribe(req, res) {
     return;
   }
   const patch = parseSettingsBody(body);
+  const ua = pushUserAgent(req);
   const settings = await withDb(async (client) => {
     await client.query(
-      `INSERT INTO push_subscriptions (user_id, endpoint, subscription, is_active, updated_at)
-       VALUES ($1, $2, $3::jsonb, true, now())
-       ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, subscription = EXCLUDED.subscription, is_active = true, updated_at = now()`,
-      [userId, subscription.endpoint, JSON.stringify(subscription)],
+      `INSERT INTO push_subscriptions (
+         user_id, endpoint, p256dh, auth, subscription, user_agent, is_active, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, true, now())
+       ON CONFLICT (endpoint) DO UPDATE SET
+         user_id = EXCLUDED.user_id,
+         p256dh = EXCLUDED.p256dh,
+         auth = EXCLUDED.auth,
+         subscription = EXCLUDED.subscription,
+         user_agent = COALESCE(EXCLUDED.user_agent, push_subscriptions.user_agent),
+         is_active = true,
+         updated_at = now()`,
+      [
+        userId,
+        subscription.endpoint,
+        subscription.keys.p256dh,
+        subscription.keys.auth,
+        JSON.stringify(subscription),
+        ua,
+      ],
     );
-    const cur = await client.query(
-      `SELECT daily_reminder_enabled, daily_reminder_time FROM push_notification_settings WHERE user_id = $1`,
-      [userId],
-    );
-    const current = cur.rows[0]
-      ? {
-          dailyReminderEnabled: Boolean(cur.rows[0].daily_reminder_enabled),
-          dailyReminderTime: normalizeTime(cur.rows[0].daily_reminder_time),
-        }
-      : { dailyReminderEnabled: true, dailyReminderTime: "17:00" };
-    const next = {
-      dailyReminderEnabled: patch.dailyReminderEnabled ?? current.dailyReminderEnabled,
-      dailyReminderTime: patch.dailyReminderTime ?? current.dailyReminderTime,
-    };
-    await client.query(
-      `INSERT INTO push_notification_settings (user_id, daily_reminder_enabled, daily_reminder_time, updated_at)
-       VALUES ($1, $2, $3, now())
-       ON CONFLICT (user_id) DO UPDATE SET daily_reminder_enabled = EXCLUDED.daily_reminder_enabled, daily_reminder_time = EXCLUDED.daily_reminder_time, updated_at = now()`,
-      [userId, next.dailyReminderEnabled, next.dailyReminderTime],
-    );
-    return next;
+    return upsertSettingsForUser(client, userId, patch);
   });
   json(res, 200, { ok: true, settings });
 }
@@ -302,7 +393,7 @@ async function handleSubscribe(req, res) {
 async function handleUnsubscribe(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
+    json(res, 401, { ok: false, error: "Oturum gerekli." });
     return;
   }
   const body = parseBody(req);
@@ -326,44 +417,22 @@ async function handleUnsubscribe(req, res) {
 async function handlePostSettings(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
+    json(res, 401, { ok: false, error: "Oturum gerekli." });
     return;
   }
   const patch = parseSettingsBody(parseBody(req));
-  const settings = await withDb(async (client) => {
-    const cur = await client.query(
-      `SELECT daily_reminder_enabled, daily_reminder_time FROM push_notification_settings WHERE user_id = $1`,
-      [userId],
-    );
-    const current = cur.rows[0]
-      ? {
-          dailyReminderEnabled: Boolean(cur.rows[0].daily_reminder_enabled),
-          dailyReminderTime: normalizeTime(cur.rows[0].daily_reminder_time),
-        }
-      : { dailyReminderEnabled: true, dailyReminderTime: "17:00" };
-    const next = {
-      dailyReminderEnabled: patch.dailyReminderEnabled ?? current.dailyReminderEnabled,
-      dailyReminderTime: patch.dailyReminderTime ?? current.dailyReminderTime,
-    };
-    await client.query(
-      `INSERT INTO push_notification_settings (user_id, daily_reminder_enabled, daily_reminder_time, updated_at)
-       VALUES ($1, $2, $3, now())
-       ON CONFLICT (user_id) DO UPDATE SET daily_reminder_enabled = EXCLUDED.daily_reminder_enabled, daily_reminder_time = EXCLUDED.daily_reminder_time, updated_at = now()`,
-      [userId, next.dailyReminderEnabled, next.dailyReminderTime],
-    );
-    return next;
-  });
+  const settings = await withDb(async (client) => upsertSettingsForUser(client, userId, patch));
   json(res, 200, { ok: true, settings });
 }
 
 async function handleTest(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 400, { ok: false, error: "Cihaz kimliği alınamadı. Sayfayı yenileyip tekrar deneyin." });
+    json(res, 401, { ok: false, error: "Oturum gerekli." });
     return;
   }
   if (!configureVapid()) {
-    json(res, 503, { ok: false, error: "VAPID_PUBLIC_KEY missing" });
+    json(res, 503, { ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
     return;
   }
   const subs = await withDb(async (client) => {
@@ -374,7 +443,7 @@ async function handleTest(req, res) {
     return r.rows.map((row) => row.subscription);
   });
   if (subs.length === 0) {
-    json(res, 400, { ok: false, error: "Aktif push aboneliği bulunamadı. Önce bildirimleri açın." });
+    json(res, 400, { ok: false, error: "Önce bildirimleri açmanız gerekiyor." });
     return;
   }
   let sent = 0;
@@ -385,10 +454,9 @@ async function handleTest(req, res) {
     } catch (err) {
       if (isGoneError(err) && subscription?.endpoint) {
         await withDb(async (client) => {
-          await client.query(
-            `UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`,
-            [subscription.endpoint],
-          );
+          await client.query(`UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`, [
+            subscription.endpoint,
+          ]);
         });
       }
     }
@@ -417,10 +485,16 @@ async function handleDailyCron(req, res) {
   const dateKey = dateKeyInTz();
   const candidates = await withDb(async (client) => {
     const r = await client.query(
-      `SELECT s.user_id, s.subscription
+      `SELECT s.user_id, s.subscription,
+              p.daily_reminder_enabled, p.attendance_reminder_enabled, p.homework_reminder_enabled
        FROM push_notification_settings p
        INNER JOIN push_subscriptions s ON s.user_id = p.user_id AND s.is_active = true
-       WHERE p.daily_reminder_enabled = true AND p.daily_reminder_time = $1`,
+       WHERE p.daily_reminder_time = $1
+         AND (
+           p.daily_reminder_enabled = true
+           OR p.attendance_reminder_enabled = true
+           OR p.homework_reminder_enabled = true
+         )`,
       [timeHHMM],
     );
     return r.rows;
@@ -428,31 +502,34 @@ async function handleDailyCron(req, res) {
   let sent = 0;
   for (const row of candidates) {
     const userId = row.user_id;
-    const already = await withDb(async (client) => {
-      const r = await client.query(
-        `SELECT 1 FROM push_notification_log WHERE user_id = $1 AND notification_type = 'dailyReminder' AND date_key = $2`,
-        [userId, dateKey],
-      );
-      return r.rows.length > 0;
-    });
-    if (already) continue;
-    try {
-      await sendPush(row.subscription, DAILY_PAYLOAD);
-      await withDb(async (client) => {
-        await client.query(
-          `INSERT INTO push_notification_log (user_id, notification_type, date_key, payload, sent_at)
-           VALUES ($1, 'dailyReminder', $2, $3::jsonb, now()) ON CONFLICT DO NOTHING`,
-          [userId, dateKey, JSON.stringify(DAILY_PAYLOAD)],
+    for (const job of REMINDER_JOBS) {
+      if (!row[job.field]) continue;
+      const already = await withDb(async (client) => {
+        const r = await client.query(
+          `SELECT 1 FROM push_notification_log WHERE user_id = $1 AND notification_type = $2 AND date_key = $3`,
+          [userId, job.type, dateKey],
         );
+        return r.rows.length > 0;
       });
-      sent += 1;
-    } catch (err) {
-      if (isGoneError(err) && row.subscription?.endpoint) {
+      if (already) continue;
+      try {
+        await sendPush(row.subscription, job.payload);
         await withDb(async (client) => {
-          await client.query(`UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`, [
-            row.subscription.endpoint,
-          ]);
+          await client.query(
+            `INSERT INTO push_notification_log (user_id, notification_type, date_key, payload, sent_at)
+             VALUES ($1, $2, $3, $4::jsonb, now()) ON CONFLICT DO NOTHING`,
+            [userId, job.type, dateKey, JSON.stringify(job.payload)],
+          );
         });
+        sent += 1;
+      } catch (err) {
+        if (isGoneError(err) && row.subscription?.endpoint) {
+          await withDb(async (client) => {
+            await client.query(`UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`, [
+              row.subscription.endpoint,
+            ]);
+          });
+        }
       }
     }
   }
@@ -477,11 +554,11 @@ function wrap(handler) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("DATABASE_URL")) {
-        json(res, 503, { ok: false, error: "Push altyapısı yapılandırılmamış (DATABASE_URL eksik)." });
+        json(res, 503, { ok: false, error: "Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin." });
         return;
       }
       console.error("[push-vercel]", err);
-      json(res, 500, { ok: false, error: "Sunucu hatası" });
+      json(res, 500, { ok: false, error: "Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin." });
     }
   };
 }

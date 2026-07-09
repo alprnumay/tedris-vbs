@@ -208,6 +208,9 @@ async function pushRequest<T>(
         : typeof err.message === "string"
           ? err.message
           : "Sunucuya bağlanılamadı.";
+    if (res.status === 503) {
+      throw new Error("Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin.");
+    }
     if (res.status === 404 && String(raw).includes("route")) {
       throw new Error(
         "Push bildirim API'si henüz sunucuda aktif değil. Site yöneticisine bildirin veya birkaç dakika sonra tekrar deneyin.",
@@ -533,6 +536,8 @@ export const backendApi = {
 export type PushSettingsPayload = {
   dailyReminderEnabled: boolean;
   dailyReminderTime: string;
+  attendanceReminderEnabled: boolean;
+  homeworkReminderEnabled: boolean;
 };
 
 export type PushSubscriptionPayload = {

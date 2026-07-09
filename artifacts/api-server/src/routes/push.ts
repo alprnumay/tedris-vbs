@@ -9,8 +9,7 @@ import {
 import {
   TEST_PUSH_PAYLOAD,
   isValidSubscription,
-  normalizeReminderTime,
-  type PushSettings,
+  parsePushSettingsBody,
 } from "../lib/push/pushTypes";
 import {
   deactivatePushSubscriptions,
@@ -25,22 +24,9 @@ import {
 const router: IRouter = Router();
 const REMINDER_TIMEZONE = process.env.PUSH_REMINDER_TIMEZONE || "Europe/Istanbul";
 
-function parseSettingsBody(body: Record<string, unknown>): Partial<PushSettings> {
-  const nested =
-    body.settings && typeof body.settings === "object"
-      ? (body.settings as Record<string, unknown>)
-      : body;
-
-  return {
-    dailyReminderEnabled:
-      typeof nested.dailyReminderEnabled === "boolean"
-        ? nested.dailyReminderEnabled
-        : undefined,
-    dailyReminderTime:
-      nested.dailyReminderTime != null
-        ? normalizeReminderTime(nested.dailyReminderTime)
-        : undefined,
-  };
+function pushUserAgent(req: Request): string | null {
+  const raw = req.headers["user-agent"];
+  return typeof raw === "string" ? raw.slice(0, 512) : null;
 }
 
 router.get("/push/vapid-public-key", (_req: Request, res: Response) => {
@@ -59,14 +45,19 @@ router.get("/push/settings", requireAuth, async (req: Request, res: Response) =>
     return;
   }
 
-  const settings = await getPushSettings(userId);
-  const subscriptions = await listActiveSubscriptions(userId);
-  res.json({
-    ok: true,
-    settings,
-    hasActiveSubscription: subscriptions.length > 0,
-    vapidPublicKey: getVapidPublicKey(),
-  });
+  try {
+    const settings = await getPushSettings(userId);
+    const subscriptions = await listActiveSubscriptions(userId);
+    res.json({
+      ok: true,
+      settings,
+      hasActiveSubscription: subscriptions.length > 0,
+      vapidPublicKey: getVapidPublicKey(),
+    });
+  } catch (err) {
+    console.error("[push/settings GET]", err);
+    res.status(500).json({ ok: false, error: "Bildirim ayarları alınamadı." });
+  }
 });
 
 router.post("/push/subscribe", requireAuth, async (req: Request, res: Response) => {
@@ -83,14 +74,18 @@ router.post("/push/subscribe", requireAuth, async (req: Request, res: Response) 
   }
 
   if (!isPushConfigured()) {
-    res.status(503).json({ ok: false, error: "VAPID_PUBLIC_KEY missing" });
+    res.status(503).json({ ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
     return;
   }
 
-  await upsertPushSubscription(userId, subscription);
-  const settings = await upsertPushSettings(userId, parseSettingsBody(req.body ?? {}));
-
-  res.json({ ok: true, settings });
+  try {
+    await upsertPushSubscription(userId, subscription, pushUserAgent(req));
+    const settings = await upsertPushSettings(userId, parsePushSettingsBody(req.body ?? {}));
+    res.json({ ok: true, settings });
+  } catch (err) {
+    console.error("[push/subscribe]", err);
+    res.status(500).json({ ok: false, error: "Push aboneliği kaydedilemedi." });
+  }
 });
 
 router.post("/push/unsubscribe", requireAuth, async (req: Request, res: Response) => {
@@ -112,8 +107,13 @@ router.post("/push/settings", requireAuth, async (req: Request, res: Response) =
     return;
   }
 
-  const settings = await upsertPushSettings(userId, parseSettingsBody(req.body ?? {}));
-  res.json({ ok: true, settings });
+  try {
+    const settings = await upsertPushSettings(userId, parsePushSettingsBody(req.body ?? {}));
+    res.json({ ok: true, settings });
+  } catch (err) {
+    console.error("[push/settings POST]", err);
+    res.status(500).json({ ok: false, error: "Bildirim ayarları kaydedilemedi." });
+  }
 });
 
 router.post("/push/test", requireAuth, async (req: Request, res: Response) => {
@@ -124,13 +124,13 @@ router.post("/push/test", requireAuth, async (req: Request, res: Response) => {
   }
 
   if (!isPushConfigured()) {
-    res.status(503).json({ ok: false, error: "VAPID_PUBLIC_KEY missing" });
+    res.status(503).json({ ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
     return;
   }
 
   const subscriptions = await listActiveSubscriptions(userId);
   if (subscriptions.length === 0) {
-    res.status(400).json({ ok: false, error: "Aktif push aboneliği bulunamadı. Önce bildirimleri açın." });
+    res.status(400).json({ ok: false, error: "Önce bildirimleri açmanız gerekiyor." });
     return;
   }
 

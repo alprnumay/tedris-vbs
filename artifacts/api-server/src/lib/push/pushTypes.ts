@@ -10,22 +10,38 @@ export type PushSubscriptionJson = {
 export type PushSettings = {
   dailyReminderEnabled: boolean;
   dailyReminderTime: string;
+  attendanceReminderEnabled: boolean;
+  homeworkReminderEnabled: boolean;
 };
 
 export const DEFAULT_PUSH_SETTINGS: PushSettings = {
   dailyReminderEnabled: true,
   dailyReminderTime: "17:00",
+  attendanceReminderEnabled: true,
+  homeworkReminderEnabled: true,
 };
 
 export const DAILY_REMINDER_PAYLOAD = {
-  title: "Günlük takip hatırlatması",
-  body: "Bugünkü işler tamamlandı mı? Yoklama, okul ödevi takibi ve veli bilgilendirme durumunu kontrol etmeyi unutmayın.",
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü yoklama ve ödev takibini doldurmayı unutmayınız.",
+  url: "/davet/okul-takip",
+};
+
+export const ATTENDANCE_REMINDER_PAYLOAD = {
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü yoklama bilgilerini kontrol etmeyi unutmayınız.",
+  url: "/davet/okul-takip",
+};
+
+export const HOMEWORK_REMINDER_PAYLOAD = {
+  title: "Nehari Platformu Hatırlatma",
+  body: "Bugünkü ödev takiplerini tamamlamayı unutmayınız.",
   url: "/davet/okul-takip",
 };
 
 export const TEST_PUSH_PAYLOAD = {
-  title: "Test bildirimi",
-  body: "Tedris VBS bildirimleri bu cihazda çalışıyor.",
+  title: "Nehari Platformu Hatırlatma",
+  body: "Test bildirimi — bildirimler bu cihazda çalışıyor.",
   url: "/davet/okul-takip",
 };
 
@@ -48,4 +64,30 @@ export function isValidSubscription(body: unknown): body is PushSubscriptionJson
       typeof sub.keys.p256dh === "string" &&
       typeof sub.keys.auth === "string",
   );
+}
+
+export function parsePushSettingsBody(body: Record<string, unknown>): Partial<PushSettings> {
+  const nested =
+    body.settings && typeof body.settings === "object"
+      ? (body.settings as Record<string, unknown>)
+      : body;
+
+  return {
+    dailyReminderEnabled:
+      typeof nested.dailyReminderEnabled === "boolean"
+        ? nested.dailyReminderEnabled
+        : undefined,
+    dailyReminderTime:
+      nested.dailyReminderTime != null
+        ? normalizeReminderTime(nested.dailyReminderTime)
+        : undefined,
+    attendanceReminderEnabled:
+      typeof nested.attendanceReminderEnabled === "boolean"
+        ? nested.attendanceReminderEnabled
+        : undefined,
+    homeworkReminderEnabled:
+      typeof nested.homeworkReminderEnabled === "boolean"
+        ? nested.homeworkReminderEnabled
+        : undefined,
+  };
 }

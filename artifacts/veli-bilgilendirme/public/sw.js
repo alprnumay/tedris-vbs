@@ -1,4 +1,4 @@
-const CACHE_NAME = "nehari-veli-bilgilendirme-v4";
+const CACHE_NAME = "nehari-veli-bilgilendirme-v5";
 
 const STATIC_ASSETS = [
   "/",
@@ -14,8 +14,15 @@ const OFFLINE_RESPONSE = new Response("Offline", {
   headers: { "Content-Type": "text/plain; charset=utf-8" },
 });
 
+function spaShellFallback() {
+  return caches.match("/index.html").then((shell) => {
+    if (shell) return shell;
+    return caches.match("/").then((root) => root || OFFLINE_RESPONSE);
+  });
+}
+
 function offlineFallback() {
-  return caches.match("/").then((cached) => cached || OFFLINE_RESPONSE);
+  return spaShellFallback();
 }
 
 self.addEventListener("install", (event) => {
@@ -36,8 +43,8 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("push", (event) => {
   const fallback = {
-    title: "Günlük takip hatırlatması",
-    body: "Bugünkü işler tamamlandı mı? Yoklama, okul ödevi takibi ve veli bilgilendirme durumunu kontrol etmeyi unutmayın.",
+    title: "Nehari Platformu Hatırlatma",
+    body: "Bugünkü yoklama ve ödev takibini doldurmayı unutmayınız.",
     url: "/davet/okul-takip",
   };
 
@@ -104,7 +111,7 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() =>
-          caches.match(event.request).then((cached) => cached || offlineFallback()),
+          caches.match(event.request).then((cached) => cached || spaShellFallback()),
         ),
     );
     return;

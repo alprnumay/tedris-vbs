@@ -20,7 +20,7 @@
   "crons": [
     {
       "path": "/api/cron/daily-push-reminder",
-      "schedule": "0 14 * * *"
+      "schedule": "* * * * *"
     }
   ],
   "rewrites": [
