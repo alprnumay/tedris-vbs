@@ -1,6 +1,6 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
 import { rejectClientSideRepair } from "./repairPolicy";
-import { isLocalDevApi, isOkulTakipRecordType, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
+import { isLocalDevApi, isOkulTakipRecordType, resolveApiBaseUrl, resolvePushApiBaseUrl, resolvePushInfraApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
 const API_BASE = resolveApiBaseUrl();
@@ -150,14 +150,14 @@ async function pushRequest<T>(
   method: HttpMethod,
   path: string,
   body?: unknown,
-  opts: { includeAuth?: boolean } = {},
+  opts: { includeAuth?: boolean; apiBase?: string } = {},
 ): Promise<T> {
   const includeAuth = opts.includeAuth ?? true;
   if (includeAuth && !getBackendToken()) {
     throw new Error("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
   }
 
-  const pushBase = resolvePushApiBaseUrl();
+  const pushBase = opts.apiBase ?? resolvePushApiBaseUrl();
   if (!pushBase) {
     throw new Error("Sunucu bağlantı ayarları eksik.");
   }
@@ -199,6 +199,9 @@ async function pushRequest<T>(
       throw new Error("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
     }
     if (res.status === 503) {
+      if (String(raw).toLowerCase().includes("vapid")) {
+        throw new Error("Push bildirim altyapısı henüz aktif değil. VAPID anahtarları yapılandırılmamış.");
+      }
       throw new Error("Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin.");
     }
     if (res.status === 404 && String(raw).includes("route")) {
@@ -495,7 +498,7 @@ export const backendApi = {
       "GET",
       "/push/vapid-public-key",
       undefined,
-      { includeAuth: false },
+      { includeAuth: false, apiBase: resolvePushInfraApiBaseUrl() },
     ),
 
   getPushSettings: () =>
@@ -512,15 +515,22 @@ export const backendApi = {
     dailyReminderEnabled?: boolean;
     dailyReminderTime?: string;
   }) =>
-    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
+    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body, {
+      apiBase: resolvePushInfraApiBaseUrl(),
+    }),
 
   unsubscribePush: (body?: { endpoint?: string }) =>
-    pushRequest<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}),
+    pushRequest<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}, {
+      apiBase: resolvePushInfraApiBaseUrl(),
+    }),
 
   updatePushSettings: (body: Partial<PushSettingsPayload>) =>
     pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),
 
-  sendPushTest: () => pushRequest<{ ok: boolean; sent: number }>("POST", "/push/test"),
+  sendPushTest: () =>
+    pushRequest<{ ok: boolean; sent: number }>("POST", "/push/test", undefined, {
+      apiBase: resolvePushInfraApiBaseUrl(),
+    }),
 };
 
 export type PushSettingsPayload = {

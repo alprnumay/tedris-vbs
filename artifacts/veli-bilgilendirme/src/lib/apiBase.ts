@@ -14,8 +14,24 @@ export function resolveApiBaseUrl(): string {
   return configured;
 }
 
-/** Push API — giriş oturumu ile aynı backend (VPS / yerel api-server). */
+const PUSH_INFRA_SAME_ORIGIN_HOSTS = new Set(["nehariplatform.com.tr", "www.nehariplatform.com.tr"]);
+
+/** Bildirim ayarları — oturum VPS api-server üzerinden (Bearer). */
 export function resolvePushApiBaseUrl(): string {
+  return resolveApiBaseUrl();
+}
+
+/**
+ * VAPID, abonelik, test gönderimi — canlıda Vercel serverless (/api, same-origin).
+ * VPS'te VAPID env olmayabilir; ayarlar yine VPS'te kalır.
+ */
+export function resolvePushInfraApiBaseUrl(): string {
+  if (import.meta.env.DEV && import.meta.env.VITE_FORCE_REMOTE_API !== "true") {
+    return "/api";
+  }
+  if (typeof window !== "undefined" && PUSH_INFRA_SAME_ORIGIN_HOSTS.has(window.location.hostname)) {
+    return "/api";
+  }
   return resolveApiBaseUrl();
 }
 
