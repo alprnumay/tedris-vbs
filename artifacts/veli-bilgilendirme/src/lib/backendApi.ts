@@ -195,8 +195,9 @@ async function pushRequest<T>(
           ? err.message
           : "Sunucuya bağlanılamadı.";
     if (res.status === 401) {
-      notifyAuthRequired();
-      throw new Error("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
+      throw new Error(
+        "Push aboneliği sunucuda doğrulanamadı. Oturumunuz açık kalır; sayfayı yenileyip tekrar deneyin.",
+      );
     }
     if (res.status === 503) {
       if (String(raw).toLowerCase().includes("vapid")) {
@@ -515,14 +516,10 @@ export const backendApi = {
     dailyReminderEnabled?: boolean;
     dailyReminderTime?: string;
   }) =>
-    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body, {
-      apiBase: resolvePushInfraApiBaseUrl(),
-    }),
+    pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
 
   unsubscribePush: (body?: { endpoint?: string }) =>
-    pushRequest<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}, {
-      apiBase: resolvePushInfraApiBaseUrl(),
-    }),
+    pushRequest<{ ok: boolean }>("POST", "/push/unsubscribe", body ?? {}),
 
   updatePushSettings: (body: Partial<PushSettingsPayload>) =>
     pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),

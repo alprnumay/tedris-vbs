@@ -73,11 +73,6 @@ router.post("/push/subscribe", requireAuth, async (req: Request, res: Response) 
     return;
   }
 
-  if (!isPushConfigured()) {
-    res.status(503).json({ ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
-    return;
-  }
-
   try {
     await upsertPushSubscription(userId, subscription, pushUserAgent(req));
     const settings = await upsertPushSettings(userId, parsePushSettingsBody(req.body ?? {}));

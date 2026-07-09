@@ -190,7 +190,34 @@ async function ensurePushSchema(client) {
   `);
 }
 
-async function resolveUserId(req) {
+async function resolveUserIdViaVps(req) {
+  const token = bearerToken(req);
+  if (!token) return null;
+
+  const base = String(
+    process.env.VPS_API_BASE_URL || process.env.VITE_API_BASE_URL || "https://api.antalyanehari.xyz/api",
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  if (!base) return null;
+
+  try {
+    const res = await fetch(`${base}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const userId = data?.user?.id;
+    return typeof userId === "string" && userId ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveUserIdFromDb(req) {
   const sid = sessionTokenFromRequest(req);
   if (!sid) return null;
 
@@ -218,6 +245,16 @@ async function resolveUserId(req) {
   } finally {
     client.release();
   }
+}
+
+async function resolveUserId(req) {
+  try {
+    const fromDb = await resolveUserIdFromDb(req);
+    if (fromDb) return fromDb;
+  } catch {
+    /* DATABASE_URL yok veya oturum tablosu erişilemedi — VPS fallback */
+  }
+  return resolveUserIdViaVps(req);
 }
 
 async function withDb(fn) {
