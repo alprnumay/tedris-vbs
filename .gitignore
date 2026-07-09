@@ -76,4 +76,10 @@ tedris-vbs-kodlar.tar.gz
 # Onarım / VPS yedekleri (hassas kayıt snapshot'ları)
 backups/
 backups/repair-baglarbasi-1163/
-.vercel
+.vercel/*
+!.vercel/project.example.json
+
+# Geçici / yerel çıktılar (deploy script commit etmez)
+load-test-results/
+tedris-davet-export/
+tmp-login.json

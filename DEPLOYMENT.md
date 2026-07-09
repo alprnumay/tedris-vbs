@@ -126,3 +126,62 @@ Kökten kısayol: `pnpm dev` → yalnızca Vite (port 3000).
 - Poster kaydı sunucuda **410** (devre dışı); afişler yalnızca tarayıcıda üretilir.
 - `VITE_API_BASE_URL` değerini yeni VPS API adresiyle güncel tutun.
 
+---
+
+## 8. Production yayınlama (`pnpm deploy:prod` / `pnpm yayinla`)
+
+Cursor’da **“yayınla”** dediğinizde çalıştırılacak komut:
+
+```bash
+pnpm deploy:prod -- --message "fix: kısa açıklama"
+```
+
+Script sırası:
+
+1. `build:veli-bilgilendirme` ( `--skip-build` ile atlanabilir )
+2. İzinli dosyaları commit eder ( `.env`, `load-test-results/`, `tedris-davet-export/` **asla** alınmaz )
+3. `git push origin main`
+4. `VERCEL_DEPLOY_HOOK` veya `VERCEL_TOKEN` + `.vercel/project.json` ile production deploy tetikler
+
+### Vercel otomatik deploy bozuksa
+
+**Belirti:** GitHub’da yeni commit var, Vercel Deployments hâlâ eski commit (`f88d8c1` vb.). Manuel **Redeploy** eski kodu tekrar yayınlar — yeni commit deploy etmez.
+
+**Kontrol listesi (Vercel → `tedris-vbs-api-server`):**
+
+| Ayar | Beklenen |
+|------|----------|
+| Git repo | `alprnumay/tedris-vbs` |
+| Production branch | `main` |
+| Root Directory | `.` (monorepo kökü) |
+| Auto deploy | Açık |
+| Ignored Build Step | Boş / deploy engellememeli |
+
+**www.nehariplatform.com.tr** bu Vercel projesine bağlıdır (frontend + `/api/push/*` serverless aynı projede).
+
+### Kalıcı çözüm: Deploy Hook
+
+1. Vercel → Project → **Settings → Git → Deploy Hooks** → Production → hook oluştur
+2. URL’yi kök `.env` dosyasına kaydet: `VERCEL_DEPLOY_HOOK=https://api.vercel.com/v1/integrations/deploy/...`
+3. (İsteğe bağlı) GitHub → **Settings → Secrets → Actions** → aynı URL’yi `VERCEL_DEPLOY_HOOK` olarak ekle ( `.github/workflows/vercel-production-deploy.yml` yedek tetikler )
+
+### Vercel CLI alternatifi
+
+```bash
+npx vercel link    # proje: tedris-vbs-api-server
+# .env → VERCEL_TOKEN=...
+pnpm deploy:prod -- --skip-build --vercel-only
+```
+
+`.vercel/project.json` repoda yoktur ( `.gitignore` ); örnek: `.vercel/project.example.json`.
+
+### Faydalı bayraklar
+
+| Bayrak | Anlam |
+|--------|--------|
+| `--message "..."` | Commit mesajı (değişiklik varsa zorunlu) |
+| `--skip-build` | Build atla |
+| `--skip-vercel` | Yalnızca git push |
+| `--vercel-only` | Push/build atla, yalnızca Vercel tetikle |
+| `--dry-run` | Simülasyon |
+

@@ -1,0 +1,28 @@
+# Vercel Git webhook bozuksa: main'e her push'ta Deploy Hook ile production deploy tetikler.
+# GitHub → Settings → Secrets → VERCEL_DEPLOY_HOOK (Vercel Project → Settings → Git → Deploy Hooks)
+name: Vercel Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: vercel-production-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  trigger-vercel:
+    runs-on: ubuntu-latest
+    if: github.repository == 'alprnumay/tedris-vbs'
+    steps:
+      - name: Trigger Vercel Deploy Hook
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$VERCEL_DEPLOY_HOOK" ]; then
+            echo "VERCEL_DEPLOY_HOOK secret yok — Vercel native Git entegrasyonuna güveniliyor."
+            exit 0
+          fi
+          curl -fsS -X POST "$VERCEL_DEPLOY_HOOK"
+          echo "Deploy hook tetiklendi. Commit: ${{ github.sha }}"
