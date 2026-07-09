@@ -35,7 +35,6 @@ const REMINDER_JOBS = [
 
 let pool;
 let vapidReady = false;
-let schemaReady = false;
 
 function getPool() {
   if (!process.env.DATABASE_URL) {
@@ -84,6 +83,26 @@ function bearerToken(req) {
   return String(value).slice(7).trim() || null;
 }
 
+function cookieSessionId(req) {
+  const raw = req.headers.cookie;
+  if (!raw || typeof raw !== "string") return null;
+  for (const part of raw.split(";")) {
+    const trimmed = part.trim();
+    if (!trimmed.startsWith("sid=")) continue;
+    const value = trimmed.slice(4);
+    try {
+      return decodeURIComponent(value).trim() || null;
+    } catch {
+      return value.trim() || null;
+    }
+  }
+  return null;
+}
+
+function sessionTokenFromRequest(req) {
+  return bearerToken(req) || cookieSessionId(req);
+}
+
 function pushUserAgent(req) {
   const raw = req.headers["user-agent"];
   return typeof raw === "string" ? raw.slice(0, 512) : null;
@@ -100,15 +119,19 @@ function anonymousDeviceId(req) {
   return cleaned ? `anon:${cleaned}` : null;
 }
 
+function isPgMissingColumnError(err) {
+  if (!err || typeof err !== "object") return false;
+  return err.code === "42703";
+}
+
 function json(res, status, body) {
   res.status(status).json(body);
 }
 
 async function ensurePushSchema(client) {
-  if (schemaReady) return;
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
-      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      id varchar PRIMARY KEY,
       user_id varchar NOT NULL,
       endpoint text NOT NULL UNIQUE,
       p256dh text,
@@ -134,14 +157,26 @@ async function ensurePushSchema(client) {
     )
   `);
   await client.query(`
-    ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS attendance_reminder_enabled boolean NOT NULL DEFAULT true
+    ALTER TABLE push_notification_settings
+      ADD COLUMN IF NOT EXISTS attendance_reminder_enabled boolean DEFAULT true
   `);
   await client.query(`
-    ALTER TABLE push_notification_settings ADD COLUMN IF NOT EXISTS homework_reminder_enabled boolean NOT NULL DEFAULT true
+    ALTER TABLE push_notification_settings
+      ADD COLUMN IF NOT EXISTS homework_reminder_enabled boolean DEFAULT true
+  `);
+  await client.query(`
+    UPDATE push_notification_settings
+    SET attendance_reminder_enabled = true
+    WHERE attendance_reminder_enabled IS NULL
+  `);
+  await client.query(`
+    UPDATE push_notification_settings
+    SET homework_reminder_enabled = true
+    WHERE homework_reminder_enabled IS NULL
   `);
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_notification_log (
-      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      id varchar PRIMARY KEY,
       user_id varchar NOT NULL,
       notification_type varchar NOT NULL,
       date_key varchar NOT NULL,
@@ -153,13 +188,12 @@ async function ensurePushSchema(client) {
   await client.query(`
     ALTER TABLE push_notification_log ADD COLUMN IF NOT EXISTS payload jsonb
   `);
-  schemaReady = true;
 }
 
 async function resolveUserId(req) {
-  const sid = bearerToken(req);
-  const fallback = anonymousDeviceId(req);
-  if (!sid) return fallback;
+  const sid = sessionTokenFromRequest(req);
+  if (!sid) return null;
+
   const db = getPool();
   const client = await db.connect();
   try {
@@ -168,9 +202,19 @@ async function resolveUserId(req) {
       [sid],
     );
     const sess = result.rows[0]?.sess;
-    if (!sess) return fallback;
+    if (!sess) return null;
+
     const data = typeof sess === "string" ? JSON.parse(sess) : sess;
-    return data?.localUser?.id || fallback;
+    const userId = data?.localUser?.id;
+    if (!userId || typeof userId !== "string") return null;
+
+    const userCheck = await client.query(
+      `SELECT id FROM local_users WHERE id = $1 AND (deleted_at IS NULL) LIMIT 1`,
+      [userId],
+    );
+    if (userCheck.rows.length === 0) return null;
+
+    return userId;
   } finally {
     client.release();
   }
@@ -256,11 +300,7 @@ async function sendPush(subscription, payload) {
 }
 
 async function upsertSettingsForUser(client, userId, patch) {
-  const cur = await client.query(
-    `SELECT daily_reminder_enabled, daily_reminder_time, attendance_reminder_enabled, homework_reminder_enabled
-     FROM push_notification_settings WHERE user_id = $1`,
-    [userId],
-  );
+  const cur = await loadSettingsRow(client, userId);
   const current = cur.rows[0]
     ? rowToSettings(cur.rows[0])
     : {
@@ -307,18 +347,32 @@ async function handleVapidPublicKey(_req, res) {
   json(res, 200, { ok: true, publicKey });
 }
 
-async function handleGetSettings(req, res) {
-  const userId = await resolveUserId(req);
-  if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
-    return;
-  }
-  const settings = await withDb(async (client) => {
-    const r = await client.query(
+async function loadSettingsRow(client, userId) {
+  try {
+    return await client.query(
       `SELECT daily_reminder_enabled, daily_reminder_time, attendance_reminder_enabled, homework_reminder_enabled
        FROM push_notification_settings WHERE user_id = $1`,
       [userId],
     );
+  } catch (err) {
+    if (!isPgMissingColumnError(err)) throw err;
+    await ensurePushSchema(client);
+    return client.query(
+      `SELECT daily_reminder_enabled, daily_reminder_time, attendance_reminder_enabled, homework_reminder_enabled
+       FROM push_notification_settings WHERE user_id = $1`,
+      [userId],
+    );
+  }
+}
+
+async function handleGetSettings(req, res) {
+  const userId = await resolveUserId(req);
+  if (!userId) {
+    json(res, 401, { ok: false, error: "Oturum gerekli. Lütfen çıkış yapıp tekrar giriş yapın." });
+    return;
+  }
+  const settings = await withDb(async (client) => {
+    const r = await loadSettingsRow(client, userId);
     if (!r.rows[0]) {
       return {
         dailyReminderEnabled: true,
@@ -347,7 +401,7 @@ async function handleGetSettings(req, res) {
 async function handleSubscribe(req, res) {
   const userId = await resolveUserId(req);
   if (!userId) {
-    json(res, 401, { ok: false, error: "Oturum gerekli." });
+    json(res, 401, { ok: false, error: "Oturum gerekli. Lütfen çıkış yapıp tekrar giriş yapın." });
     return;
   }
   if (!configureVapid()) {
@@ -363,11 +417,12 @@ async function handleSubscribe(req, res) {
   const patch = parseSettingsBody(body);
   const ua = pushUserAgent(req);
   const settings = await withDb(async (client) => {
+    const subId = require("crypto").randomUUID();
     await client.query(
       `INSERT INTO push_subscriptions (
-         user_id, endpoint, p256dh, auth, subscription, user_agent, is_active, updated_at
+         id, user_id, endpoint, p256dh, auth, subscription, user_agent, is_active, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, true, now())
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, true, now())
        ON CONFLICT (endpoint) DO UPDATE SET
          user_id = EXCLUDED.user_id,
          p256dh = EXCLUDED.p256dh,
@@ -377,6 +432,7 @@ async function handleSubscribe(req, res) {
          is_active = true,
          updated_at = now()`,
       [
+        subId,
         userId,
         subscription.endpoint,
         subscription.keys.p256dh,
@@ -553,8 +609,13 @@ function wrap(handler) {
       await handler(req, res);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const pgCode = err && typeof err === "object" ? err.code : undefined;
       if (message.includes("DATABASE_URL")) {
         json(res, 503, { ok: false, error: "Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin." });
+        return;
+      }
+      if (pgCode === "23503") {
+        json(res, 401, { ok: false, error: "Oturum geçersiz. Lütfen çıkış yapıp tekrar giriş yapın." });
         return;
       }
       console.error("[push-vercel]", err);
