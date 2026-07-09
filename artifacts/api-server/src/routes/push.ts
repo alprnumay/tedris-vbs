@@ -32,7 +32,10 @@ function pushUserAgent(req: Request): string | null {
 router.get("/push/vapid-public-key", (_req: Request, res: Response) => {
   const publicKey = getVapidPublicKey();
   if (!publicKey) {
-    res.json({ ok: false, error: "VAPID_PUBLIC_KEY missing" });
+    res.status(503).json({
+      ok: false,
+      error: "Bildirim altyapısı henüz yapılandırılmamış. VAPID anahtarları eksik.",
+    });
     return;
   }
   res.json({ ok: true, publicKey });
@@ -53,6 +56,7 @@ router.get("/push/settings", requireAuth, async (req: Request, res: Response) =>
       settings,
       hasActiveSubscription: subscriptions.length > 0,
       vapidPublicKey: getVapidPublicKey(),
+      pushConfigured: isPushConfigured(),
     });
   } catch (err) {
     console.error("[push/settings GET]", err);

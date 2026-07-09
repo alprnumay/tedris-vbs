@@ -1,6 +1,6 @@
 import type { FormData as VeliFormData, SablonTuru } from "../types";
 import { rejectClientSideRepair } from "./repairPolicy";
-import { isLocalDevApi, isOkulTakipRecordType, resolveApiBaseUrl, resolvePushApiBaseUrl, resolvePushInfraApiBaseUrl } from "./apiBase";
+import { isLocalDevApi, isOkulTakipRecordType, resolveApiBaseUrl, resolvePushApiBaseUrl } from "./apiBase";
 
 const TOKEN_KEY = "tedris_backend_token";
 const API_BASE = resolveApiBaseUrl();
@@ -200,10 +200,16 @@ async function pushRequest<T>(
       );
     }
     if (res.status === 503) {
-      if (String(raw).toLowerCase().includes("vapid")) {
-        throw new Error("Push bildirim altyapısı henüz aktif değil. VAPID anahtarları yapılandırılmamış.");
+      if (String(raw).toLowerCase().includes("vapid") || String(raw).includes("yapılandır")) {
+        throw new Error("Bildirim altyapısı henüz yapılandırılmamış. VAPID anahtarları eksik.");
       }
       throw new Error("Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin.");
+    }
+    if (res.status === 400) {
+      if (String(raw).includes("Önce bildirimleri") || String(raw).includes("abonelik")) {
+        throw new Error("Sunucuda kayıtlı push aboneliği yok. Önce aboneliği oluşturun.");
+      }
+      throw new Error(raw);
     }
     if (res.status === 404 && String(raw).includes("route")) {
       throw new Error(
@@ -499,7 +505,7 @@ export const backendApi = {
       "GET",
       "/push/vapid-public-key",
       undefined,
-      { includeAuth: false, apiBase: resolvePushInfraApiBaseUrl() },
+      { includeAuth: false },
     ),
 
   getPushSettings: () =>
@@ -508,6 +514,7 @@ export const backendApi = {
       settings: PushSettingsPayload;
       hasActiveSubscription: boolean;
       vapidPublicKey: string | null;
+      pushConfigured?: boolean;
     }>("GET", "/push/settings"),
 
   subscribePush: (body: {
@@ -524,10 +531,7 @@ export const backendApi = {
   updatePushSettings: (body: Partial<PushSettingsPayload>) =>
     pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/settings", body),
 
-  sendPushTest: () =>
-    pushRequest<{ ok: boolean; sent: number }>("POST", "/push/test", undefined, {
-      apiBase: resolvePushInfraApiBaseUrl(),
-    }),
+  sendPushTest: () => pushRequest<{ ok: boolean; sent: number }>("POST", "/push/test"),
 };
 
 export type PushSettingsPayload = {

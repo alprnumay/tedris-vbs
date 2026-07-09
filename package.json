@@ -42,6 +42,7 @@
     "stress:auth:100": "node scripts/stress-test/stress-test.mjs --mode=auth --users=100",
     "repair:baglarbasi": "pnpm dlx tsx scripts/repair-single-baglarbasi-1163.ts",
     "generate:vapid": "pnpm --filter @workspace/api-server exec web-push generate-vapid-keys",
+    "vapid:kurulum": "node scripts/print-vapid-setup.mjs",
     "deploy:prod": "node scripts/deploy-prod.mjs",
     "yayinla": "node scripts/deploy-prod.mjs"
   },

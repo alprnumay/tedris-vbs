@@ -14,25 +14,8 @@ export function resolveApiBaseUrl(): string {
   return configured;
 }
 
-/** Bildirim ayarları + abonelik kaydı — oturum VPS api-server üzerinden (Bearer). */
+/** Tüm push API istekleri — VPS api-server (VITE_API_BASE_URL). */
 export function resolvePushApiBaseUrl(): string {
-  return resolveApiBaseUrl();
-}
-
-/**
- * VAPID anahtarı ve test gönderimi — canlıda Vercel serverless (/api, same-origin).
- * Abonelik kaydı VPS'te kalır (oturum doğrulaması orada).
- */
-export function resolvePushInfraApiBaseUrl(): string {
-  if (import.meta.env.DEV && import.meta.env.VITE_FORCE_REMOTE_API !== "true") {
-    return "/api";
-  }
-  if (typeof window !== "undefined") {
-    const apiBase = resolveApiBaseUrl();
-    if (apiBase.startsWith("http") && !apiBase.startsWith(window.location.origin)) {
-      return "/api";
-    }
-  }
   return resolveApiBaseUrl();
 }
 

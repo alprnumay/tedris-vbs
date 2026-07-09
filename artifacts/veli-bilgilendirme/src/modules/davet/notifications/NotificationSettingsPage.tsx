@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Bell, BellOff, HelpCircle, RefreshCw, Send } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
@@ -12,7 +12,6 @@ import {
   buildPermissionHelpSteps,
   checkBrowserSubscription,
   enablePushNotifications,
-  fetchVapidPublicKey,
   getPermissionLabel,
   getPushSupportState,
   isIosDevice,
@@ -39,10 +38,12 @@ export default function NotificationSettingsPage() {
   const [permission, setPermission] = useState<PushPermissionState>("default");
   const [settings, setSettings] = useState<PushSettings>(DEFAULT_SETTINGS);
   const [hasSubscription, setHasSubscription] = useState(false);
+  const [pushConfigured, setPushConfigured] = useState(false);
   const [pushInfraError, setPushInfraError] = useState<string | null>(null);
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const autoPermissionRequested = useRef(false);
 
   const applySettings = useCallback((next: Partial<PushSettings>) => {
     setSettings((prev) => ({ ...prev, ...next }));
@@ -57,6 +58,8 @@ export default function NotificationSettingsPage() {
     if (!getBackendToken()) {
       setAuthRequired(true);
       setSettingsLoadError("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
+      setHasSubscription(false);
+      setPushConfigured(false);
       setLoading(false);
       return;
     }
@@ -65,40 +68,47 @@ export default function NotificationSettingsPage() {
     setSettings(localSettings);
 
     try {
-      await fetchVapidPublicKey();
-      setPushInfraError(null);
-    } catch (err) {
-      setPushInfraError(
-        err instanceof Error
-          ? err.message
-          : "Push bildirim altyapısı henüz aktif değil. VAPID key eksik olabilir.",
-      );
-    }
-
-    try {
       const data = await backendApi.getPushSettings();
       setSettings(data.settings);
-      setHasSubscription(data.hasActiveSubscription);
       saveLocalReminderSettings(data.settings);
 
-      if (getPushSupportState() === "granted") {
+      const infraReady = Boolean(data.pushConfigured ?? data.vapidPublicKey);
+      setPushConfigured(infraReady);
+      if (!infraReady) {
+        setPushInfraError("Bildirim altyapısı henüz yapılandırılmamış. VAPID anahtarları eksik.");
+      } else {
+        setPushInfraError(null);
+      }
+
+      let serverHasSub = data.hasActiveSubscription;
+
+      if (getPushSupportState() === "granted" && infraReady) {
         const browserHasSub = await checkBrowserSubscription();
-        if (browserHasSub && !data.hasActiveSubscription) {
+        if (browserHasSub && !serverHasSub) {
           try {
             await syncPushSubscription(data.settings);
-            setHasSubscription(true);
-          } catch {
-            setHasSubscription(browserHasSub);
+            serverHasSub = true;
+          } catch (syncErr) {
+            const msg = syncErr instanceof Error ? syncErr.message : "";
+            if (msg.includes("yapılandır") || msg.includes("VAPID")) {
+              setPushInfraError(msg);
+            }
+            serverHasSub = false;
           }
-        } else {
-          setHasSubscription(data.hasActiveSubscription || browserHasSub);
         }
       }
+
+      setHasSubscription(serverHasSub);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Bildirim ayarları alınamadı.";
       if (message.includes("tekrar giriş")) {
         setAuthRequired(true);
       }
+      if (message.includes("yapılandır") || message.includes("VAPID")) {
+        setPushInfraError(message);
+        setPushConfigured(false);
+      }
+      setHasSubscription(false);
       setSettingsLoadError(message);
     } finally {
       setLoading(false);
@@ -108,6 +118,17 @@ export default function NotificationSettingsPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const state = getPushSupportState();
+    if (loading || authRequired || pushInfraError) return;
+    if (state === "unsupported" || state === "denied") return;
+    if (permission !== "default" || autoPermissionRequested.current) return;
+    autoPermissionRequested.current = true;
+    void Notification.requestPermission().then((next) => {
+      setPermission(next as PushPermissionState);
+    });
+  }, [loading, authRequired, pushInfraError, permission]);
 
   const handleEnable = async () => {
     setSaving(true);
@@ -170,10 +191,16 @@ export default function NotificationSettingsPage() {
       }
       if (!hasSubscription) {
         if (permission === "default") {
-          toast.error("Önce bildirimleri açmanız gerekiyor.");
+          toast.error("Önce bildirim izni verin ve aboneliği oluşturun.");
           return;
         }
         await handleResubscribe();
+        const data = await backendApi.getPushSettings();
+        if (!data.hasActiveSubscription) {
+          toast.error("Sunucuda kayıtlı push aboneliği yok. Aboneliği yeniden oluşturmayı deneyin.");
+          return;
+        }
+        setHasSubscription(true);
       }
       await backendApi.sendPushTest();
       toast.success("Test bildirimi gönderildi.");
@@ -232,6 +259,12 @@ export default function NotificationSettingsPage() {
             <div className="flex justify-between gap-4">
               <span className="text-slate-600">Bildirim izni</span>
               <span className="font-medium text-slate-800">{getPermissionLabel(permission)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-600">Bildirim altyapısı</span>
+              <span className={`font-medium ${pushConfigured ? "text-emerald-700" : "text-amber-700"}`}>
+                {pushConfigured ? "Hazır" : "Yapılandırılmamış"}
+              </span>
             </div>
             <div className="flex justify-between gap-4">
               <span className="text-slate-600">Push aboneliği</span>

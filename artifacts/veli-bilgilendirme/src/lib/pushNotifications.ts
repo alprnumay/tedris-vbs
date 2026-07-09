@@ -106,8 +106,7 @@ export async function fetchVapidPublicKey(): Promise<string> {
   const data = await backendApi.getPushVapidPublicKey();
   if (!data.ok || !data.publicKey) {
     throw new Error(
-      data.error ||
-        "Push bildirim altyapısı henüz aktif değil. VAPID key eksik olabilir.",
+      data.error || "Bildirim altyapısı henüz yapılandırılmamış. VAPID anahtarları eksik.",
     );
   }
   return data.publicKey;
