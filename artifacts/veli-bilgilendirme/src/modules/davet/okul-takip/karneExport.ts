@@ -122,7 +122,7 @@ export async function shareKarneViaWhatsApp(params: {
   if (canShareFiles) {
     try {
       await navigator.share({
-        title: "Öğrenci Karnesi",
+        title: "Öğrenci Gelişim Karnesi",
         text: nativeShareText,
         files: [file],
       });
@@ -211,3 +211,7 @@ export async function shareKarnePng(
   if (result.mode === "cancelled") return "downloaded";
   return result.mode;
 }
+
+export const renderStudentReportCardToPng = exportKarnePngBlob;
+export const exportStudentReportCard = downloadKarnePng;
+export const shareStudentReportCardToWhatsapp = shareKarneViaWhatsApp;

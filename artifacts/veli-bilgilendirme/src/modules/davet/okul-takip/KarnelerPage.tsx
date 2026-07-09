@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { Eye, Loader2, MessageCircle } from "lucide-react";
+import { Eye, Image, Loader2, MessageCircle } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import {
 } from "@/modules/davet/okul-takip/calculations";
 import { getKarneData, KarnePoster } from "@/modules/davet/okul-takip/components/KarnePoster";
 import {
+  downloadKarnePng,
   getKarneShareToastMessage,
   shareKarneViaWhatsApp,
   waitForExportElement,
@@ -57,12 +58,14 @@ export default function KarnelerPage() {
   const [statusFilter, setStatusFilter] = useState<GeneralStatus | "all">("all");
   const [onlyRisk, setOnlyRisk] = useState(false);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [pendingShare, setPendingShare] = useState<{
     student: Student;
     stats: WeeklyStats;
     start: string;
     end: string;
     teacherComment: string;
+    parentNote: string;
     message: string;
   } | null>(null);
   const sharePosterRef = useRef<HTMLDivElement>(null);
@@ -91,15 +94,7 @@ export default function KarnelerPage() {
       .sort((a, b) => a.student.name.localeCompare(b.student.name, "tr"));
   }, [students, dailyRecords, dates, institution, grade, group, search, statusFilter, onlyRisk]);
 
-  const sendWhatsAppKarne = async (studentId: string) => {
-    if (sharingId) return;
-
-    const item = cards.find((c) => c.student.id === studentId);
-    if (!item) {
-      toast.error("Öğrenci bulunamadı.");
-      return;
-    }
-
+  const buildSharePayload = (item: { student: Student; stats: WeeklyStats }) => {
     const { start, end } = getKarneData(item.student, dailyRecords, weekRef);
     const weekNote = dailyRecords
       .filter((r) => r.studentId === item.student.id && dates.includes(r.date) && r.note)
@@ -107,18 +102,32 @@ export default function KarnelerPage() {
       .join(" ");
     const teacherComment = buildTeacherCommentSuggestion(item.student, item.stats, weekNote);
     const analysis = buildKarneAnalysis(item.student, item.stats, teacherComment);
+    return {
+      student: item.student,
+      stats: item.stats,
+      start,
+      end,
+      teacherComment,
+      parentNote: analysis.parentSuggestion,
+      message: analysis.whatsAppMessage,
+    };
+  };
+
+  const sendWhatsAppKarne = async (studentId: string) => {
+    if (sharingId || downloadingId) return;
+
+    const item = cards.find((c) => c.student.id === studentId);
+    if (!item) {
+      toast.error("Öğrenci bulunamadı.");
+      return;
+    }
+
+    const payload = buildSharePayload(item);
     const hasPhone = Boolean(item.student.parentPhone?.trim());
 
     flushSync(() => {
       setSharingId(studentId);
-      setPendingShare({
-        student: item.student,
-        stats: item.stats,
-        start,
-        end,
-        teacherComment,
-        message: analysis.whatsAppMessage,
-      });
+      setPendingShare(payload);
     });
 
     try {
@@ -127,7 +136,7 @@ export default function KarnelerPage() {
         element,
         studentId: item.student.id,
         studentName: item.student.name,
-        shareText: analysis.whatsAppMessage,
+        shareText: payload.message,
         parentPhone: item.student.parentPhone,
       });
       notifyKarneShareResult(result, hasPhone);
@@ -141,6 +150,35 @@ export default function KarnelerPage() {
     } finally {
       setPendingShare(null);
       setSharingId(null);
+    }
+  };
+
+  const downloadKarne = async (studentId: string) => {
+    if (sharingId || downloadingId) return;
+
+    const item = cards.find((c) => c.student.id === studentId);
+    if (!item) {
+      toast.error("Öğrenci bulunamadı.");
+      return;
+    }
+
+    const payload = buildSharePayload(item);
+
+    flushSync(() => {
+      setDownloadingId(studentId);
+      setPendingShare(payload);
+    });
+
+    try {
+      const element = await waitForExportElement(() => sharePosterRef.current);
+      await downloadKarnePng(element, item.student.name);
+      toast.success("Karne PNG olarak indirildi.");
+    } catch (err) {
+      console.error("[karne/list-download]", err);
+      toast.error("Karne indirilemedi. Lütfen tekrar deneyin.");
+    } finally {
+      setPendingShare(null);
+      setDownloadingId(null);
     }
   };
 
@@ -224,6 +262,8 @@ export default function KarnelerPage() {
           {cards.map(({ student, stats }) => {
             const style = GENERAL_STATUS_COLORS[stats.generalStatus];
             const isSharing = sharingId === student.id;
+            const isDownloading = downloadingId === student.id;
+            const isBusy = Boolean(sharingId || downloadingId);
             return (
               <div
                 key={student.id}
@@ -260,8 +300,21 @@ export default function KarnelerPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => void downloadKarne(student.id)}
+                    disabled={isBusy}
+                  >
+                    {isDownloading ? (
+                      <Loader2 size={14} className="mr-1 animate-spin" />
+                    ) : (
+                      <Image size={14} className="mr-1" />
+                    )}
+                    {isDownloading ? "Hazırlanıyor..." : "Karne indir"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => void sendWhatsAppKarne(student.id)}
-                    disabled={Boolean(sharingId)}
+                    disabled={isBusy}
                   >
                     {isSharing ? (
                       <Loader2 size={14} className="mr-1 animate-spin" />
@@ -286,6 +339,7 @@ export default function KarnelerPage() {
               weekEnd={pendingShare.end}
               records={dailyRecords}
               teacherComment={pendingShare.teacherComment}
+              parentNote={pendingShare.parentNote}
             />
           </div>
         ) : null}

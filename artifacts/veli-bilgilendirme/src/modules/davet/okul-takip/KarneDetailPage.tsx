@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { toast } from "sonner";
-import { Copy, Image, Loader2, MessageCircle, Printer } from "lucide-react";
+import { Copy, Image, Loader2, MessageCircle, Printer, Sparkles } from "lucide-react";
 import { DavetLayout } from "@/modules/davet/layout/DavetLayout";
 import { BackButton } from "@/modules/davet/layout/ModulePageHeader";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,11 @@ import {
   buildKarneAnalysis,
   buildTeacherCommentSuggestion,
 } from "@/modules/davet/okul-takip/calculations";
-import { downloadKarnePng, getKarneShareToastMessage, shareKarneViaWhatsApp } from "@/modules/davet/okul-takip/karneExport";
+import {
+  downloadKarnePng,
+  getKarneShareToastMessage,
+  shareKarneViaWhatsApp,
+} from "@/modules/davet/okul-takip/karneExport";
 import { OKUL_TAKIP_KARNELER } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 
@@ -39,6 +43,7 @@ export default function KarneDetailPage() {
   const student = students.find((s) => s.id === studentId);
   const karneRef = useRef<HTMLDivElement>(null);
   const [teacherCommentDraft, setTeacherCommentDraft] = useState("");
+  const [parentNoteDraft, setParentNoteDraft] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
 
@@ -59,12 +64,14 @@ export default function KarneDetailPage() {
   const aiSuggestedComment = buildTeacherCommentSuggestion(student, stats, weekNote);
   const teacherComment = teacherCommentDraft.trim() || aiSuggestedComment;
   const analysis = buildKarneAnalysis(student, stats, teacherComment);
+  const parentNote = parentNoteDraft.trim() || analysis.parentSuggestion;
 
   const exportKarne = async () => {
     if (!student.name.trim()) {
       toast.error("Öğrenci adı olmadan karne indirilemez.");
       return;
     }
+    if (downloading) return;
     setDownloading(true);
     try {
       await downloadKarnePng(karneRef.current, student.name);
@@ -113,13 +120,13 @@ export default function KarneDetailPage() {
         <BackButton label="Karneler" href={OKUL_TAKIP_KARNELER} />
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void exportKarne()} disabled={downloading}>
+          <Button variant="outline" onClick={() => void exportKarne()} disabled={downloading || sharing}>
             {downloading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Image size={16} className="mr-2" />}
-            {downloading ? "Hazırlanıyor..." : "Karne indir"}
+            {downloading ? "Karne hazırlanıyor..." : "Karne indir"}
           </Button>
           <Button variant="outline" onClick={() => void shareKarne()} disabled={sharing || downloading}>
             {sharing ? <Loader2 size={16} className="mr-2 animate-spin" /> : <MessageCircle size={16} className="mr-2" />}
-            {sharing ? "Hazırlanıyor..." : "WhatsApp ile gönder"}
+            {sharing ? "Karne hazırlanıyor..." : "WhatsApp ile gönder"}
           </Button>
           <Button
             variant="outline"
@@ -137,40 +144,63 @@ export default function KarneDetailPage() {
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-bold text-slate-900">Hoca Görüşü</p>
-              <p className="text-xs text-slate-500">
-                Öneri metni otomatik gelir; değiştirirseniz indirme ve WhatsApp'ta manuel metin kullanılır.
-              </p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-slate-900">Hoca Görüşü</p>
+                <p className="text-xs text-slate-500">
+                  Öneri metni otomatik gelir; değiştirirseniz indirme ve WhatsApp'ta bu metin kullanılır.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTeacherCommentDraft(aiSuggestedComment)}
+              >
+                <Sparkles size={14} className="mr-1" />
+                Öneriyi kullan
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setTeacherCommentDraft(aiSuggestedComment)}
-            >
-              Öneriyi kullan
-            </Button>
+            <Textarea
+              value={teacherCommentDraft}
+              onChange={(e) => setTeacherCommentDraft(e.target.value)}
+              placeholder={aiSuggestedComment}
+              rows={5}
+            />
           </div>
-          <Textarea
-            value={teacherCommentDraft}
-            onChange={(e) => setTeacherCommentDraft(e.target.value)}
-            placeholder={aiSuggestedComment}
-            rows={4}
-          />
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-sm font-bold text-slate-900">Veliye Not</p>
+            <p className="mb-2 text-xs text-slate-500">
+              İsteğe bağlı kısa veli notu; karne üzerinde görünür.
+            </p>
+            <Textarea
+              value={parentNoteDraft}
+              onChange={(e) => setParentNoteDraft(e.target.value)}
+              placeholder={analysis.parentSuggestion}
+              rows={5}
+            />
+          </div>
         </div>
 
-        <KarnePoster
-          ref={karneRef}
-          student={student}
-          stats={stats}
-          weekStart={start}
-          weekEnd={end}
-          records={dailyRecords}
-          teacherComment={teacherComment}
-        />
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
+          <div className="relative mx-auto h-[702px] max-w-full sm:h-[810px] md:h-[918px]">
+            <div className="absolute left-1/2 top-0 origin-top -translate-x-1/2 scale-[0.52] sm:scale-[0.6] md:scale-[0.68]">
+              <KarnePoster
+                ref={karneRef}
+                student={student}
+                stats={stats}
+                weekStart={start}
+                weekEnd={end}
+                records={dailyRecords}
+                teacherComment={teacherComment}
+                parentNote={parentNote}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </DavetLayout>
   );
