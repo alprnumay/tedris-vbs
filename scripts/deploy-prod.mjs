@@ -228,9 +228,20 @@ async function triggerVercelDeploy(dryRun) {
     const res = await fetch(hook, { method: "POST" });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`Deploy Hook başarısız (${res.status}): ${text.slice(0, 200)}`);
+      throw new Error(`Deploy Hook başarısız (${res.status}): ${text.slice(0, 300)}`);
     }
-    console.log("[deploy] Vercel Deploy Hook OK:", text.slice(0, 200) || "(empty body)");
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    const jobState = payload?.job?.state;
+    console.log("[deploy] Vercel Deploy Hook OK:", text.slice(0, 300) || "(empty body)");
+    if (jobState && jobState !== "PENDING" && jobState !== "QUEUED") {
+      console.warn(`[deploy] UYARI: Deploy job durumu: ${jobState}`);
+    }
+    console.log("[deploy] Vercel → Deployments ekranında yeni satırı kontrol edin (1-3 dk).");
     return "hook";
   }
 
