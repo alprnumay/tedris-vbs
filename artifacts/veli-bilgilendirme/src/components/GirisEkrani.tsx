@@ -2,6 +2,7 @@
 import { api, type KullaniciBilgisi } from "../lib/api";
 import { backendApi } from "../lib/backendApi";
 import { APP_BRAND_TAGLINE, APP_BRAND_TITLE, APP_LOGO_ALT, APP_LOGO_SRC } from "../lib/appLogo";
+import PwaInstallSection from "./PwaInstallSection";
 
 interface Props {
   onGiris: (kullanici: KullaniciBilgisi) => void;
@@ -214,6 +215,8 @@ export default function GirisEkrani({ onGiris }: Props) {
             )}
           </button>
         </form>
+
+        <PwaInstallSection />
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
