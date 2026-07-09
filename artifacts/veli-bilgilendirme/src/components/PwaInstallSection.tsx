@@ -32,9 +32,15 @@ const GUIDE_SECTIONS = [
 ] as const;
 
 export default function PwaInstallSection() {
-  const { showInstallUi, feedback, guideOpen, setGuideOpen, install, closeGuide } = usePwaInstall();
+  const { showInstallUi, canNativeInstall, feedback, guideOpen, setGuideOpen, install, closeGuide } =
+    usePwaInstall();
 
   if (!showInstallUi) return null;
+
+  const buttonLabel = canNativeInstall ? "Uygulamayı Kur" : "Kurulum Yardımı";
+  const helperText = canNativeInstall
+    ? "Telefonunuza veya bilgisayarınıza uygulama gibi kurabilirsiniz."
+    : "Tarayıcınıza göre adım adım kurulum yönergelerini gösteririz.";
 
   return (
     <>
@@ -74,7 +80,7 @@ export default function PwaInstallSection() {
           }}
         >
           <Download size={18} strokeWidth={2.25} />
-          Uygulamayı İndir
+          {buttonLabel}
         </button>
 
         <p
@@ -91,7 +97,7 @@ export default function PwaInstallSection() {
           }}
         >
           <Smartphone size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>Telefonunuza veya bilgisayarınıza uygulama gibi kurabilirsiniz.</span>
+          <span>{helperText}</span>
         </p>
 
         {feedback ? (
