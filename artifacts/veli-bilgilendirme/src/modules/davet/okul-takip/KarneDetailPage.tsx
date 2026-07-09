@@ -11,13 +11,23 @@ import {
   buildKarneAnalysis,
   buildTeacherCommentSuggestion,
 } from "@/modules/davet/okul-takip/calculations";
-import { downloadKarnePng, shareKarnePng } from "@/modules/davet/okul-takip/karneExport";
+import { downloadKarnePng, getKarneShareToastMessage, shareKarneViaWhatsApp } from "@/modules/davet/okul-takip/karneExport";
 import { OKUL_TAKIP_KARNELER } from "@/modules/davet/okul-takip/routes";
 import { todayIso, useOkulTakipStore } from "@/modules/davet/okul-takip/store";
 
 function getWeekFromSearch(): string {
   if (typeof window === "undefined") return todayIso();
   return new URLSearchParams(window.location.search).get("week") ?? todayIso();
+}
+
+function notifyKarneShareResult(
+  result: Parameters<typeof getKarneShareToastMessage>[0],
+  hasPhone: boolean,
+) {
+  const toastMessage = getKarneShareToastMessage(result, hasPhone);
+  if (!toastMessage) return;
+  if (toastMessage.type === "success") toast.success(toastMessage.message);
+  else toast.info(toastMessage.message);
 }
 
 export default function KarneDetailPage() {
@@ -72,22 +82,26 @@ export default function KarneDetailPage() {
       toast.error("Öğrenci adı olmadan karne paylaşılamaz.");
       return;
     }
-    if (!student.parentPhone?.trim()) {
-      toast.warning("Bu öğrenci için veli telefon numarası bulunamadı.");
-      return;
-    }
+    if (sharing) return;
+
+    const hasPhone = Boolean(student.parentPhone?.trim());
     setSharing(true);
     try {
-      const result = await shareKarnePng(karneRef.current, student.name, analysis.whatsAppMessage);
-      if (result === "shared") {
-        toast.success("Karne WhatsApp paylaşımı için hazırlandı.");
-      } else {
-        toast.info("Karne indirildi. WhatsApp üzerinden veliye gönderebilirsiniz.");
-        window.open(`https://wa.me/${student.parentPhone.replace(/\D/g, "")}`, "_blank", "noopener,noreferrer");
-      }
+      const result = await shareKarneViaWhatsApp({
+        element: karneRef.current,
+        studentId: student.id,
+        studentName: student.name,
+        shareText: analysis.whatsAppMessage,
+        parentPhone: student.parentPhone,
+      });
+      notifyKarneShareResult(result, hasPhone);
     } catch (err) {
       console.error("[karne/share]", err);
-      toast.error("Karne indirilemedi. Lütfen tekrar deneyin.");
+      if (err instanceof DOMException && err.name === "InvalidStateError") {
+        toast.info("Önce açık olan paylaşım penceresini kapatın ve tekrar deneyin.");
+      } else {
+        toast.error("Karne hazırlanamadı. Lütfen tekrar deneyin.");
+      }
     } finally {
       setSharing(false);
     }
@@ -105,7 +119,7 @@ export default function KarneDetailPage() {
           </Button>
           <Button variant="outline" onClick={() => void shareKarne()} disabled={sharing || downloading}>
             {sharing ? <Loader2 size={16} className="mr-2 animate-spin" /> : <MessageCircle size={16} className="mr-2" />}
-            WhatsApp gönder
+            {sharing ? "Hazırlanıyor..." : "WhatsApp ile gönder"}
           </Button>
           <Button
             variant="outline"
