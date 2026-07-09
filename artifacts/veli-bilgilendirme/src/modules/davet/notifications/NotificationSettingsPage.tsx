@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { backendApi } from "@/lib/backendApi";
+import { backendApi, getBackendToken } from "@/lib/backendApi";
 import {
   buildPermissionHelpSteps,
   checkBrowserSubscription,
@@ -41,6 +41,7 @@ export default function NotificationSettingsPage() {
   const [hasSubscription, setHasSubscription] = useState(false);
   const [pushInfraError, setPushInfraError] = useState<string | null>(null);
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
   const applySettings = useCallback((next: Partial<PushSettings>) => {
@@ -50,7 +51,15 @@ export default function NotificationSettingsPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     setSettingsLoadError(null);
+    setAuthRequired(false);
     setPermission(getPushSupportState());
+
+    if (!getBackendToken()) {
+      setAuthRequired(true);
+      setSettingsLoadError("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
+      setLoading(false);
+      return;
+    }
 
     const localSettings = loadLocalReminderSettings();
     setSettings(localSettings);
@@ -85,8 +94,12 @@ export default function NotificationSettingsPage() {
           setHasSubscription(data.hasActiveSubscription || browserHasSub);
         }
       }
-    } catch {
-      setSettingsLoadError("Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Bildirim ayarları alınamadı.";
+      if (message.includes("tekrar giriş")) {
+        setAuthRequired(true);
+      }
+      setSettingsLoadError(message);
     } finally {
       setLoading(false);
     }
@@ -193,9 +206,11 @@ export default function NotificationSettingsPage() {
         {settingsLoadError ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
             {settingsLoadError}
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => refresh()} disabled={loading}>
-              Tekrar dene
-            </Button>
+            {!authRequired ? (
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refresh()} disabled={loading}>
+                Tekrar dene
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -267,7 +282,7 @@ export default function NotificationSettingsPage() {
             <Button
               className="w-full bg-violet-600 hover:bg-violet-700"
               onClick={handleEnable}
-              disabled={saving || granted || Boolean(pushInfraError)}
+              disabled={saving || granted || Boolean(pushInfraError) || authRequired}
             >
               <Bell size={18} className="mr-2" />
               Bildirimleri Aç
@@ -279,7 +294,7 @@ export default function NotificationSettingsPage() {
               className="w-full"
               variant="secondary"
               onClick={handleResubscribe}
-              disabled={saving || Boolean(pushInfraError)}
+              disabled={saving || Boolean(pushInfraError) || authRequired}
             >
               <RefreshCw size={16} className="mr-2" />
               Aboneliği Yeniden Oluştur
@@ -291,7 +306,7 @@ export default function NotificationSettingsPage() {
               className="w-full"
               variant="outline"
               onClick={handleResubscribe}
-              disabled={saving || Boolean(pushInfraError)}
+              disabled={saving || Boolean(pushInfraError) || authRequired}
             >
               <RefreshCw size={16} className="mr-2" />
               Aboneliği Yeniden Oluştur
@@ -351,13 +366,13 @@ export default function NotificationSettingsPage() {
           </div>
 
           <div className="flex flex-wrap gap-2 pt-2">
-            <Button variant="outline" onClick={saveSettings} disabled={saving || Boolean(settingsLoadError)}>
+            <Button variant="outline" onClick={saveSettings} disabled={saving || Boolean(settingsLoadError) || authRequired}>
               Ayarları Kaydet
             </Button>
             <Button
               variant="outline"
               onClick={sendTest}
-              disabled={saving || unsupported || Boolean(pushInfraError)}
+              disabled={saving || unsupported || Boolean(pushInfraError) || authRequired}
             >
               <Send size={16} className="mr-2" />
               Test bildirimi gönder

@@ -14,16 +14,8 @@ export function resolveApiBaseUrl(): string {
   return configured;
 }
 
-const PUSH_SAME_ORIGIN_HOSTS = new Set(["nehariplatform.com.tr", "www.nehariplatform.com.tr"]);
-
-/** Web Push: canlı sitede Vercel serverless (/api/push), diğer API istekleri VPS. */
+/** Push API — giriş oturumu ile aynı backend (VPS / yerel api-server). */
 export function resolvePushApiBaseUrl(): string {
-  if (import.meta.env.DEV && import.meta.env.VITE_FORCE_REMOTE_API !== "true") {
-    return "/api";
-  }
-  if (typeof window !== "undefined" && PUSH_SAME_ORIGIN_HOSTS.has(window.location.hostname)) {
-    return "/api";
-  }
   return resolveApiBaseUrl();
 }
 

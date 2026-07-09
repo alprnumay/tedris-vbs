@@ -171,6 +171,11 @@ async function pushRequest<T>(
   body?: unknown,
   opts: { includeAuth?: boolean } = {},
 ): Promise<T> {
+  const includeAuth = opts.includeAuth ?? true;
+  if (includeAuth && !getBackendToken()) {
+    throw new Error("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
+  }
+
   const pushBase = resolvePushApiBaseUrl();
   if (!pushBase) {
     throw new Error("Sunucu bağlantı ayarları eksik.");
@@ -180,7 +185,7 @@ async function pushRequest<T>(
   try {
     res = await fetch(`${pushBase}${path}`, {
       method,
-      headers: pushHeaders(body !== undefined, opts.includeAuth ?? true),
+      headers: pushHeaders(body !== undefined, includeAuth),
       body: body !== undefined ? JSON.stringify(body) : undefined,
       credentials: "include",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -208,6 +213,10 @@ async function pushRequest<T>(
         : typeof err.message === "string"
           ? err.message
           : "Sunucuya bağlanılamadı.";
+    if (res.status === 401) {
+      notifyAuthRequired();
+      throw new Error("Bildirim ayarlarını kullanmak için tekrar giriş yapmanız gerekiyor.");
+    }
     if (res.status === 503) {
       throw new Error("Bildirim ayarları şu anda alınamadı. Lütfen tekrar deneyin.");
     }
