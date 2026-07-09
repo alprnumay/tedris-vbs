@@ -1,7 +1,124 @@
 import html2canvas from "html2canvas";
+import { toBlob } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { slugifyFileName } from "@/modules/davet/utils/layoutUtils";
 import type { PosterAspectSpec } from "@/modules/davet/components/PosterCanvas";
+
+const INLINE_STYLE_PROPS = [
+  "color",
+  "background",
+  "background-color",
+  "background-image",
+  "border",
+  "border-color",
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
+  "border-width",
+  "border-style",
+  "border-radius",
+  "box-shadow",
+  "opacity",
+  "font-size",
+  "font-weight",
+  "font-family",
+  "line-height",
+  "letter-spacing",
+  "text-align",
+  "text-transform",
+  "padding",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
+  "margin",
+  "margin-top",
+  "margin-right",
+  "margin-bottom",
+  "margin-left",
+  "display",
+  "flex",
+  "flex-direction",
+  "flex-wrap",
+  "align-items",
+  "justify-content",
+  "justify-items",
+  "gap",
+  "row-gap",
+  "column-gap",
+  "grid-template-columns",
+  "grid-template-rows",
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
+  "overflow",
+  "overflow-wrap",
+  "word-break",
+  "white-space",
+  "box-sizing",
+  "aspect-ratio",
+  "object-fit",
+  "-webkit-line-clamp",
+  "-webkit-box-orient",
+  "text-overflow",
+] as const;
+
+function containsUnsupportedColor(value: string): boolean {
+  return /oklch|oklab|color-mix|\blab\(|\blch\(/i.test(value);
+}
+
+/** Tailwind v4 oklch renkleri html2canvas'ta patlar; hesaplanmış rgb değerlerini inline'a taşı. */
+function inlineComputedStylesForHtml2Canvas(root: HTMLElement): void {
+  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+
+  for (const el of elements) {
+    const computed = window.getComputedStyle(el);
+
+    el.style.setProperty("backdrop-filter", "none");
+    el.style.setProperty("-webkit-backdrop-filter", "none");
+
+    for (const prop of INLINE_STYLE_PROPS) {
+      const value = computed.getPropertyValue(prop);
+      if (!value || value === "none" || value === "normal" || value === "auto") continue;
+      if (containsUnsupportedColor(value)) continue;
+      el.style.setProperty(prop, value);
+    }
+
+    el.removeAttribute("class");
+  }
+}
+
+function isOklchExportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /oklch|oklab|unsupported color function/i.test(message);
+}
+
+async function renderBlobWithHtmlToImage(
+  element: HTMLElement,
+  spec: PosterAspectSpec,
+  options?: { scale?: number; backgroundColor?: string },
+): Promise<Blob> {
+  const scale = options?.scale ?? 2;
+  const blob = await toBlob(element, {
+    width: spec.width,
+    height: spec.height,
+    canvasWidth: spec.width * scale,
+    canvasHeight: spec.height * scale,
+    pixelRatio: scale,
+    backgroundColor: options?.backgroundColor ?? "#ffffff",
+    cacheBust: true,
+  });
+
+  if (!blob || blob.size < 100) {
+    throw new Error("EMPTY_EXPORT");
+  }
+
+  return blob;
+}
 
 async function waitForImages(element: HTMLElement): Promise<void> {
   const imgs = Array.from(element.querySelectorAll("img"));
@@ -83,25 +200,42 @@ async function renderCanvas(
   const scale = options?.scale ?? 2;
 
   await flushPaint(element);
+  inlineComputedStylesForHtml2Canvas(element);
 
-  const canvas = await html2canvas(element, {
-    scale,
-    width: spec.width,
-    height: spec.height,
-    windowWidth: spec.width,
-    windowHeight: spec.height,
-    useCORS: true,
-    allowTaint: false,
-    backgroundColor: options?.backgroundColor ?? "#ffffff",
-    logging: false,
-    imageTimeout: 15000,
-  });
+  try {
+    const canvas = await html2canvas(element, {
+      scale,
+      width: spec.width,
+      height: spec.height,
+      windowWidth: spec.width,
+      windowHeight: spec.height,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: options?.backgroundColor ?? "#ffffff",
+      logging: false,
+      imageTimeout: 15000,
+    });
 
-  if (isCanvasEmpty(canvas)) {
-    throw new Error("EMPTY_EXPORT");
+    if (isCanvasEmpty(canvas)) {
+      throw new Error("EMPTY_EXPORT");
+    }
+
+    return canvas;
+  } catch (error) {
+    if (!isOklchExportError(error)) throw error;
+
+    console.warn("[export] html2canvas oklch error, falling back to html-to-image", error);
+    const blob = await renderBlobWithHtmlToImage(element, spec, options);
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("EMPTY_EXPORT");
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return canvas;
   }
-
-  return canvas;
 }
 
 export async function renderElementAsPngBlob(
@@ -113,12 +247,18 @@ export async function renderElementAsPngBlob(
 
   const clone = prepareExportNode(element, spec);
   try {
-    const canvas = await renderCanvas(clone, spec, options);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob || blob.size < 100) {
-      throw new Error("EMPTY_EXPORT");
+    try {
+      const canvas = await renderCanvas(clone, spec, options);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob || blob.size < 100) {
+        throw new Error("EMPTY_EXPORT");
+      }
+      return blob;
+    } catch (error) {
+      if (!isOklchExportError(error)) throw error;
+      console.warn("[export] renderElementAsPngBlob oklch fallback", error);
+      return renderBlobWithHtmlToImage(clone, spec, options);
     }
-    return blob;
   } finally {
     removeExportNode(clone);
   }
