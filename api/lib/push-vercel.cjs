@@ -146,6 +146,7 @@ async function ensurePushSchema(client) {
   await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS p256dh text`);
   await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS auth text`);
   await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_agent text`);
+  await client.query(`ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS vapid_public_key text`);
   await client.query(`
     CREATE TABLE IF NOT EXISTS push_notification_settings (
       user_id varchar PRIMARY KEY,
@@ -331,6 +332,42 @@ function isGoneError(err) {
   return err && (err.statusCode === 404 || err.statusCode === 410);
 }
 
+function isVapidMismatchError(err) {
+  if (!err || typeof err !== "object") return false;
+  if (err.statusCode === 403) return true;
+  const body = String(err.body || "").toLowerCase();
+  return body.includes("vapid credentials") || body.includes("vapid key");
+}
+
+function classifyPushError(err) {
+  if (isVapidMismatchError(err)) {
+    return {
+      kind: "vapid_mismatch",
+      message: "Bildirim aboneliği eski anahtarla oluşturulmuş. Lütfen aboneliği yeniden oluşturun.",
+    };
+  }
+  if (isGoneError(err)) {
+    return {
+      kind: "expired",
+      message: "Bildirim aboneliği geçersiz. Lütfen yeniden oluşturun.",
+    };
+  }
+  return {
+    kind: "other",
+    message: err instanceof Error ? err.message : "Gönderim hatası",
+  };
+}
+
+async function deactivateStaleVapidSubscriptions(client, userId, currentVapid) {
+  if (!currentVapid) return;
+  await client.query(
+    `UPDATE push_subscriptions SET is_active = false, updated_at = now()
+     WHERE user_id = $1 AND is_active = true
+       AND (vapid_public_key IS NULL OR vapid_public_key <> $2)`,
+    [userId, currentVapid],
+  );
+}
+
 async function sendPush(subscription, payload) {
   if (!configureVapid()) throw new Error("VAPID keys missing");
   await webpush.sendNotification(subscription, JSON.stringify(payload), { TTL: 86400 });
@@ -453,19 +490,29 @@ async function handleSubscribe(req, res) {
   }
   const patch = parseSettingsBody(body);
   const ua = pushUserAgent(req);
+  const currentVapid = (process.env.VAPID_PUBLIC_KEY || "").trim();
+  const replaceAll = body.replaceAll === true;
   const settings = await withDb(async (client) => {
+    if (replaceAll) {
+      await client.query(`UPDATE push_subscriptions SET is_active = false, updated_at = now() WHERE user_id = $1`, [
+        userId,
+      ]);
+    } else {
+      await deactivateStaleVapidSubscriptions(client, userId, currentVapid);
+    }
     const subId = require("crypto").randomUUID();
     await client.query(
       `INSERT INTO push_subscriptions (
-         id, user_id, endpoint, p256dh, auth, subscription, user_agent, is_active, updated_at
+         id, user_id, endpoint, p256dh, auth, subscription, user_agent, vapid_public_key, is_active, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, true, now())
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, true, now())
        ON CONFLICT (endpoint) DO UPDATE SET
          user_id = EXCLUDED.user_id,
          p256dh = EXCLUDED.p256dh,
          auth = EXCLUDED.auth,
          subscription = EXCLUDED.subscription,
          user_agent = COALESCE(EXCLUDED.user_agent, push_subscriptions.user_agent),
+         vapid_public_key = EXCLUDED.vapid_public_key,
          is_active = true,
          updated_at = now()`,
       [
@@ -476,6 +523,7 @@ async function handleSubscribe(req, res) {
         subscription.keys.auth,
         JSON.stringify(subscription),
         ua,
+        currentVapid || null,
       ],
     );
     return upsertSettingsForUser(client, userId, patch);
@@ -528,34 +576,51 @@ async function handleTest(req, res) {
     json(res, 503, { ok: false, error: "Push bildirim altyapısı yapılandırılmamış." });
     return;
   }
+  const currentVapid = (process.env.VAPID_PUBLIC_KEY || "").trim();
   const subs = await withDb(async (client) => {
+    await deactivateStaleVapidSubscriptions(client, userId, currentVapid);
     const r = await client.query(
-      `SELECT subscription FROM push_subscriptions WHERE user_id = $1 AND is_active = true`,
-      [userId],
+      `SELECT subscription, endpoint FROM push_subscriptions
+       WHERE user_id = $1 AND is_active = true
+         AND ($2::text IS NULL OR vapid_public_key = $2)`,
+      [userId, currentVapid || null],
     );
-    return r.rows.map((row) => row.subscription);
+    return r.rows;
   });
   if (subs.length === 0) {
     json(res, 400, { ok: false, error: "Önce bildirimleri açmanız gerekiyor." });
     return;
   }
   let sent = 0;
-  for (const subscription of subs) {
+  const failures = [];
+  for (const row of subs) {
+    const subscription = row.subscription;
     try {
       await sendPush(subscription, TEST_PAYLOAD);
       sent += 1;
     } catch (err) {
-      if (isGoneError(err) && subscription?.endpoint) {
+      const classified = classifyPushError(err);
+      if (classified.kind === "vapid_mismatch" || classified.kind === "expired") {
         await withDb(async (client) => {
-          await client.query(`UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`, [
-            subscription.endpoint,
+          await client.query(`UPDATE push_subscriptions SET is_active = false, updated_at = now() WHERE endpoint = $1`, [
+            subscription?.endpoint || row.endpoint,
           ]);
         });
       }
+      failures.push(classified);
     }
   }
   if (sent === 0) {
-    json(res, 502, { ok: false, error: "Test bildirimi gönderilemedi." });
+    const primary = failures[0];
+    if (primary?.kind === "vapid_mismatch") {
+      json(res, 409, { ok: false, error: primary.message, code: "VAPID_MISMATCH" });
+      return;
+    }
+    if (primary?.kind === "expired") {
+      json(res, 400, { ok: false, error: primary.message, code: "SUBSCRIPTION_EXPIRED" });
+      return;
+    }
+    json(res, 400, { ok: false, error: primary?.message || "Test bildirimi gönderilemedi." });
     return;
   }
   const dateKey = dateKeyInTz();
@@ -576,19 +641,21 @@ async function handleDailyCron(req, res) {
   }
   const timeHHMM = hhmmInTz();
   const dateKey = dateKeyInTz();
+  const currentVapid = (process.env.VAPID_PUBLIC_KEY || "").trim();
   const candidates = await withDb(async (client) => {
     const r = await client.query(
-      `SELECT s.user_id, s.subscription,
+      `SELECT s.user_id, s.subscription, s.endpoint,
               p.daily_reminder_enabled, p.attendance_reminder_enabled, p.homework_reminder_enabled
        FROM push_notification_settings p
        INNER JOIN push_subscriptions s ON s.user_id = p.user_id AND s.is_active = true
        WHERE p.daily_reminder_time = $1
+         AND ($2::text IS NULL OR s.vapid_public_key = $2)
          AND (
            p.daily_reminder_enabled = true
            OR p.attendance_reminder_enabled = true
            OR p.homework_reminder_enabled = true
          )`,
-      [timeHHMM],
+      [timeHHMM, currentVapid || null],
     );
     return r.rows;
   });
@@ -616,10 +683,11 @@ async function handleDailyCron(req, res) {
         });
         sent += 1;
       } catch (err) {
-        if (isGoneError(err) && row.subscription?.endpoint) {
+        const classified = classifyPushError(err);
+        if (classified.kind === "vapid_mismatch" || classified.kind === "expired") {
           await withDb(async (client) => {
-            await client.query(`UPDATE push_subscriptions SET is_active = false WHERE endpoint = $1`, [
-              row.subscription.endpoint,
+            await client.query(`UPDATE push_subscriptions SET is_active = false, updated_at = now() WHERE endpoint = $1`, [
+              row.subscription?.endpoint || row.endpoint,
             ]);
           });
         }

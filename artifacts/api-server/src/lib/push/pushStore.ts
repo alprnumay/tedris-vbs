@@ -7,6 +7,7 @@ import {
   type PushSettings,
   type PushSubscriptionJson,
 } from "./pushTypes";
+import { getVapidPublicKey } from "./pushSender";
 
 type SettingsRow = {
   daily_reminder_enabled: boolean;
@@ -84,11 +85,30 @@ export async function upsertPushSettings(userId: string, settings: Partial<PushS
   return next;
 }
 
+export async function deactivateStaleVapidSubscriptions(
+  userId: string,
+  currentVapidKey?: string | null,
+): Promise<void> {
+  const vapidKey = (currentVapidKey ?? getVapidPublicKey() ?? "").trim();
+  if (!vapidKey) return;
+
+  await db.execute(sql`
+    UPDATE push_subscriptions
+    SET is_active = false, updated_at = now()
+    WHERE user_id = ${userId}
+      AND is_active = true
+      AND (vapid_public_key IS NULL OR vapid_public_key <> ${vapidKey})
+  `);
+}
+
 export async function upsertPushSubscription(
   userId: string,
   subscription: PushSubscriptionJson,
   userAgent?: string | null,
+  vapidPublicKey?: string | null,
 ): Promise<void> {
+  const vapidKey = (vapidPublicKey ?? getVapidPublicKey() ?? "").trim() || null;
+
   await db.execute(sql`
     INSERT INTO push_subscriptions (
       user_id,
@@ -97,6 +117,7 @@ export async function upsertPushSubscription(
       auth,
       subscription,
       user_agent,
+      vapid_public_key,
       is_active,
       updated_at
     )
@@ -107,6 +128,7 @@ export async function upsertPushSubscription(
       ${subscription.keys.auth},
       ${JSON.stringify(subscription)}::jsonb,
       ${userAgent ?? null},
+      ${vapidKey},
       true,
       now()
     )
@@ -116,6 +138,7 @@ export async function upsertPushSubscription(
       auth = EXCLUDED.auth,
       subscription = EXCLUDED.subscription,
       user_agent = COALESCE(EXCLUDED.user_agent, push_subscriptions.user_agent),
+      vapid_public_key = EXCLUDED.vapid_public_key,
       is_active = true,
       updated_at = now()
   `);
@@ -146,13 +169,27 @@ export async function deactivatePushSubscriptionByEndpoint(endpoint: string): Pr
   `);
 }
 
-export async function listActiveSubscriptions(userId: string): Promise<PushSubscriptionJson[]> {
-  const result = await db.execute(sql`
-    SELECT subscription
-    FROM push_subscriptions
-    WHERE user_id = ${userId} AND is_active = true
-    ORDER BY updated_at DESC
-  `);
+export async function listActiveSubscriptions(
+  userId: string,
+  opts?: { vapidPublicKey?: string | null },
+): Promise<PushSubscriptionJson[]> {
+  const vapidFilter = (opts?.vapidPublicKey ?? getVapidPublicKey() ?? "").trim();
+
+  const result = vapidFilter
+    ? await db.execute(sql`
+        SELECT subscription
+        FROM push_subscriptions
+        WHERE user_id = ${userId}
+          AND is_active = true
+          AND vapid_public_key = ${vapidFilter}
+        ORDER BY updated_at DESC
+      `)
+    : await db.execute(sql`
+        SELECT subscription
+        FROM push_subscriptions
+        WHERE user_id = ${userId} AND is_active = true
+        ORDER BY updated_at DESC
+      `);
 
   return sqlRows<{ subscription: PushSubscriptionJson }>(result)
     .map((row) => row.subscription)
@@ -201,23 +238,44 @@ export type ReminderCandidate = {
 };
 
 export async function listReminderCandidates(timeHHMM: string): Promise<ReminderCandidate[]> {
-  const result = await db.execute(sql`
-    SELECT
-      s.user_id,
-      s.subscription,
-      p.daily_reminder_enabled,
-      p.daily_reminder_time,
-      p.attendance_reminder_enabled,
-      p.homework_reminder_enabled
-    FROM push_notification_settings p
-    INNER JOIN push_subscriptions s ON s.user_id = p.user_id AND s.is_active = true
-    WHERE p.daily_reminder_time = ${timeHHMM}
-      AND (
-        p.daily_reminder_enabled = true
-        OR p.attendance_reminder_enabled = true
-        OR p.homework_reminder_enabled = true
-      )
-  `);
+  const currentVapid = (getVapidPublicKey() ?? "").trim();
+
+  const result = currentVapid
+    ? await db.execute(sql`
+        SELECT
+          s.user_id,
+          s.subscription,
+          p.daily_reminder_enabled,
+          p.daily_reminder_time,
+          p.attendance_reminder_enabled,
+          p.homework_reminder_enabled
+        FROM push_notification_settings p
+        INNER JOIN push_subscriptions s ON s.user_id = p.user_id AND s.is_active = true
+        WHERE p.daily_reminder_time = ${timeHHMM}
+          AND s.vapid_public_key = ${currentVapid}
+          AND (
+            p.daily_reminder_enabled = true
+            OR p.attendance_reminder_enabled = true
+            OR p.homework_reminder_enabled = true
+          )
+      `)
+    : await db.execute(sql`
+        SELECT
+          s.user_id,
+          s.subscription,
+          p.daily_reminder_enabled,
+          p.daily_reminder_time,
+          p.attendance_reminder_enabled,
+          p.homework_reminder_enabled
+        FROM push_notification_settings p
+        INNER JOIN push_subscriptions s ON s.user_id = p.user_id AND s.is_active = true
+        WHERE p.daily_reminder_time = ${timeHHMM}
+          AND (
+            p.daily_reminder_enabled = true
+            OR p.attendance_reminder_enabled = true
+            OR p.homework_reminder_enabled = true
+          )
+      `);
 
   return sqlRows<SettingsRow & { user_id: string; subscription: PushSubscriptionJson }>(result).map(
     (row) => ({

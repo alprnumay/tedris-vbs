@@ -209,7 +209,15 @@ async function pushRequest<T>(
       if (String(raw).includes("Önce bildirimleri") || String(raw).includes("abonelik")) {
         throw new Error("Sunucuda kayıtlı push aboneliği yok. Önce aboneliği oluşturun.");
       }
+      if (String(raw).includes("geçersiz") || String(raw).includes("yeniden oluştur")) {
+        throw new Error(raw);
+      }
       throw new Error(raw);
+    }
+    if (res.status === 409) {
+      throw new Error(
+        "Bildirim aboneliğiniz eski anahtarla oluşturulmuş. Aboneliği yeniden oluşturun.",
+      );
     }
     if (res.status === 404 && String(raw).includes("route")) {
       throw new Error(
@@ -522,6 +530,7 @@ export const backendApi = {
     settings?: Partial<PushSettingsPayload>;
     dailyReminderEnabled?: boolean;
     dailyReminderTime?: string;
+    replaceAll?: boolean;
   }) =>
     pushRequest<{ ok: boolean; settings: PushSettingsPayload }>("POST", "/push/subscribe", body),
 

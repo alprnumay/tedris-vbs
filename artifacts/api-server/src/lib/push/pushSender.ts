@@ -1,6 +1,22 @@
 import webpush from "web-push";
 import { logger } from "../logger";
 import type { PushSubscriptionJson } from "./pushTypes";
+import {
+  classifyPushSendError,
+  isPushSubscriptionExpiredError,
+  isPushVapidMismatchError,
+  shouldDeactivateSubscriptionOnPushError,
+  type ClassifiedPushSendError,
+  type PushSendErrorKind,
+} from "./pushErrors";
+export {
+  classifyPushSendError,
+  isPushSubscriptionExpiredError,
+  isPushVapidMismatchError,
+  shouldDeactivateSubscriptionOnPushError,
+  type ClassifiedPushSendError,
+  type PushSendErrorKind,
+} from "./pushErrors";
 
 let configured = false;
 
@@ -52,9 +68,7 @@ export async function sendWebPush(
 }
 
 export function isPushEndpointGoneError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const status = (err as { statusCode?: number }).statusCode;
-  return status === 404 || status === 410;
+  return isPushSubscriptionExpiredError(err);
 }
 
 /** @alias sendWebPush */

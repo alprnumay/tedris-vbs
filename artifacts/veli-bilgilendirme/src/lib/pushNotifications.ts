@@ -15,6 +15,7 @@ export type PushPermissionState =
 
 const SW_URL = "/sw.js";
 export const DAILY_REMINDER_SETTINGS_KEY = "nehariDailyReminderSettings";
+const LAST_VAPID_KEY = "nehariLastVapidPublicKey";
 
 const DEFAULT_SETTINGS: PushSettings = {
   dailyReminderEnabled: true,
@@ -118,26 +119,52 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
   return registration;
 }
 
+function rememberVapidPublicKey(publicKey: string): void {
+  try {
+    localStorage.setItem(LAST_VAPID_KEY, publicKey);
+  } catch {
+    /* ignore */
+  }
+}
+
+function hasVapidKeyChanged(publicKey: string): boolean {
+  try {
+    const last = localStorage.getItem(LAST_VAPID_KEY);
+    return Boolean(last && last !== publicKey);
+  } catch {
+    return false;
+  }
+}
+
+async function unsubscribeBrowserPush(registration: ServiceWorkerRegistration): Promise<void> {
+  const existing = await registration.pushManager.getSubscription();
+  if (!existing) return;
+  await existing.unsubscribe().catch(() => undefined);
+}
+
 async function subscribeWithVapid(
   registration: ServiceWorkerRegistration,
   forceNew = false,
 ): Promise<PushSubscription> {
   const publicKey = await fetchVapidPublicKey();
+  const mustRenew = forceNew || hasVapidKeyChanged(publicKey);
 
-  if (!forceNew) {
-    const existing = await registration.pushManager.getSubscription();
-    if (existing) return existing;
+  if (mustRenew) {
+    await unsubscribeBrowserPush(registration);
   } else {
     const existing = await registration.pushManager.getSubscription();
     if (existing) {
-      await existing.unsubscribe().catch(() => undefined);
+      rememberVapidPublicKey(publicKey);
+      return existing;
     }
   }
 
-  return registration.pushManager.subscribe({
+  const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey),
   });
+  rememberVapidPublicKey(publicKey);
+  return subscription;
 }
 
 function subscriptionPayload(subscription: PushSubscription) {
@@ -219,7 +246,19 @@ export async function resubscribePush(
   }
 
   const registration = await registerServiceWorker();
-  const subscription = await subscribeWithVapid(registration, true);
+  const existing = await registration.pushManager.getSubscription();
+  const oldEndpoint = existing?.endpoint;
+
+  await backendApi.unsubscribePush(oldEndpoint ? { endpoint: oldEndpoint } : undefined);
+  await unsubscribeBrowserPush(registration);
+
+  const publicKey = await fetchVapidPublicKey();
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  });
+  rememberVapidPublicKey(publicKey);
+
   const mergedSettings: PushSettings = {
     ...loadLocalReminderSettings(),
     ...settings,
@@ -228,6 +267,7 @@ export async function resubscribePush(
   const result = await backendApi.subscribePush({
     subscription: subscriptionPayload(subscription),
     settings: mergedSettings,
+    replaceAll: true,
   });
 
   saveLocalReminderSettings(result.settings);

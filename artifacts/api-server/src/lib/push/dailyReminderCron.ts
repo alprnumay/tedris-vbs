@@ -6,9 +6,16 @@ import {
   HOMEWORK_REMINDER_PAYLOAD,
   type PushSettings,
 } from "./pushTypes";
-import { isPushEndpointGoneError, sendWebPush, type PushPayload } from "./pushSender";
+import {
+  classifyPushSendError,
+  getVapidPublicKey,
+  sendWebPush,
+  shouldDeactivateSubscriptionOnPushError,
+  type PushPayload,
+} from "./pushSender";
 import {
   deactivatePushSubscriptionByEndpoint,
+  deactivateStaleVapidSubscriptions,
   getCurrentHHMMInTimezone,
   getDateKeyInTimezone,
   hasSentNotificationToday,
@@ -45,6 +52,9 @@ const REMINDER_JOBS: ReminderJob[] = [
 export async function runDailyReminderTick(): Promise<void> {
   const timeHHMM = getCurrentHHMMInTimezone(REMINDER_TIMEZONE);
   const dateKey = getDateKeyInTimezone(REMINDER_TIMEZONE);
+  const currentVapid = getVapidPublicKey();
+  if (!currentVapid) return;
+
   const candidates = await listReminderCandidates(timeHHMM);
 
   if (candidates.length === 0) return;
@@ -66,9 +76,14 @@ export async function runDailyReminderTick(): Promise<void> {
         await sendWebPush(candidate.subscription, job.payload);
         await logNotificationSent(candidate.userId, job.type, dateKey, job.payload);
       } catch (err) {
-        if (isPushEndpointGoneError(err)) {
+        const classified = classifyPushSendError(err);
+        if (shouldDeactivateSubscriptionOnPushError(classified.kind)) {
           await deactivatePushSubscriptionByEndpoint(candidate.subscription.endpoint).catch(() => {});
-          logger.warn({ userId: candidate.userId }, "Geçersiz push subscription pasifleştirildi");
+          await deactivateStaleVapidSubscriptions(candidate.userId, currentVapid).catch(() => {});
+          logger.warn(
+            { userId: candidate.userId, kind: classified.kind },
+            "Geçersiz push subscription pasifleştirildi",
+          );
           break;
         }
         logger.error({ err, userId: candidate.userId, type: job.type }, "Hatırlatma gönderilemedi");

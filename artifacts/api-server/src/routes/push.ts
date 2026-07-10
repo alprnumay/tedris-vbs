@@ -3,7 +3,8 @@ import { requireAuth } from "../middlewares/requireAdmin";
 import {
   getVapidPublicKey,
   isPushConfigured,
-  isPushEndpointGoneError,
+  classifyPushSendError,
+  shouldDeactivateSubscriptionOnPushError,
   sendWebPush,
 } from "../lib/push/pushSender";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../lib/push/pushTypes";
 import {
   deactivatePushSubscriptions,
+  deactivateStaleVapidSubscriptions,
   getDateKeyInTimezone,
   getPushSettings,
   listActiveSubscriptions,
@@ -49,8 +51,10 @@ router.get("/push/settings", requireAuth, async (req: Request, res: Response) =>
   }
 
   try {
+    const currentVapid = getVapidPublicKey();
+    await deactivateStaleVapidSubscriptions(userId, currentVapid);
+    const subscriptions = await listActiveSubscriptions(userId, { vapidPublicKey: currentVapid });
     const settings = await getPushSettings(userId);
-    const subscriptions = await listActiveSubscriptions(userId);
     res.json({
       ok: true,
       settings,
@@ -78,7 +82,16 @@ router.post("/push/subscribe", requireAuth, async (req: Request, res: Response) 
   }
 
   try {
-    await upsertPushSubscription(userId, subscription, pushUserAgent(req));
+    const currentVapid = getVapidPublicKey();
+    const replaceAll = req.body?.replaceAll === true;
+
+    if (replaceAll) {
+      await deactivatePushSubscriptions(userId);
+    } else {
+      await deactivateStaleVapidSubscriptions(userId, currentVapid);
+    }
+
+    await upsertPushSubscription(userId, subscription, pushUserAgent(req), currentVapid);
     const settings = await upsertPushSettings(userId, parsePushSettingsBody(req.body ?? {}));
     res.json({ ok: true, settings });
   } catch (err) {
@@ -127,14 +140,17 @@ router.post("/push/test", requireAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  const subscriptions = await listActiveSubscriptions(userId);
+  const currentVapid = getVapidPublicKey();
+  await deactivateStaleVapidSubscriptions(userId, currentVapid);
+
+  const subscriptions = await listActiveSubscriptions(userId, { vapidPublicKey: currentVapid });
   if (subscriptions.length === 0) {
     res.status(400).json({ ok: false, error: "Önce bildirimleri açmanız gerekiyor." });
     return;
   }
 
   let sent = 0;
-  const errors: string[] = [];
+  const failures: Array<{ kind: string; message: string }> = [];
   const dateKey = getDateKeyInTimezone(REMINDER_TIMEZONE);
 
   for (const subscription of subscriptions) {
@@ -142,23 +158,42 @@ router.post("/push/test", requireAuth, async (req: Request, res: Response) => {
       await sendWebPush(subscription, TEST_PUSH_PAYLOAD);
       sent += 1;
     } catch (err) {
-      if (isPushEndpointGoneError(err)) {
+      const classified = classifyPushSendError(err);
+      if (shouldDeactivateSubscriptionOnPushError(classified.kind)) {
         await deactivatePushSubscriptions(userId, subscription.endpoint).catch(() => {});
-        errors.push("Abonelik süresi dolmuş — yeniden abone olun.");
-        continue;
       }
-      errors.push(err instanceof Error ? err.message : "Gönderim hatası");
+      failures.push(classified);
     }
   }
 
   if (sent === 0) {
-    res.status(502).json({ ok: false, error: errors[0] ?? "Test bildirimi gönderilemedi." });
+    const primary = failures[0];
+    if (primary?.kind === "vapid_mismatch") {
+      res.status(409).json({
+        ok: false,
+        error: primary.message,
+        code: "VAPID_MISMATCH",
+      });
+      return;
+    }
+    if (primary?.kind === "expired") {
+      res.status(400).json({
+        ok: false,
+        error: primary.message,
+        code: "SUBSCRIPTION_EXPIRED",
+      });
+      return;
+    }
+    res.status(400).json({
+      ok: false,
+      error: primary?.message ?? "Test bildirimi gönderilemedi.",
+    });
     return;
   }
 
   await logNotificationSent(userId, "test", dateKey, TEST_PUSH_PAYLOAD).catch(() => {});
 
-  res.json({ ok: true, sent, errors: errors.length ? errors : undefined });
+  res.json({ ok: true, sent, errors: failures.length ? failures.map((f) => f.message) : undefined });
 });
 
 export default router;

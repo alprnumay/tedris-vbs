@@ -327,6 +327,9 @@ export async function ensureDbSchema(): Promise<{ ok: boolean; error?: string }>
     await db.execute(sql`
       ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_agent text
     `);
+    await db.execute(sql`
+      ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS vapid_public_key text
+    `);
 
     await db.execute(sql`
       CREATE INDEX IF NOT EXISTS push_subscriptions_user_active_idx

@@ -43,6 +43,7 @@ export default function NotificationSettingsPage() {
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [highlightResubscribe, setHighlightResubscribe] = useState(false);
   const autoPermissionRequested = useRef(false);
 
   const applySettings = useCallback((next: Partial<PushSettings>) => {
@@ -153,6 +154,7 @@ export default function NotificationSettingsPage() {
 
   const handleResubscribe = async () => {
     setSaving(true);
+    setHighlightResubscribe(false);
     try {
       const next = await resubscribePush(settings);
       setSettings(next);
@@ -203,9 +205,14 @@ export default function NotificationSettingsPage() {
         setHasSubscription(true);
       }
       await backendApi.sendPushTest();
+      setHighlightResubscribe(false);
       toast.success("Test bildirimi gönderildi.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Test bildirimi gönderilemedi.";
+      if (message.includes("eski anahtar") || message.includes("geçersiz")) {
+        setHasSubscription(false);
+        setHighlightResubscribe(true);
+      }
       toast.error(message);
     } finally {
       setSaving(false);
@@ -244,6 +251,13 @@ export default function NotificationSettingsPage() {
         {pushInfraError ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             {pushInfraError}
+          </div>
+        ) : null}
+
+        {highlightResubscribe ? (
+          <div className="rounded-xl border border-violet-300 bg-violet-50 p-4 text-sm text-violet-900">
+            Bildirim aboneliğiniz eski anahtarla oluşturulmuş. Aşağıdaki{" "}
+            <strong>Aboneliği Yeniden Oluştur</strong> butonuna dokunun, ardından test bildirimi gönderin.
           </div>
         ) : null}
 
@@ -324,7 +338,7 @@ export default function NotificationSettingsPage() {
 
           {granted && !hasSubscription ? (
             <Button
-              className="w-full"
+              className={`w-full ${highlightResubscribe ? "ring-2 ring-violet-500 ring-offset-2" : ""}`}
               variant="secondary"
               onClick={handleResubscribe}
               disabled={saving || Boolean(pushInfraError) || authRequired}
@@ -336,7 +350,7 @@ export default function NotificationSettingsPage() {
 
           {granted && hasSubscription ? (
             <Button
-              className="w-full"
+              className={`w-full ${highlightResubscribe ? "ring-2 ring-violet-500 ring-offset-2" : ""}`}
               variant="outline"
               onClick={handleResubscribe}
               disabled={saving || Boolean(pushInfraError) || authRequired}
